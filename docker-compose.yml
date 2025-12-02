@@ -1,26 +1,13 @@
-version: '3.8'
-
 services:
-  # Broker MQTT local
-  mosquitto:
-    image: eclipse-mosquitto:2
-    container_name: mosquitto
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-    volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
-    
   # Puente MQTT → Azure
   mqtt-to-azure:
     build: .
     container_name: mqtt-to-azure
     restart: unless-stopped
-    depends_on:
-      - mosquitto
+    network_mode: host
     environment:
-      # Broker MQTT (contenedor mosquitto)
-      - MQTT_BROKER=mosquitto
+      # Broker MQTT local (Mosquitto en la Raspberry)
+      - MQTT_BROKER=localhost
       - MQTT_PORT=1883
       - MQTT_TOPIC=#
       
