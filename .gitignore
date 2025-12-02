@@ -1,0 +1,9 @@
+# No subir configuración con secrets
+docker-compose.override.yml
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+*.log
