@@ -128,19 +128,19 @@ except:
             fi
             
             # Mostrar versión desde el código del flow
-            for f in /home/*/.node-red/flows.json; do
-                if [ -f "$f" ]; then
+            for flowfile in /home/*/.node-red/flows.json; do
+                if [ -f "$flowfile" ]; then
                     python3 -c "
 import json, re
 try:
-    with open('$f') as file:
+    with open('$flowfile') as file:
         flows = json.load(file)
     for node in flows:
         if node.get('name') == 'Editar lo necesario':
             func = node.get('func', '')
-            match = re.search(r\"global\.set\(['\"]Version['\"],\s*['\"]([^'\"]+)['\"]\)\", func)
+            match = re.search(r'Version.*?([0-9]{4}_[0-9]{2}_[0-9]{2}[^\"]*)', func)
             if match:
-                print(f\"  📋 Versión Flow: {match.group(1)}\")
+                print(f'  📋 Versión Flow: {match.group(1)}')
             break
 except:
     pass
