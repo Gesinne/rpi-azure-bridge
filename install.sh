@@ -366,8 +366,6 @@ except:
                 sudo systemctl restart nodered
                 sleep 3
                 echo "  ✅ Node-RED reiniciado"
-                echo ""
-                echo "  ⚠️  Recuerda configurar equipo_config.json con los datos del equipo"
             else
                 echo "  ❌ Error: El archivo no es JSON válido"
                 rm -rf "$TEMP_DIR"
@@ -376,6 +374,111 @@ except:
             
             # Limpiar
             rm -rf "$TEMP_DIR"
+            
+            # Buscar y mostrar equipo_config.json
+            CONFIG_FILE=""
+            for f in /home/*/config/equipo_config.json; do
+                if [ -f "$f" ]; then
+                    CONFIG_FILE="$f"
+                    break
+                fi
+            done
+            
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Configuración del equipo"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            if [ -n "$CONFIG_FILE" ]; then
+                python3 -c "
+import json
+try:
+    with open('$CONFIG_FILE') as f:
+        data = json.load(f)
+    print(f\"  Serie:     {data.get('serie', '?')}\")
+    print(f\"  Potencia:  {data.get('potencia', '?')} kW\")
+    print(f\"  Imax:      {data.get('Imax', '?')} A\")
+    print(f\"  Tramo 1:   {data.get('tramo1', '?')}\")
+    print(f\"  Tramo 2:   {data.get('tramo2', '?')}\")
+    print(f\"  Tramo 3:   {data.get('tramo3', '?')}\")
+    print(f\"  Tramo 4:   {data.get('tramo4', '?')}\")
+except Exception as e:
+    print(f'  Error leyendo config: {e}')
+" 2>/dev/null
+                echo ""
+                read -p "  ¿Modificar configuración? [s/N]: " MODIFY_CONFIG
+                
+                if [ "$MODIFY_CONFIG" = "s" ] || [ "$MODIFY_CONFIG" = "S" ]; then
+                    echo ""
+                    
+                    # Leer valores actuales
+                    CURRENT=$(python3 -c "
+import json
+with open('$CONFIG_FILE') as f:
+    d = json.load(f)
+print(d.get('serie',''))
+print(d.get('potencia',''))
+print(d.get('Imax',''))
+print(d.get('tramo1',''))
+print(d.get('tramo2',''))
+print(d.get('tramo3',''))
+print(d.get('tramo4',''))
+" 2>/dev/null)
+                    
+                    OLD_SERIE=$(echo "$CURRENT" | sed -n '1p')
+                    OLD_POTENCIA=$(echo "$CURRENT" | sed -n '2p')
+                    OLD_IMAX=$(echo "$CURRENT" | sed -n '3p')
+                    OLD_T1=$(echo "$CURRENT" | sed -n '4p')
+                    OLD_T2=$(echo "$CURRENT" | sed -n '5p')
+                    OLD_T3=$(echo "$CURRENT" | sed -n '6p')
+                    OLD_T4=$(echo "$CURRENT" | sed -n '7p')
+                    
+                    read -p "  Serie [$OLD_SERIE]: " NEW_SERIE
+                    read -p "  Potencia kW [$OLD_POTENCIA]: " NEW_POTENCIA
+                    read -p "  Imax A [$OLD_IMAX]: " NEW_IMAX
+                    read -p "  Tramo 1 [$OLD_T1]: " NEW_T1
+                    read -p "  Tramo 2 [$OLD_T2]: " NEW_T2
+                    read -p "  Tramo 3 [$OLD_T3]: " NEW_T3
+                    read -p "  Tramo 4 [$OLD_T4]: " NEW_T4
+                    
+                    # Usar valores anteriores si no se introducen nuevos
+                    NEW_SERIE="${NEW_SERIE:-$OLD_SERIE}"
+                    NEW_POTENCIA="${NEW_POTENCIA:-$OLD_POTENCIA}"
+                    NEW_IMAX="${NEW_IMAX:-$OLD_IMAX}"
+                    NEW_T1="${NEW_T1:-$OLD_T1}"
+                    NEW_T2="${NEW_T2:-$OLD_T2}"
+                    NEW_T3="${NEW_T3:-$OLD_T3}"
+                    NEW_T4="${NEW_T4:-$OLD_T4}"
+                    
+                    # Guardar nueva configuración
+                    python3 -c "
+import json
+with open('$CONFIG_FILE') as f:
+    data = json.load(f)
+data['serie'] = '$NEW_SERIE'
+data['potencia'] = int('$NEW_POTENCIA')
+data['Imax'] = int('$NEW_IMAX')
+data['tramo1'] = int('$NEW_T1')
+data['tramo2'] = int('$NEW_T2')
+data['tramo3'] = int('$NEW_T3')
+data['tramo4'] = int('$NEW_T4')
+with open('$CONFIG_FILE', 'w') as f:
+    json.dump(data, f, indent=4)
+" 2>/dev/null
+                    
+                    echo ""
+                    echo "  ✅ Configuración guardada"
+                    echo ""
+                    echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                    sudo systemctl restart nodered
+                    sleep 2
+                    echo "  ✅ Node-RED reiniciado"
+                fi
+            else
+                echo "  ⚠️  No se encontró equipo_config.json"
+                echo "  Crea el archivo en: /home/gesinne/config/equipo_config.json"
+            fi
             
             exit 0
             ;;
