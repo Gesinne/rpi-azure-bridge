@@ -979,16 +979,25 @@ if not client.connect():
 
 try:
     num_regs = $NUM_REGS
-    data = []
     
-    # Leer en bloques de 50 (límite Modbus)
-    for start in range(0, num_regs, 50):
-        count = min(50, num_regs - start)
-        result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
-        if result.isError():
-            print(f"  ⚠️  Error en registros {start}-{start+count-1}: {result}")
-            break
-        data.extend(result.registers)
+    # Intentar leer todo de golpe primero
+    result = client.read_holding_registers(address=0, count=num_regs, slave=$UNIT_ID)
+    
+    if result.isError():
+        print(f"  ⚠️  Error leyendo {num_regs} registros de golpe: {result}")
+        print("  Intentando en bloques más pequeños...")
+        
+        # Si falla, intentar en bloques de 40
+        data = []
+        for start in range(0, num_regs, 40):
+            count = min(40, num_regs - start)
+            result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
+            if result.isError():
+                print(f"  ⚠️  Error en registros {start}-{start+count-1}: {result}")
+                break
+            data.extend(result.registers)
+    else:
+        data = result.registers
     
     if data:
         print(f"  📋 Registros Tarjeta $FASE (0-{len(data)-1}):")
