@@ -246,7 +246,7 @@ except:
             echo ""
             echo "  📥 Obteniendo versiones disponibles..."
             rm -rf "$TEMP_DIR"
-            if ! git clone -q "$NODERED_REPO" "$TEMP_DIR" 2>/dev/null; then
+            if ! git clone -q --depth 1 "$NODERED_REPO" "$TEMP_DIR" 2>/dev/null; then
                 echo "  ❌ Error accediendo al repositorio"
                 echo "  Verifica usuario y token"
                 exit 1
