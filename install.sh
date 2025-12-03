@@ -29,32 +29,60 @@ INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
 OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
 
 if [ -f "$OVERRIDE_FILE" ]; then
-    echo "  ✅ Instalación existente detectada"
+    echo "  ✅ Bridge Azure IoT instalado"
     echo ""
     echo "  ¿Qué deseas hacer?"
     echo ""
-    echo "  1) Actualizar software (mantener configuración)"
-    echo "  2) Reconfigurar (nueva connection string)"
-    echo "  3) Salir"
+    echo "  1) Actualizar software (mantener configuración actual)"
+    echo "  2) Cambiar a modo Azure IoT (nueva connection string)"
+    echo "  3) Cambiar a modo Servidor Remoto (mqtt.gesinne.cloud)"
+    echo "  4) Ver estado actual"
+    echo "  5) Salir"
     echo ""
-    read -p "  Opción [1/2/3]: " OPTION
+    read -p "  Opción [1-5]: " OPTION
     
     case $OPTION in
         1)
             echo ""
             echo "  📥 Actualizando..."
             cd "$INSTALL_DIR"
-            git pull
+            git stash -q 2>/dev/null || true
+            git fetch -q origin main
+            git reset --hard origin/main -q
             docker-compose down 2>/dev/null || true
             docker-compose up -d --build
             echo ""
             echo "  ✅ Actualización completada"
             echo ""
+            sleep 3
             docker-compose logs --tail=10
             exit 0
             ;;
         2)
-            # Continuar con reconfiguración
+            CONNECTION_MODE="1"
+            ;;
+        3)
+            CONNECTION_MODE="2"
+            ;;
+        4)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Estado actual"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            cd "$INSTALL_DIR"
+            if docker-compose ps | grep -q "Up"; then
+                echo "  🟢 Contenedor: Corriendo"
+            else
+                echo "  🔴 Contenedor: Parado"
+            fi
+            echo ""
+            echo "  📋 Últimos logs:"
+            docker-compose logs --tail=10 2>/dev/null | grep -E "✅|❌|📤|⚠️|Conectado" | tail -5
+            echo ""
+            curl -s http://localhost:8080/health 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "  ⚠️  Healthcheck no disponible"
+            echo ""
+            exit 0
             ;;
         *)
             echo ""
@@ -62,22 +90,23 @@ if [ -f "$OVERRIDE_FILE" ]; then
             exit 0
             ;;
     esac
+else
+    # Primera instalación - preguntar modo
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  PASO 1: Modo de conexión"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  ¿Cómo quieres enviar los datos?"
+    echo ""
+    echo "  1) Azure IoT Hub (localhost → Azure → Servidor)"
+    echo "     Node-RED envía a localhost, el bridge reenvía a Azure"
+    echo ""
+    echo "  2) Servidor directo (Node-RED → mqtt.gesinne.cloud)"
+    echo "     Node-RED envía directamente al servidor (modo tradicional)"
+    echo ""
+    read -p "  Opción [1/2]: " CONNECTION_MODE
 fi
-
-echo ""
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 1: Modo de conexión"
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "  ¿Cómo quieres enviar los datos?"
-echo ""
-echo "  1) Azure IoT Hub (localhost → Azure → Servidor)"
-echo "     Node-RED envía a localhost, el bridge reenvía a Azure"
-echo ""
-echo "  2) Servidor directo (Node-RED → mqtt.gesinne.cloud)"
-echo "     Node-RED envía directamente al servidor (modo tradicional)"
-echo ""
-read -p "  Opción [1/2]: " CONNECTION_MODE
 
 # Solo pedir connection string si elige Azure
 if [ "$CONNECTION_MODE" = "1" ]; then
