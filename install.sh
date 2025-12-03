@@ -6,75 +6,137 @@
 
 set -e
 
-echo "=============================================="
-echo "  Instalador MQTT → Azure IoT Hub Bridge"
-echo "=============================================="
+clear
+echo ""
+echo "  ╔══════════════════════════════════════════════╗"
+echo "  ║                                              ║"
+echo "  ║   INSTALADOR GESINNE - Azure IoT Bridge      ║"
+echo "  ║                                              ║"
+echo "  ╚══════════════════════════════════════════════╝"
 echo ""
 
 # Verificar que se ejecuta como root
 if [ "$EUID" -ne 0 ]; then
-    echo "❌ Este script debe ejecutarse como root (sudo)"
+    echo "  ❌ ERROR: Ejecutar con sudo"
+    echo ""
+    echo "  Usa: curl -sSL https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh | sudo bash"
+    echo ""
     exit 1
 fi
 
-# Pedir connection string si no se proporciona
-if [ -z "$AZURE_CONNECTION_STRING" ]; then
-    echo "📝 Introduce la Connection String del dispositivo Azure IoT Hub:"
-    echo "   (Formato: HostName=xxx.azure-devices.net;DeviceId=xxx;SharedAccessKey=xxx)"
+# Detectar si ya está instalado
+INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
+OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
+
+if [ -f "$OVERRIDE_FILE" ]; then
+    echo "  ✅ Instalación existente detectada"
     echo ""
-    read -p "Connection String: " AZURE_CONNECTION_STRING
+    echo "  ¿Qué deseas hacer?"
+    echo ""
+    echo "  1) Actualizar software (mantener configuración)"
+    echo "  2) Reconfigurar (nueva connection string)"
+    echo "  3) Salir"
+    echo ""
+    read -p "  Opción [1/2/3]: " OPTION
     
-    if [ -z "$AZURE_CONNECTION_STRING" ]; then
-        echo "❌ Connection string vacía. Abortando."
-        exit 1
-    fi
+    case $OPTION in
+        1)
+            echo ""
+            echo "  📥 Actualizando..."
+            cd "$INSTALL_DIR"
+            git pull
+            docker-compose down 2>/dev/null || true
+            docker-compose up -d --build
+            echo ""
+            echo "  ✅ Actualización completada"
+            echo ""
+            docker-compose logs --tail=10
+            exit 0
+            ;;
+        2)
+            # Continuar con reconfiguración
+            ;;
+        *)
+            echo ""
+            echo "  👋 Saliendo"
+            exit 0
+            ;;
+    esac
+fi
+
+echo ""
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  PASO 1: Connection String"
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "  Pega la Connection String del dispositivo Azure"
+echo "  (te la proporciona Gesinne o el cliente)"
+echo ""
+read -p "  Connection String: " AZURE_CONNECTION_STRING
+
+if [ -z "$AZURE_CONNECTION_STRING" ]; then
+    echo ""
+    echo "  ❌ No has introducido nada. Abortando."
+    exit 1
 fi
 
 # Validar formato básico
-if [[ ! "$AZURE_CONNECTION_STRING" =~ ^HostName=.*DeviceId=.*SharedAccessKey= ]]; then
-    echo "❌ Formato de connection string inválido"
+if [[ ! "$AZURE_CONNECTION_STRING" =~ HostName=.*DeviceId=.*SharedAccessKey= ]]; then
+    echo ""
+    echo "  ❌ Formato incorrecto. Debe contener:"
+    echo "     HostName=xxx;DeviceId=xxx;SharedAccessKey=xxx"
     exit 1
 fi
 
 echo ""
-echo "🔧 Instalando Docker..."
+echo "  ✅ Connection String válida"
+
+echo ""
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  PASO 2: Instalando Docker"
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
 
 # Instalar Docker si no existe
 if ! command -v docker &> /dev/null; then
-    apt-get update
-    apt-get install -y docker.io docker-compose
+    echo "  Instalando Docker (puede tardar unos minutos)..."
+    apt-get update -qq
+    apt-get install -y -qq docker.io docker-compose > /dev/null 2>&1
     systemctl start docker
     systemctl enable docker
-    echo "✅ Docker instalado"
+    echo "  ✅ Docker instalado"
 else
-    echo "✅ Docker ya instalado"
+    echo "  ✅ Docker ya instalado"
 fi
 
 # Instalar docker-compose si no existe
 if ! command -v docker-compose &> /dev/null; then
-    apt-get install -y docker-compose
-    echo "✅ Docker Compose instalado"
+    apt-get install -y -qq docker-compose > /dev/null 2>&1
+    echo "  ✅ Docker Compose instalado"
 fi
 
 echo ""
-echo "📥 Descargando puente MQTT → Azure..."
-
-# Clonar o actualizar repositorio
-INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  PASO 3: Descargando software"
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
 
 if [ -d "$INSTALL_DIR" ]; then
     cd "$INSTALL_DIR"
-    git pull
-    echo "✅ Repositorio actualizado"
+    git pull -q
+    echo "  ✅ Software actualizado"
 else
-    git clone https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
-    echo "✅ Repositorio clonado"
+    git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
+    echo "  ✅ Software descargado"
 fi
 
 cd "$INSTALL_DIR"
 
 echo ""
-echo "⚙️ Configurando connection string..."
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  PASO 4: Configurando e iniciando"
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
 
 # Crear docker-compose.override.yml con la connection string
 cat > docker-compose.override.yml << EOF
@@ -85,31 +147,34 @@ services:
 EOF
 
 chmod 600 docker-compose.override.yml
-echo "✅ Configuración guardada"
-
-echo ""
-echo "🚀 Iniciando servicio..."
 
 # Parar contenedor anterior si existe
 docker-compose down 2>/dev/null || true
 
 # Construir e iniciar
-docker-compose up -d --build
+echo "  Iniciando servicio (puede tardar 1-2 minutos)..."
+docker-compose up -d --build > /dev/null 2>&1
+
+echo "  ✅ Servicio iniciado"
 
 echo ""
-echo "=============================================="
-echo "  ✅ Instalación completada"
-echo "=============================================="
+echo "  ╔══════════════════════════════════════════════╗"
+echo "  ║                                              ║"
+echo "  ║   ✅ INSTALACIÓN COMPLETADA                  ║"
+echo "  ║                                              ║"
+echo "  ╚══════════════════════════════════════════════╝"
 echo ""
-echo "📍 Directorio: $INSTALL_DIR"
-echo "🔍 Ver logs:   cd $INSTALL_DIR && sudo docker-compose logs -f"
-echo "🏥 Healthcheck: curl http://localhost:8080/health"
+echo "  El servicio está funcionando y se iniciará"
+echo "  automáticamente cuando reinicies la Raspberry."
 echo ""
-echo "⚡ El servicio se iniciará automáticamente al reiniciar"
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Verificando conexión..."
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Mostrar logs iniciales
-echo "📋 Logs iniciales:"
-echo "---"
-sleep 3
-docker-compose logs --tail=20
+sleep 5
+docker-compose logs --tail=15 2>/dev/null | grep -E "✅|❌|📤|⚠️" | head -10
+
+echo ""
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
