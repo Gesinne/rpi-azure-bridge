@@ -105,9 +105,8 @@ if [ -f "$OVERRIDE_FILE" ]; then
             echo ""
             
             # Mostrar config del equipo desde archivo de configuración
-            USER_HOME="/home/$(logname 2>/dev/null || echo 'pi')"
             CONFIG_FILE=""
-            for f in "$USER_HOME/config/equipo_config.json" "/home/pi/config/equipo_config.json" "/home/gesinne/config/equipo_config.json"; do
+            for f in /home/*/config/equipo_config.json; do
                 if [ -f "$f" ]; then
                     CONFIG_FILE="$f"
                     break
