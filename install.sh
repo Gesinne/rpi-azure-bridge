@@ -73,9 +73,10 @@ if [ -f "$OVERRIDE_FILE" ]; then
     echo "  5) Actualizar Flow Node-RED"
     echo "  6) Restaurar Flow anterior (backup)"
     echo "  7) Modificar configuración equipo"
-    echo "  8) Salir"
+    echo "  8) Leer registros Modbus"
+    echo "  9) Salir"
     echo ""
-    read -p "  Opción [1-8]: " OPTION
+    read -p "  Opción [1-9]: " OPTION
     
     case $OPTION in
         1)
@@ -914,6 +915,111 @@ with open('$CONFIG_FILE', 'w') as f:
                     echo "  ✅ Kiosko reiniciado"
                 fi
             fi
+            
+            exit 0
+            ;;
+        8)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Leer registros Modbus"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  ¿Qué tarjeta quieres leer?"
+            echo ""
+            echo "  1) Tarjeta L1 (Fase 1)"
+            echo "  2) Tarjeta L2 (Fase 2)"
+            echo "  3) Tarjeta L3 (Fase 3)"
+            echo ""
+            read -p "  Opción [1-3]: " TARJETA
+            
+            case $TARJETA in
+                1) UNIT_ID=1; FASE="L1" ;;
+                2) UNIT_ID=2; FASE="L2" ;;
+                3) UNIT_ID=3; FASE="L3" ;;
+                *) echo "  ❌ Opción no válida"; exit 1 ;;
+            esac
+            
+            echo ""
+            echo "  📡 Leyendo registros de Tarjeta $FASE (Unit ID: $UNIT_ID)..."
+            echo ""
+            
+            # Usar Python con pymodbus para leer los registros
+            python3 << EOF
+import sys
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  ❌ pymodbus no instalado. Instala con: pip3 install pymodbus")
+        sys.exit(1)
+
+client = ModbusSerialClient(
+    port='/dev/ttyAMA0',
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  ❌ No se pudo conectar al puerto serie /dev/ttyAMA0")
+    sys.exit(1)
+
+try:
+    result = client.read_holding_registers(address=0, count=67, slave=$UNIT_ID)
+    
+    if result.isError():
+        print(f"  ❌ Error leyendo registros: {result}")
+        sys.exit(1)
+    
+    data = result.registers
+    
+    print("  ┌─────────────────────────────────────────────────────────────┐")
+    print("  │  REGISTROS TARJETA $FASE                                    │")
+    print("  ├─────────────────────────────────────────────────────────────┤")
+    print(f"  │  Tensión Entrada:    {data[4]/100:>8.2f} V                       │")
+    print(f"  │  Tensión Salida:     {data[3]/100:>8.2f} V                       │")
+    print(f"  │  Diferencia:         {(data[4]-data[3])/100:>8.2f} V                       │")
+    print(f"  │  Corriente:          {data[6]/10:>8.1f} A                        │")
+    print(f"  │  Corriente Chopper:  {data[7]/100:>8.2f} A                       │")
+    print(f"  │  Frecuencia:         {data[5]/100:>8.2f} Hz                      │")
+    print(f"  │  Factor Potencia:    {data[15]/100:>8.2f}                         │")
+    print(f"  │  Temperatura:        {data[17]/10:>8.1f} °C                       │")
+    print("  ├─────────────────────────────────────────────────────────────┤")
+    
+    # Potencia activa (32 bits)
+    pot_activa = ((data[9] << 16) | data[10]) / 10000
+    pot_reactiva = ((data[11] << 16) | data[12]) / 10000
+    pot_aparente = ((data[13] << 16) | data[14]) / 10000
+    
+    print(f"  │  Potencia Activa:    {pot_activa:>8.2f} kW                      │")
+    print(f"  │  Potencia Reactiva:  {pot_reactiva:>8.2f} kVAr                    │")
+    print(f"  │  Potencia Aparente:  {pot_aparente:>8.2f} kVA                     │")
+    print("  ├─────────────────────────────────────────────────────────────┤")
+    print(f"  │  Alarma:             {data[2]:>8d}                           │")
+    print(f"  │  Estado Bypass:      {data[31]:>8d}   (0=normal,1=bypass,2=reg) │")
+    print(f"  │  Consigna:           {data[32]/10:>8.1f} V                        │")
+    print(f"  │  Estado Inicial:     {data[55]:>8d}                           │")
+    print(f"  │  Tensión Inicial:    {data[56]/10:>8.1f} V                        │")
+    print("  └─────────────────────────────────────────────────────────────┘")
+    print("")
+    print("  📋 Registros raw (0-66):")
+    print("  ", end="")
+    for i, val in enumerate(data):
+        print(f"{i:02d}:{val:5d}", end="  ")
+        if (i + 1) % 8 == 0:
+            print("")
+            print("  ", end="")
+    print("")
+    
+except Exception as e:
+    print(f"  ❌ Error: {e}")
+finally:
+    client.close()
+EOF
             
             exit 0
             ;;
