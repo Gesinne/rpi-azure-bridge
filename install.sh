@@ -226,15 +226,29 @@ except:
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             
-            NODERED_REPO="https://github.com/Gesinne/NODERED.git"
             TEMP_DIR="/tmp/nodered_flows_$$"
             
+            # Solicitar credenciales de GitHub
+            echo "  🔐 Credenciales de GitHub (repo privado)"
+            echo ""
+            read -p "  Usuario GitHub: " GIT_USER
+            read -s -p "  Token/Contraseña: " GIT_TOKEN
+            echo ""
+            
+            if [ -z "$GIT_USER" ] || [ -z "$GIT_TOKEN" ]; then
+                echo "  ❌ Usuario y token son requeridos"
+                exit 1
+            fi
+            
+            NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
+            
             # Clonar repo para obtener versiones
+            echo ""
             echo "  📥 Obteniendo versiones disponibles..."
             rm -rf "$TEMP_DIR"
             if ! git clone -q "$NODERED_REPO" "$TEMP_DIR" 2>/dev/null; then
                 echo "  ❌ Error accediendo al repositorio"
-                echo "  Verifica que tienes acceso a: $NODERED_REPO"
+                echo "  Verifica usuario y token"
                 exit 1
             fi
             
