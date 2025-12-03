@@ -93,7 +93,88 @@ echo "  ✅ Connection String válida"
 
 echo ""
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 2: Instalando Docker"
+echo "  PASO 2: Configurar Node-RED"
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Buscar archivo de flows de Node-RED
+USER_HOME="/home/$(logname 2>/dev/null || echo 'pi')"
+FLOWS_FILE=""
+for f in "$USER_HOME/.node-red/flows.json" "/home/pi/.node-red/flows.json" "/home/gesinne/.node-red/flows.json"; do
+    if [ -f "$f" ]; then
+        FLOWS_FILE="$f"
+        break
+    fi
+done
+
+if [ -n "$FLOWS_FILE" ]; then
+    # Extraer configuración actual del broker MQTT
+    CURRENT_BROKER=$(grep -o '"broker"[[:space:]]*:[[:space:]]*"[^"]*"' "$FLOWS_FILE" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+    
+    # Buscar el nodo mqtt-broker y su configuración
+    BROKER_HOST=$(python3 -c "
+import json
+try:
+    with open('$FLOWS_FILE', 'r') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'mqtt-broker':
+            print(node.get('broker', 'no configurado'))
+            break
+except:
+    print('error')
+" 2>/dev/null)
+
+    echo "  📡 Node-RED detectado"
+    echo "  📁 Archivo: $FLOWS_FILE"
+    echo "  🔗 Broker actual: $BROKER_HOST"
+    echo ""
+    
+    if [ "$BROKER_HOST" != "localhost" ] && [ "$BROKER_HOST" != "127.0.0.1" ]; then
+        echo "  ⚠️  El broker NO apunta a localhost"
+        echo ""
+        read -p "  ¿Cambiar broker a localhost? [S/n]: " CHANGE_BROKER
+        
+        if [ "$CHANGE_BROKER" != "n" ] && [ "$CHANGE_BROKER" != "N" ]; then
+            # Hacer backup
+            cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+            
+            # Cambiar broker a localhost usando Python
+            python3 -c "
+import json
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'mqtt-broker':
+        node['broker'] = 'localhost'
+        node['port'] = '1883'
+        if 'usetls' in node:
+            node['usetls'] = False
+        if 'credentials' in node:
+            del node['credentials']
+with open('$FLOWS_FILE', 'w') as f:
+    json.dump(flows, f, indent=4)
+print('OK')
+" 2>/dev/null
+            
+            echo "  ✅ Broker cambiado a localhost:1883"
+            echo ""
+            echo "  ⚠️  Reiniciando Node-RED..."
+            systemctl restart nodered 2>/dev/null || node-red-restart 2>/dev/null || true
+            sleep 2
+            echo "  ✅ Node-RED reiniciado"
+        fi
+    else
+        echo "  ✅ Broker ya configurado en localhost"
+    fi
+else
+    echo "  ⚠️  Node-RED no detectado (no se encontró flows.json)"
+    echo "     Configura manualmente el broker MQTT a localhost:1883"
+fi
+
+echo ""
+echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  PASO 3: Instalando Docker"
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -117,7 +198,7 @@ fi
 
 echo ""
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 3: Descargando software"
+echo "  PASO 4: Descargando software"
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -140,7 +221,7 @@ cd "$INSTALL_DIR"
 
 echo ""
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 4: Configurando e iniciando"
+echo "  PASO 5: Configurando e iniciando"
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
