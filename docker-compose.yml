@@ -1,5 +1,5 @@
 services:
-  # Puente MQTT → Azure
+  # Puente MQTT → Azure v2.0
   mqtt-to-azure:
     build: .
     container_name: mqtt-to-azure
@@ -16,3 +16,13 @@ services:
       
       # Intervalo de envío (1 para S1, 10 para F1 gratuito)
       - SEND_INTERVAL=1
+      
+      # Puerto healthcheck (accesible en http://localhost:8080/health)
+      - HEALTHCHECK_PORT=8080
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
