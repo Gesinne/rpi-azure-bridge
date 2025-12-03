@@ -481,10 +481,48 @@ except:
             cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
             echo "  💾 Backup creado: $BACKUP_FILE"
             
+            # Guardar configuración MQTT actual antes de sobrescribir
+            MQTT_CONFIG=$(python3 -c "
+import json
+try:
+    with open('$NODERED_DIR/flows.json', 'r') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'mqtt-broker':
+            print(json.dumps({
+                'broker': node.get('broker', 'localhost'),
+                'port': node.get('port', '1883'),
+                'usetls': node.get('usetls', False)
+            }))
+            break
+except:
+    pass
+" 2>/dev/null)
+            
             # Verificar que es JSON válido e instalar
             if python3 -c "import json; json.load(open('$FLOW_FILE'))" 2>/dev/null; then
                 cp "$FLOW_FILE" "$NODERED_DIR/flows.json"
-                echo "  ✅ Flow instalado: $VERSION_NAME"
+                
+                # Restaurar configuración MQTT si existía
+                if [ -n "$MQTT_CONFIG" ]; then
+                    python3 -c "
+import json
+mqtt_config = json.loads('$MQTT_CONFIG')
+with open('$NODERED_DIR/flows.json', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'mqtt-broker':
+        node['broker'] = mqtt_config['broker']
+        node['port'] = mqtt_config['port']
+        node['usetls'] = mqtt_config['usetls']
+with open('$NODERED_DIR/flows.json', 'w') as f:
+    json.dump(flows, f, indent=4)
+" 2>/dev/null
+                    echo "  ✅ Flow instalado: $VERSION_NAME"
+                    echo "  🔗 Configuración MQTT preservada: ${MQTT_CONFIG}"
+                else
+                    echo "  ✅ Flow instalado: $VERSION_NAME"
+                fi
                 echo ""
                 echo "  🔄 Reiniciando Node-RED..."
                 sudo systemctl restart nodered
@@ -720,12 +758,50 @@ with open('$CONFIG_FILE', 'w') as f:
                 fi
             fi
             
+            # Guardar configuración MQTT actual antes de restaurar
+            MQTT_CONFIG=$(python3 -c "
+import json
+try:
+    with open('$NODERED_DIR/flows.json', 'r') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'mqtt-broker':
+            print(json.dumps({
+                'broker': node.get('broker', 'localhost'),
+                'port': node.get('port', '1883'),
+                'usetls': node.get('usetls', False)
+            }))
+            break
+except:
+    pass
+" 2>/dev/null)
+            
             # Hacer backup del actual antes de restaurar
             cp "$NODERED_DIR/flows.json" "$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S)"
             
             # Restaurar
             cp "$SELECTED_BACKUP" "$NODERED_DIR/flows.json"
-            echo "  ✅ Flow restaurado"
+            
+            # Restaurar configuración MQTT si existía
+            if [ -n "$MQTT_CONFIG" ]; then
+                python3 -c "
+import json
+mqtt_config = json.loads('$MQTT_CONFIG')
+with open('$NODERED_DIR/flows.json', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'mqtt-broker':
+        node['broker'] = mqtt_config['broker']
+        node['port'] = mqtt_config['port']
+        node['usetls'] = mqtt_config['usetls']
+with open('$NODERED_DIR/flows.json', 'w') as f:
+    json.dump(flows, f, indent=4)
+" 2>/dev/null
+                echo "  ✅ Flow restaurado"
+                echo "  🔗 Configuración MQTT preservada: ${MQTT_CONFIG}"
+            else
+                echo "  ✅ Flow restaurado"
+            fi
             echo ""
             echo "  🔄 Reiniciando Node-RED..."
             sudo systemctl restart nodered
