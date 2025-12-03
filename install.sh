@@ -60,7 +60,7 @@ echo ""
 echo "📥 Descargando puente MQTT → Azure..."
 
 # Clonar o actualizar repositorio
-INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
+INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/iot-bridge-installer"
 
 if [ -d "$INSTALL_DIR" ]; then
     cd "$INSTALL_DIR"
