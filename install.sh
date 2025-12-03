@@ -181,6 +181,14 @@ except:
                 fi
             done
             
+            # Mostrar espacio en disco
+            DISK_INFO=$(df -h / | tail -1 | awk '{print $2, $3, $4, $5}')
+            TOTAL=$(echo $DISK_INFO | cut -d' ' -f1)
+            USADO=$(echo $DISK_INFO | cut -d' ' -f2)
+            LIBRE=$(echo $DISK_INFO | cut -d' ' -f3)
+            PORCENTAJE=$(echo $DISK_INFO | cut -d' ' -f4)
+            echo "  💾 Disco: ${USADO}/${TOTAL} usado (${LIBRE} libre) ${PORCENTAJE}"
+            
             show_nodered_config
             echo ""
             cd "$INSTALL_DIR" 2>/dev/null
