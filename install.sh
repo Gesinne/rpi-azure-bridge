@@ -252,17 +252,17 @@ except:
                 exit 1
             fi
             
-            # Obtener versión actual instalada
+            # Obtener versión actual instalada (buscar específicamente global.set('Version',...))
             CURRENT_VERSION=""
             for flowfile in /home/*/.node-red/flows.json; do
                 if [ -f "$flowfile" ]; then
                     CURRENT_VERSION=$(python3 -c "
-import json, re
+import re
 try:
     with open('$flowfile') as f:
         content = f.read()
-    # Buscar versión en formato YYYY_MM_DD_xxx
-    match = re.search(r'([0-9]{4})_([0-9]{2})_([0-9]{2})_[a-zA-Z0-9]+', content)
+    # Buscar específicamente global.set('Version', 'YYYY_MM_DD_xxx')
+    match = re.search(r\"global\.set\(['\\\"]Version['\\\"][^'\\\"]*['\\\"]([0-9]{4})_([0-9]{2})_([0-9]{2})\", content)
     if match:
         print(f'{match.group(1)}{match.group(2)}{match.group(3)}')
 except:
