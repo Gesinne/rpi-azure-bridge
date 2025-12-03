@@ -673,6 +673,46 @@ with open('$CONFIG_FILE', 'w') as f:
             echo ""
             echo "  📥 Restaurando backup..."
             
+            # Detectar si el backup necesita FlowFuse o Clásico
+            BACKUP_NAME=$(basename "$SELECTED_BACKUP")
+            NEEDS_FLOWFUSE="no"
+            if grep -q "dbrd2\|@flowfuse" "$SELECTED_BACKUP" 2>/dev/null; then
+                NEEDS_FLOWFUSE="yes"
+            fi
+            
+            # Verificar dashboards instalados
+            NODERED_MODULES="$NODERED_DIR/node_modules"
+            HAS_FLOWFUSE=$([ -d "$NODERED_MODULES/@flowfuse/node-red-dashboard" ] && echo "yes" || echo "no")
+            HAS_CLASSIC=$([ -d "$NODERED_MODULES/node-red-dashboard" ] && echo "yes" || echo "no")
+            
+            # Resolver conflictos de dashboard
+            cd "$NODERED_DIR"
+            if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
+                if [ "$HAS_FLOWFUSE" = "no" ]; then
+                    echo "  ⚠️  Este backup requiere FlowFuse Dashboard"
+                    echo "  Instalando..."
+                    npm uninstall node-red-dashboard 2>/dev/null || true
+                    npm install @flowfuse/node-red-dashboard --save
+                    echo "  ✅ FlowFuse Dashboard instalado"
+                elif [ "$HAS_CLASSIC" = "yes" ]; then
+                    echo "  ⚠️  Limpiando conflicto de dashboards..."
+                    npm uninstall node-red-dashboard 2>/dev/null || true
+                    echo "  ✅ Conflicto resuelto"
+                fi
+            else
+                if [ "$HAS_CLASSIC" = "no" ]; then
+                    echo "  ⚠️  Este backup requiere Dashboard Clásico"
+                    echo "  Instalando..."
+                    npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
+                    npm install node-red-dashboard --save
+                    echo "  ✅ Dashboard Clásico instalado"
+                elif [ "$HAS_FLOWFUSE" = "yes" ]; then
+                    echo "  ⚠️  Limpiando conflicto de dashboards..."
+                    npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
+                    echo "  ✅ Conflicto resuelto"
+                fi
+            fi
+            
             # Hacer backup del actual antes de restaurar
             cp "$NODERED_DIR/flows.json" "$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S)"
             
@@ -682,7 +722,7 @@ with open('$CONFIG_FILE', 'w') as f:
             echo ""
             echo "  🔄 Reiniciando Node-RED..."
             sudo systemctl restart nodered
-            sleep 3
+            sleep 5
             echo "  ✅ Node-RED reiniciado"
             
             # Reiniciar kiosko si existe
