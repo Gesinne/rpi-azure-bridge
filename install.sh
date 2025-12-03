@@ -940,68 +940,80 @@ with open('$CONFIG_FILE', 'w') as f:
             esac
             
             echo ""
-            echo "  📡 Leyendo registros de Tarjeta $FASE desde Node-RED..."
+            read -p "  ¿Cuántos registros quieres leer? [67]: " NUM_REGS
+            NUM_REGS=${NUM_REGS:-67}
+            
+            echo ""
+            echo "  ⚠️  Se parará Node-RED temporalmente para leer..."
             echo ""
             
-            # Leer desde el contexto de Node-RED (ya tiene los datos en memoria)
-            NODERED_DIR=""
-            for d in /home/*/.node-red; do
-                if [ -d "$d" ]; then
-                    NODERED_DIR="$d"
-                    break
-                fi
-            done
+            sudo systemctl stop nodered
+            sleep 1
             
-            # Buscar en el archivo de contexto de flow
-            CONTEXT_FILE="$NODERED_DIR/context/flow.json"
-            
-            if [ ! -f "$CONTEXT_FILE" ]; then
-                # Intentar con el store por defecto
-                CONTEXT_FILE=$(find "$NODERED_DIR/context" -name "*.json" 2>/dev/null | head -1)
-            fi
+            echo "  📡 Leyendo $NUM_REGS registros de Tarjeta $FASE (Unit ID: $UNIT_ID)..."
+            echo ""
             
             python3 << EOF
-import json
 import sys
-import os
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  ❌ pymodbus no instalado. Instala con: pip3 install pymodbus")
+        sys.exit(1)
 
-# Buscar archivos de contexto
-context_dir = "$NODERED_DIR/context"
-fase = "$FASE"
+client = ModbusSerialClient(
+    port='/dev/ttyAMA0',
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
 
-data = None
+if not client.connect():
+    print("  ❌ No se pudo conectar al puerto serie /dev/ttyAMA0")
+    sys.exit(1)
 
-# Buscar en todos los archivos de contexto
-for root, dirs, files in os.walk(context_dir):
-    for f in files:
-        if f.endswith('.json'):
-            try:
-                with open(os.path.join(root, f)) as file:
-                    ctx = json.load(file)
-                    # Buscar payload_data_L1, L2 o L3
-                    key = f"payload_data_{fase}"
-                    if key in ctx:
-                        data = ctx[key]
-                        break
-                    # También buscar en formato anidado
-                    for k, v in ctx.items():
-                        if isinstance(v, dict) and key in v:
-                            data = v[key]
-                            break
-            except:
-                continue
+try:
+    num_regs = $NUM_REGS
+    data = []
+    
+    # Leer en bloques de 50 (límite Modbus)
+    for start in range(0, num_regs, 50):
+        count = min(50, num_regs - start)
+        result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
+        if result.isError():
+            print(f"  ⚠️  Error en registros {start}-{start+count-1}: {result}")
+            break
+        data.extend(result.registers)
+    
     if data:
-        break
-
-if data:
-    print(f"  📋 Registros Tarjeta {fase} (0-{len(data)-1}):")
-    print("")
-    print("  " + ",".join(str(int(val)) for val in data))
-    print("")
-else:
-    print(f"  ❌ No se encontraron datos de {fase} en el contexto de Node-RED")
-    print("  Asegúrate de que Node-RED está corriendo y ha leído datos")
+        print(f"  📋 Registros Tarjeta $FASE (0-{len(data)-1}):")
+        print("")
+        print("  " + ",".join(str(val) for val in data))
+        print("")
+    else:
+        print("  ❌ No se pudieron leer registros")
+    
+except Exception as e:
+    print(f"  ❌ Error: {e}")
+finally:
+    client.close()
 EOF
+            
+            echo "  🔄 Reiniciando Node-RED..."
+            sudo systemctl start nodered
+            sleep 2
+            
+            # Reiniciar kiosko si existe
+            if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                sudo systemctl restart kiosk.service
+            fi
+            
+            echo "  ✅ Listo"
             
             exit 0
             ;;
