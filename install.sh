@@ -28,8 +28,41 @@ fi
 INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
 OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
 
+# Función para mostrar config de Node-RED
+show_nodered_config() {
+    USER_HOME="/home/$(logname 2>/dev/null || echo 'pi')"
+    for f in "$USER_HOME/.node-red/flows.json" "/home/pi/.node-red/flows.json" "/home/gesinne/.node-red/flows.json"; do
+        if [ -f "$f" ]; then
+            FLOWS_FILE="$f"
+            break
+        fi
+    done
+    
+    if [ -n "$FLOWS_FILE" ]; then
+        BROKER_INFO=$(python3 -c "
+import json
+try:
+    with open('$FLOWS_FILE', 'r') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'mqtt-broker':
+            broker = node.get('broker', '?')
+            port = node.get('port', '?')
+            tls = '🔒 SSL' if node.get('usetls') else '🔓 Sin SSL'
+            print(f'{broker}:{port} {tls}')
+            break
+except:
+    print('No detectado')
+" 2>/dev/null)
+        echo "  📡 Node-RED MQTT: $BROKER_INFO"
+    else
+        echo "  📡 Node-RED: No detectado"
+    fi
+}
+
 if [ -f "$OVERRIDE_FILE" ]; then
     echo "  ✅ Bridge Azure IoT instalado"
+    show_nodered_config
     echo ""
     echo "  ¿Qué deseas hacer?"
     echo ""
@@ -70,17 +103,32 @@ if [ -f "$OVERRIDE_FILE" ]; then
             echo "  Estado actual"
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
+            show_nodered_config
+            echo ""
             cd "$INSTALL_DIR"
             if docker-compose ps | grep -q "Up"; then
-                echo "  🟢 Contenedor: Corriendo"
+                echo "  🟢 Bridge Docker: Corriendo"
             else
-                echo "  🔴 Contenedor: Parado"
+                echo "  🔴 Bridge Docker: Parado"
             fi
             echo ""
-            echo "  📋 Últimos logs:"
-            docker-compose logs --tail=10 2>/dev/null | grep -E "✅|❌|📤|⚠️|Conectado" | tail -5
+            echo "  📋 Healthcheck:"
+            curl -s http://localhost:8080/health 2>/dev/null | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    azure = '🟢' if d.get('azure_connected') else '🔴'
+    mqtt = '🟢' if d.get('mqtt_connected') else '🔴'
+    print(f'  {azure} Azure IoT Hub')
+    print(f'  {mqtt} MQTT Local')
+    print(f'  📊 Mensajes enviados: {d.get(\"messages_sent\", 0)}')
+    print(f'  💾 Buffer offline: {d.get(\"offline_buffer_size\", 0)}')
+except:
+    print('  ⚠️  No disponible')
+" 2>/dev/null
             echo ""
-            curl -s http://localhost:8080/health 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "  ⚠️  Healthcheck no disponible"
+            echo "  📋 Últimos logs:"
+            docker-compose logs --tail=5 2>/dev/null | grep -E "✅|❌|📤|⚠️|Conectado" | tail -5
             echo ""
             exit 0
             ;;
