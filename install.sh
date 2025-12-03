@@ -66,36 +66,48 @@ fi
 
 echo ""
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 1: Connection String"
+echo "  PASO 1: Modo de conexión"
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "  Pega la Connection String del dispositivo Azure"
-echo "  (te la proporciona Gesinne o el cliente)"
+echo "  ¿Cómo quieres enviar los datos?"
 echo ""
-read -p "  Connection String: " AZURE_CONNECTION_STRING
+echo "  1) Azure IoT Hub (localhost → Azure → Servidor)"
+echo "     Node-RED envía a localhost, el bridge reenvía a Azure"
+echo ""
+echo "  2) Servidor directo (Node-RED → mqtt.gesinne.cloud)"
+echo "     Node-RED envía directamente al servidor (modo tradicional)"
+echo ""
+read -p "  Opción [1/2]: " CONNECTION_MODE
 
-if [ -z "$AZURE_CONNECTION_STRING" ]; then
+# Solo pedir connection string si elige Azure
+if [ "$CONNECTION_MODE" = "1" ]; then
     echo ""
-    echo "  ❌ No has introducido nada. Abortando."
-    exit 1
-fi
-
-# Validar formato básico
-if [[ ! "$AZURE_CONNECTION_STRING" =~ HostName=.*DeviceId=.*SharedAccessKey= ]]; then
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  PASO 2: Connection String"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "  ❌ Formato incorrecto. Debe contener:"
-    echo "     HostName=xxx;DeviceId=xxx;SharedAccessKey=xxx"
-    exit 1
+    echo "  Pega la Connection String del dispositivo Azure"
+    echo "  (te la proporciona Gesinne o el cliente)"
+    echo ""
+    read -p "  Connection String: " AZURE_CONNECTION_STRING
+
+    if [ -z "$AZURE_CONNECTION_STRING" ]; then
+        echo ""
+        echo "  ❌ No has introducido nada. Abortando."
+        exit 1
+    fi
+
+    # Validar formato básico
+    if [[ ! "$AZURE_CONNECTION_STRING" =~ HostName=.*DeviceId=.*SharedAccessKey= ]]; then
+        echo ""
+        echo "  ❌ Formato incorrecto. Debe contener:"
+        echo "     HostName=xxx;DeviceId=xxx;SharedAccessKey=xxx"
+        exit 1
+    fi
+
+    echo ""
+    echo "  ✅ Connection String válida"
 fi
-
-echo ""
-echo "  ✅ Connection String válida"
-
-echo ""
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 2: Configurar Node-RED"
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
 
 # Buscar archivo de flows de Node-RED
 USER_HOME="/home/$(logname 2>/dev/null || echo 'pi')"
@@ -107,11 +119,12 @@ for f in "$USER_HOME/.node-red/flows.json" "/home/pi/.node-red/flows.json" "/hom
     fi
 done
 
-if [ -n "$FLOWS_FILE" ]; then
-    # Extraer configuración actual del broker MQTT
-    CURRENT_BROKER=$(grep -o '"broker"[[:space:]]*:[[:space:]]*"[^"]*"' "$FLOWS_FILE" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
-    
-    # Buscar el nodo mqtt-broker y su configuración
+if [ -z "$FLOWS_FILE" ]; then
+    echo ""
+    echo "  ⚠️  Node-RED no detectado (no se encontró flows.json)"
+    echo "     Configura manualmente el broker MQTT"
+else
+    # Obtener configuración actual
     BROKER_HOST=$(python3 -c "
 import json
 try:
@@ -125,21 +138,18 @@ except:
     print('error')
 " 2>/dev/null)
 
+    echo ""
     echo "  📡 Node-RED detectado"
     echo "  📁 Archivo: $FLOWS_FILE"
     echo "  🔗 Broker actual: $BROKER_HOST"
     echo ""
-    
-    if [ "$BROKER_HOST" != "localhost" ] && [ "$BROKER_HOST" != "127.0.0.1" ]; then
-        echo "  ⚠️  El broker NO apunta a localhost"
-        echo ""
-        read -p "  ¿Cambiar broker a localhost? [S/n]: " CHANGE_BROKER
-        
-        if [ "$CHANGE_BROKER" != "n" ] && [ "$CHANGE_BROKER" != "N" ]; then
-            # Hacer backup
-            cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
-            
-            # Cambiar broker a localhost usando Python
+
+    # Hacer backup antes de cualquier cambio
+    cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+
+    if [ "$CONNECTION_MODE" = "1" ]; then
+        # Modo Azure IoT - cambiar a localhost
+        if [ "$BROKER_HOST" != "localhost" ] && [ "$BROKER_HOST" != "127.0.0.1" ]; then
             python3 -c "
 import json
 with open('$FLOWS_FILE', 'r') as f:
@@ -148,28 +158,62 @@ for node in flows:
     if node.get('type') == 'mqtt-broker':
         node['broker'] = 'localhost'
         node['port'] = '1883'
-        if 'usetls' in node:
-            node['usetls'] = False
-        if 'credentials' in node:
-            del node['credentials']
+        node['usetls'] = False
 with open('$FLOWS_FILE', 'w') as f:
     json.dump(flows, f, indent=4)
-print('OK')
 " 2>/dev/null
-            
-            echo "  ✅ Broker cambiado a localhost:1883"
-            echo ""
-            echo "  ⚠️  Reiniciando Node-RED..."
-            systemctl restart nodered 2>/dev/null || node-red-restart 2>/dev/null || true
-            sleep 2
-            echo "  ✅ Node-RED reiniciado"
+            echo "  ✅ Broker cambiado a localhost:1883 (sin SSL)"
+            RESTART_NODERED=1
+        else
+            echo "  ✅ Broker ya configurado en localhost"
         fi
+        USE_AZURE=1
     else
-        echo "  ✅ Broker ya configurado en localhost"
+        # Modo servidor directo - cambiar a mqtt.gesinne.cloud
+        if [ "$BROKER_HOST" = "localhost" ] || [ "$BROKER_HOST" = "127.0.0.1" ]; then
+            python3 -c "
+import json
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'mqtt-broker':
+        node['broker'] = 'mqtt.gesinne.cloud'
+        node['port'] = '8883'
+        node['usetls'] = True
+with open('$FLOWS_FILE', 'w') as f:
+    json.dump(flows, f, indent=4)
+" 2>/dev/null
+            echo "  ✅ Broker cambiado a mqtt.gesinne.cloud:8883 (SSL)"
+            RESTART_NODERED=1
+        else
+            echo "  ✅ Broker ya configurado en $BROKER_HOST"
+        fi
+        USE_AZURE=0
     fi
-else
-    echo "  ⚠️  Node-RED no detectado (no se encontró flows.json)"
-    echo "     Configura manualmente el broker MQTT a localhost:1883"
+
+    # Reiniciar Node-RED si hubo cambios
+    if [ "$RESTART_NODERED" = "1" ]; then
+        echo ""
+        echo "  ⚠️  Reiniciando Node-RED..."
+        systemctl restart nodered 2>/dev/null || node-red-restart 2>/dev/null || true
+        sleep 2
+        echo "  ✅ Node-RED reiniciado"
+    fi
+fi
+
+# Si eligió modo servidor directo, no necesita el bridge de Azure
+if [ "$CONNECTION_MODE" = "2" ]; then
+    echo ""
+    echo "  ╔══════════════════════════════════════════════╗"
+    echo "  ║                                              ║"
+    echo "  ║   ✅ CONFIGURACIÓN COMPLETADA                ║"
+    echo "  ║                                              ║"
+    echo "  ╚══════════════════════════════════════════════╝"
+    echo ""
+    echo "  Node-RED enviará directamente al servidor."
+    echo "  No se necesita el bridge de Azure IoT."
+    echo ""
+    exit 0
 fi
 
 echo ""
