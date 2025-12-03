@@ -127,7 +127,7 @@ except:
 " 2>/dev/null
             fi
             
-            # Mostrar versión desde el código del flow
+            # Mostrar versión y firmware desde Node-RED
             for flowfile in /home/*/.node-red/flows.json; do
                 if [ -f "$flowfile" ]; then
                     python3 -c "
@@ -135,14 +135,27 @@ import json, re
 try:
     with open('$flowfile') as file:
         flows = json.load(file)
+    
+    # Buscar versión en varios nodos posibles
+    version_found = False
     for node in flows:
-        if node.get('name') == 'Editar lo necesario':
-            func = node.get('func', '')
-            match = re.search(r'Version.*?([0-9]{4}_[0-9]{2}_[0-9]{2}[^\"]*)', func)
+        name = node.get('name', '')
+        func = node.get('func', '')
+        if name in ['Editar lo necesario', 'Establecer valores globales', 'No tocar'] or 'Version' in func:
+            match = re.search(r'Version[^0-9]*([0-9]{4}_[0-9]{2}_[0-9]{2}[^\\\"\\n]*)', func)
             if match:
-                print(f'  📋 Versión Flow: {match.group(1)}')
-            break
-except:
+                print(f'  📋 Versión Flow: {match.group(1).strip()}')
+                version_found = True
+                break
+    
+    if not version_found:
+        # Buscar en todo el archivo
+        with open('$flowfile') as file:
+            content = file.read()
+        match = re.search(r'Version[^0-9]*([0-9]{4}_[0-9]{2}_[0-9]{2}[^\\\"\\n]*)', content)
+        if match:
+            print(f'  📋 Versión Flow: {match.group(1).strip()}')
+except Exception as e:
     pass
 " 2>/dev/null
                     break
@@ -160,7 +173,7 @@ try:
     fw1 = data.get('firmwareL1', '?')
     fw2 = data.get('firmwareL2', '?')
     fw3 = data.get('firmwareL3', '?')
-    print(f\"  📦 Firmware: L1={fw1} L2={fw2} L3={fw3}\")
+    print(f'  📦 Firmware: L1={fw1} L2={fw2} L3={fw3}')
 except:
     pass
 " 2>/dev/null
