@@ -314,8 +314,17 @@ except:
                 fi
             done
             
-            # Listar archivos .json con fecha
-            VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}' | sort -r)
+            # Detectar tipo de dashboard instalado
+            HAS_FLOWFUSE=$(ls /home/*/.node-red/node_modules/ 2>/dev/null | grep -q "@flowfuse" && echo "yes" || echo "no")
+            
+            # Listar archivos .json con fecha (filtrar por tipo de dashboard)
+            if [ "$HAS_FLOWFUSE" = "yes" ]; then
+                echo "  📊 Dashboard detectado: FlowFuse (dbrd2)"
+                VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}.*dbrd2' | sort -r)
+            else
+                echo "  📊 Dashboard detectado: Clásico"
+                VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}' | grep -v 'dbrd2' | sort -r)
+            fi
             
             if [ -z "$VERSIONS" ]; then
                 # Si no hay con fecha, mostrar todos
