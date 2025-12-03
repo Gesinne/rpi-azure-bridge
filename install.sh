@@ -121,11 +121,16 @@ echo "  PASO 3: Descargando software"
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-if [ -d "$INSTALL_DIR" ]; then
+if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
-    git fetch -q
+    git stash -q 2>/dev/null || true
+    git fetch -q origin main
     git reset --hard origin/main -q
     echo "  ✅ Software actualizado"
+elif [ -d "$INSTALL_DIR" ]; then
+    rm -rf "$INSTALL_DIR"
+    git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
+    echo "  ✅ Software descargado"
 else
     git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
     echo "  ✅ Software descargado"
