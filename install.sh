@@ -325,8 +325,9 @@ except:
                 fi
             done
             
-            HAS_FLOWFUSE=$(ls "$NODERED_MODULES" 2>/dev/null | grep -q "@flowfuse" && echo "yes" || echo "no")
-            HAS_CLASSIC=$(ls "$NODERED_MODULES" 2>/dev/null | grep -q "node-red-dashboard" && echo "yes" || echo "no")
+            # Verificar paquetes COMPLETOS instalados (no solo plugins)
+            HAS_FLOWFUSE=$([ -d "$NODERED_MODULES/@flowfuse/node-red-dashboard" ] && echo "yes" || echo "no")
+            HAS_CLASSIC=$([ -d "$NODERED_MODULES/node-red-dashboard" ] && echo "yes" || echo "no")
             
             if [ "$HAS_FLOWFUSE" = "yes" ]; then
                 echo "  📊 Dashboard actual: FlowFuse (dbrd2)"
@@ -409,25 +410,35 @@ except:
             if [ "$NEEDS_FLOWFUSE" = "yes" ] && [ "$HAS_FLOWFUSE" = "no" ]; then
                 echo ""
                 echo "  ⚠️  Este flow requiere FlowFuse Dashboard"
-                echo "  Se instalará automáticamente..."
+                echo "  Instalando (puede tardar unos minutos)..."
                 echo ""
                 cd "$NODERED_HOME"
-                npm install @flowfuse/node-red-dashboard 2>/dev/null
-                if [ "$HAS_CLASSIC" = "yes" ]; then
-                    npm uninstall node-red-dashboard 2>/dev/null
+                # Desinstalar clásico primero si existe
+                npm uninstall node-red-dashboard 2>/dev/null || true
+                # Instalar FlowFuse
+                npm install @flowfuse/node-red-dashboard --save
+                if [ $? -eq 0 ]; then
+                    echo "  ✅ FlowFuse Dashboard instalado"
+                else
+                    echo "  ❌ Error instalando FlowFuse Dashboard"
+                    exit 1
                 fi
-                echo "  ✅ FlowFuse Dashboard instalado"
             elif [ "$NEEDS_FLOWFUSE" = "no" ] && [ "$HAS_CLASSIC" = "no" ]; then
                 echo ""
                 echo "  ⚠️  Este flow requiere Dashboard Clásico"
-                echo "  Se instalará automáticamente..."
+                echo "  Instalando (puede tardar unos minutos)..."
                 echo ""
                 cd "$NODERED_HOME"
-                npm install node-red-dashboard 2>/dev/null
-                if [ "$HAS_FLOWFUSE" = "yes" ]; then
-                    npm uninstall @flowfuse/node-red-dashboard 2>/dev/null
+                # Desinstalar FlowFuse primero si existe
+                npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
+                # Instalar clásico
+                npm install node-red-dashboard --save
+                if [ $? -eq 0 ]; then
+                    echo "  ✅ Dashboard Clásico instalado"
+                else
+                    echo "  ❌ Error instalando Dashboard Clásico"
+                    exit 1
                 fi
-                echo "  ✅ Dashboard Clásico instalado"
             fi
             
             echo ""
