@@ -940,62 +940,67 @@ with open('$CONFIG_FILE', 'w') as f:
             esac
             
             echo ""
-            echo "  📡 Leyendo registros de Tarjeta $FASE (Unit ID: $UNIT_ID)..."
+            echo "  📡 Leyendo registros de Tarjeta $FASE desde Node-RED..."
             echo ""
             
-            # Usar Python con pymodbus para leer los registros
+            # Leer desde el contexto de Node-RED (ya tiene los datos en memoria)
+            NODERED_DIR=""
+            for d in /home/*/.node-red; do
+                if [ -d "$d" ]; then
+                    NODERED_DIR="$d"
+                    break
+                fi
+            done
+            
+            # Buscar en el archivo de contexto de flow
+            CONTEXT_FILE="$NODERED_DIR/context/flow.json"
+            
+            if [ ! -f "$CONTEXT_FILE" ]; then
+                # Intentar con el store por defecto
+                CONTEXT_FILE=$(find "$NODERED_DIR/context" -name "*.json" 2>/dev/null | head -1)
+            fi
+            
             python3 << EOF
+import json
 import sys
-try:
-    from pymodbus.client import ModbusSerialClient
-except ImportError:
-    try:
-        from pymodbus.client.sync import ModbusSerialClient
-    except ImportError:
-        print("  ❌ pymodbus no instalado. Instala con: pip3 install pymodbus")
-        sys.exit(1)
+import os
 
-client = ModbusSerialClient(
-    port='/dev/ttyAMA0',
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+# Buscar archivos de contexto
+context_dir = "$NODERED_DIR/context"
+fase = "$FASE"
 
-if not client.connect():
-    print("  ❌ No se pudo conectar al puerto serie /dev/ttyAMA0")
-    sys.exit(1)
+data = None
 
-try:
-    # Leer en bloques porque algunas tarjetas no soportan leer 110 de golpe
-    data = []
-    
-    # Bloque 1: registros 0-66
-    result1 = client.read_holding_registers(address=0, count=67, slave=$UNIT_ID)
-    if result1.isError():
-        print(f"  ❌ Error leyendo registros 0-66: {result1}")
-        sys.exit(1)
-    data.extend(result1.registers)
-    
-    # Bloque 2: registros 67-109 (si existen)
-    result2 = client.read_holding_registers(address=67, count=43, slave=$UNIT_ID)
-    if not result2.isError():
-        data.extend(result2.registers)
-    else:
-        print("  ⚠️  Solo se pudieron leer 67 registros (0-66)")
-    
-    print(f"  📋 Registros Tarjeta $FASE (0-{len(data)-1}):")
+# Buscar en todos los archivos de contexto
+for root, dirs, files in os.walk(context_dir):
+    for f in files:
+        if f.endswith('.json'):
+            try:
+                with open(os.path.join(root, f)) as file:
+                    ctx = json.load(file)
+                    # Buscar payload_data_L1, L2 o L3
+                    key = f"payload_data_{fase}"
+                    if key in ctx:
+                        data = ctx[key]
+                        break
+                    # También buscar en formato anidado
+                    for k, v in ctx.items():
+                        if isinstance(v, dict) and key in v:
+                            data = v[key]
+                            break
+            except:
+                continue
+    if data:
+        break
+
+if data:
+    print(f"  📋 Registros Tarjeta {fase} (0-{len(data)-1}):")
     print("")
-    # Imprimir en una sola fila separados por coma
-    print("  " + ",".join(str(val) for val in data))
+    print("  " + ",".join(str(int(val)) for val in data))
     print("")
-    
-except Exception as e:
-    print(f"  ❌ Error: {e}")
-finally:
-    client.close()
+else:
+    print(f"  ❌ No se encontraron datos de {fase} en el contexto de Node-RED")
+    print("  Asegúrate de que Node-RED está corriendo y ha leído datos")
 EOF
             
             exit 0
