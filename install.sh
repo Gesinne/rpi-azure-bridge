@@ -103,10 +103,41 @@ if [ -f "$OVERRIDE_FILE" ]; then
             echo "  Estado actual"
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
+            
+            # Mostrar config del equipo desde Node-RED
+            USER_HOME="/home/$(logname 2>/dev/null || echo 'pi')"
+            for f in "$USER_HOME/.node-red/flows.json" "/home/pi/.node-red/flows.json" "/home/gesinne/.node-red/flows.json"; do
+                if [ -f "$f" ]; then
+                    python3 -c "
+import json, re
+with open('$f') as file:
+    flows = json.load(file)
+
+# Buscar nodo 'Valores iniciales' (inject)
+for node in flows:
+    if node.get('type') == 'inject' and 'iniciales' in node.get('name', '').lower():
+        props = node.get('props', [])
+        for prop in props:
+            if prop.get('p') == 'payload':
+                val = prop.get('v', '')
+                # Extraer serie y potencia del JSON
+                try:
+                    data = json.loads(val)
+                    print(f\"  🔧 Serie: {data.get('serie', '?')}\")
+                    print(f\"  ⚡ Potencia: {data.get('potencia', '?')} kW\")
+                    print(f\"  🔌 Imax: {data.get('Imax', '?')} A\")
+                except:
+                    pass
+        break
+" 2>/dev/null
+                    break
+                fi
+            done
+            
             show_nodered_config
             echo ""
-            cd "$INSTALL_DIR"
-            if docker-compose ps | grep -q "Up"; then
+            cd "$INSTALL_DIR" 2>/dev/null
+            if docker-compose ps 2>/dev/null | grep -q "Up"; then
                 echo "  🟢 Bridge Docker: Corriendo"
             else
                 echo "  🔴 Bridge Docker: Parado"
