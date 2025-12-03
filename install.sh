@@ -169,25 +169,82 @@ with open('$FLOWS_FILE', 'w') as f:
         fi
         USE_AZURE=1
     else
-        # Modo servidor directo - cambiar a mqtt.gesinne.cloud
-        if [ "$BROKER_HOST" = "localhost" ] || [ "$BROKER_HOST" = "127.0.0.1" ]; then
-            python3 -c "
+        # Modo servidor directo
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Configuración servidor MQTT remoto"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        read -p "  Servidor MQTT [mqtt.gesinne.cloud]: " MQTT_SERVER
+        MQTT_SERVER=${MQTT_SERVER:-mqtt.gesinne.cloud}
+        
+        read -p "  Puerto [8883]: " MQTT_PORT
+        MQTT_PORT=${MQTT_PORT:-8883}
+        
+        read -p "  Usar SSL (s/n) [s]: " MQTT_SSL
+        MQTT_SSL=${MQTT_SSL:-s}
+        if [ "$MQTT_SSL" = "s" ] || [ "$MQTT_SSL" = "S" ]; then
+            USE_TLS="True"
+        else
+            USE_TLS="False"
+        fi
+        
+        read -p "  Usuario MQTT: " MQTT_USER
+        read -s -p "  Contraseña MQTT: " MQTT_PASS
+        echo ""
+        
+        if [ -z "$MQTT_USER" ] || [ -z "$MQTT_PASS" ]; then
+            echo ""
+            echo "  ❌ Usuario y contraseña son obligatorios"
+            exit 1
+        fi
+        
+        python3 -c "
 import json
 with open('$FLOWS_FILE', 'r') as f:
     flows = json.load(f)
 for node in flows:
     if node.get('type') == 'mqtt-broker':
-        node['broker'] = 'mqtt.gesinne.cloud'
-        node['port'] = '8883'
-        node['usetls'] = True
+        node['broker'] = '$MQTT_SERVER'
+        node['port'] = '$MQTT_PORT'
+        node['usetls'] = $USE_TLS
 with open('$FLOWS_FILE', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
-            echo "  ✅ Broker cambiado a mqtt.gesinne.cloud:8883 (SSL)"
-            RESTART_NODERED=1
-        else
-            echo "  ✅ Broker ya configurado en $BROKER_HOST"
+
+        # Guardar credenciales en flows_cred.json
+        CRED_FILE="${FLOWS_FILE%flows.json}flows_cred.json"
+        BROKER_ID=$(python3 -c "
+import json
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'mqtt-broker':
+        print(node.get('id', ''))
+        break
+" 2>/dev/null)
+
+        if [ -n "$BROKER_ID" ]; then
+            python3 -c "
+import json
+import os
+cred_file = '$CRED_FILE'
+creds = {}
+if os.path.exists(cred_file):
+    with open(cred_file, 'r') as f:
+        creds = json.load(f)
+creds['$BROKER_ID'] = {'user': '$MQTT_USER', 'password': '$MQTT_PASS'}
+with open(cred_file, 'w') as f:
+    json.dump(creds, f, indent=4)
+" 2>/dev/null
+            chmod 600 "$CRED_FILE"
         fi
+
+        echo ""
+        echo "  ✅ Broker: $MQTT_SERVER:$MQTT_PORT (SSL: $MQTT_SSL)"
+        echo "  ✅ Usuario: $MQTT_USER"
+        echo "  ✅ Credenciales guardadas"
+        RESTART_NODERED=1
         USE_AZURE=0
     fi
 
