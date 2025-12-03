@@ -226,21 +226,26 @@ except:
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             
-            NODERED_REPO="https://raw.githubusercontent.com/Gesinne/NODERED/main"
+            NODERED_REPO="https://github.com/Gesinne/NODERED.git"
+            TEMP_DIR="/tmp/nodered_flows_$$"
             
-            # Obtener lista de versiones disponibles (archivos .json)
+            # Clonar repo para obtener versiones
             echo "  📥 Obteniendo versiones disponibles..."
-            VERSIONS=$(curl -s "https://api.github.com/repos/Gesinne/NODERED/contents" | python3 -c "
-import sys, json
-try:
-    items = json.load(sys.stdin)
-    for item in items:
-        name = item.get('name', '')
-        if name.endswith('.json') and item.get('type') == 'file':
-            print(name)
-except:
-    pass
-" 2>/dev/null)
+            rm -rf "$TEMP_DIR"
+            if ! git clone -q "$NODERED_REPO" "$TEMP_DIR" 2>/dev/null; then
+                echo "  ❌ Error accediendo al repositorio"
+                echo "  Verifica que tienes acceso a: $NODERED_REPO"
+                exit 1
+            fi
+            
+            # Listar archivos .json
+            VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename)
+            
+            if [ -z "$VERSIONS" ]; then
+                echo "  ❌ No se encontraron archivos .json en el repositorio"
+                rm -rf "$TEMP_DIR"
+                exit 1
+            fi
             
             echo ""
             echo "  Versiones disponibles:"
@@ -257,21 +262,22 @@ except:
             echo ""
             read -p "  Selecciona versión [1-$((i-1))]: " VERSION_CHOICE
             
-            # Determinar URL del flow
+            # Determinar archivo del flow
             VERSION_NAME="${VERSION_ARRAY[$VERSION_CHOICE]}"
-            if [ -n "$VERSION_NAME" ]; then
-                FLOW_URL="$NODERED_REPO/$VERSION_NAME"
+            if [ -n "$VERSION_NAME" ] && [ -f "$TEMP_DIR/$VERSION_NAME" ]; then
+                FLOW_FILE="$TEMP_DIR/$VERSION_NAME"
             else
-                FLOW_URL=""
+                FLOW_FILE=""
             fi
             
-            if [ -z "$FLOW_URL" ]; then
+            if [ -z "$FLOW_FILE" ]; then
                 echo "  ❌ Opción no válida"
+                rm -rf "$TEMP_DIR"
                 exit 1
             fi
             
             echo ""
-            echo "  📥 Descargando $VERSION_NAME..."
+            echo "  📥 Instalando $VERSION_NAME..."
             
             # Buscar directorio Node-RED
             NODERED_DIR=""
@@ -292,27 +298,25 @@ except:
             cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
             echo "  💾 Backup creado: $BACKUP_FILE"
             
-            # Descargar nuevo flow
-            if curl -sSL "$FLOW_URL" -o /tmp/new_flows.json; then
-                # Verificar que es JSON válido
-                if python3 -c "import json; json.load(open('/tmp/new_flows.json'))" 2>/dev/null; then
-                    cp /tmp/new_flows.json "$NODERED_DIR/flows.json"
-                    echo "  ✅ Flow instalado: $VERSION_NAME"
-                    echo ""
-                    echo "  🔄 Reiniciando Node-RED..."
-                    sudo systemctl restart nodered
-                    sleep 3
-                    echo "  ✅ Node-RED reiniciado"
-                    echo ""
-                    echo "  ⚠️  Recuerda configurar equipo_config.json con los datos del equipo"
-                else
-                    echo "  ❌ Error: El archivo descargado no es JSON válido"
-                    exit 1
-                fi
+            # Verificar que es JSON válido e instalar
+            if python3 -c "import json; json.load(open('$FLOW_FILE'))" 2>/dev/null; then
+                cp "$FLOW_FILE" "$NODERED_DIR/flows.json"
+                echo "  ✅ Flow instalado: $VERSION_NAME"
+                echo ""
+                echo "  🔄 Reiniciando Node-RED..."
+                sudo systemctl restart nodered
+                sleep 3
+                echo "  ✅ Node-RED reiniciado"
+                echo ""
+                echo "  ⚠️  Recuerda configurar equipo_config.json con los datos del equipo"
             else
-                echo "  ❌ Error descargando flow"
+                echo "  ❌ Error: El archivo no es JSON válido"
+                rm -rf "$TEMP_DIR"
                 exit 1
             fi
+            
+            # Limpiar
+            rm -rf "$TEMP_DIR"
             
             exit 0
             ;;
