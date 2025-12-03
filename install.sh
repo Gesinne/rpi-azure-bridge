@@ -228,48 +228,41 @@ except:
             
             NODERED_REPO="https://raw.githubusercontent.com/Gesinne/NODERED/main"
             
-            # Obtener lista de versiones disponibles
+            # Obtener lista de versiones disponibles (archivos .json)
             echo "  📥 Obteniendo versiones disponibles..."
             VERSIONS=$(curl -s "https://api.github.com/repos/Gesinne/NODERED/contents" | python3 -c "
 import sys, json
 try:
     items = json.load(sys.stdin)
     for item in items:
-        if item.get('type') == 'dir':
-            print(item.get('name'))
+        name = item.get('name', '')
+        if name.endswith('.json') and item.get('type') == 'file':
+            print(name)
 except:
     pass
 " 2>/dev/null)
             
-            # Añadir opción de flows.json en raíz (original)
             echo ""
             echo "  Versiones disponibles:"
             echo ""
-            echo "  0) original (flows.json en raíz del repo)"
             
             i=1
+            declare -a VERSION_ARRAY
             for v in $VERSIONS; do
                 echo "  $i) $v"
+                VERSION_ARRAY[$i]="$v"
                 i=$((i+1))
             done
             
             echo ""
-            read -p "  Selecciona versión [0-$((i-1))]: " VERSION_CHOICE
+            read -p "  Selecciona versión [1-$((i-1))]: " VERSION_CHOICE
             
             # Determinar URL del flow
-            if [ "$VERSION_CHOICE" = "0" ]; then
-                FLOW_URL="$NODERED_REPO/flows.json"
-                VERSION_NAME="original"
+            VERSION_NAME="${VERSION_ARRAY[$VERSION_CHOICE]}"
+            if [ -n "$VERSION_NAME" ]; then
+                FLOW_URL="$NODERED_REPO/$VERSION_NAME"
             else
-                j=1
-                for v in $VERSIONS; do
-                    if [ "$j" = "$VERSION_CHOICE" ]; then
-                        FLOW_URL="$NODERED_REPO/$v/flows.json"
-                        VERSION_NAME="$v"
-                        break
-                    fi
-                    j=$((j+1))
-                done
+                FLOW_URL=""
             fi
             
             if [ -z "$FLOW_URL" ]; then
