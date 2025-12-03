@@ -315,16 +315,28 @@ except:
             done
             
             # Detectar tipo de dashboard instalado
-            HAS_FLOWFUSE=$(ls /home/*/.node-red/node_modules/ 2>/dev/null | grep -q "@flowfuse" && echo "yes" || echo "no")
+            NODERED_MODULES=""
+            for d in /home/*/.node-red; do
+                if [ -d "$d/node_modules" ]; then
+                    NODERED_MODULES="$d/node_modules"
+                    NODERED_HOME="$d"
+                    break
+                fi
+            done
             
-            # Listar archivos .json con fecha (filtrar por tipo de dashboard)
+            HAS_FLOWFUSE=$(ls "$NODERED_MODULES" 2>/dev/null | grep -q "@flowfuse" && echo "yes" || echo "no")
+            HAS_CLASSIC=$(ls "$NODERED_MODULES" 2>/dev/null | grep -q "node-red-dashboard" && echo "yes" || echo "no")
+            
             if [ "$HAS_FLOWFUSE" = "yes" ]; then
-                echo "  📊 Dashboard detectado: FlowFuse (dbrd2)"
-                VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}.*dbrd2' | sort -r)
+                echo "  📊 Dashboard actual: FlowFuse (dbrd2)"
+            elif [ "$HAS_CLASSIC" = "yes" ]; then
+                echo "  📊 Dashboard actual: Clásico"
             else
-                echo "  📊 Dashboard detectado: Clásico"
-                VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}' | grep -v 'dbrd2' | sort -r)
+                echo "  📊 Dashboard actual: Ninguno detectado"
             fi
+            
+            # Listar TODOS los archivos .json con fecha
+            VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}' | sort -r)
             
             if [ -z "$VERSIONS" ]; then
                 # Si no hay con fecha, mostrar todos
@@ -386,17 +398,42 @@ except:
                 exit 1
             fi
             
+            # Detectar si el flow seleccionado necesita FlowFuse o Clásico
+            NEEDS_FLOWFUSE="no"
+            if echo "$VERSION_NAME" | grep -q "dbrd2"; then
+                NEEDS_FLOWFUSE="yes"
+            fi
+            
+            # Verificar si necesita cambiar el dashboard
+            if [ "$NEEDS_FLOWFUSE" = "yes" ] && [ "$HAS_FLOWFUSE" = "no" ]; then
+                echo ""
+                echo "  ⚠️  Este flow requiere FlowFuse Dashboard"
+                echo "  Se instalará automáticamente..."
+                echo ""
+                cd "$NODERED_HOME"
+                npm install @flowfuse/node-red-dashboard 2>/dev/null
+                if [ "$HAS_CLASSIC" = "yes" ]; then
+                    npm uninstall node-red-dashboard 2>/dev/null
+                fi
+                echo "  ✅ FlowFuse Dashboard instalado"
+            elif [ "$NEEDS_FLOWFUSE" = "no" ] && [ "$HAS_CLASSIC" = "no" ]; then
+                echo ""
+                echo "  ⚠️  Este flow requiere Dashboard Clásico"
+                echo "  Se instalará automáticamente..."
+                echo ""
+                cd "$NODERED_HOME"
+                npm install node-red-dashboard 2>/dev/null
+                if [ "$HAS_FLOWFUSE" = "yes" ]; then
+                    npm uninstall @flowfuse/node-red-dashboard 2>/dev/null
+                fi
+                echo "  ✅ Dashboard Clásico instalado"
+            fi
+            
             echo ""
             echo "  📥 Instalando $VERSION_NAME..."
             
             # Buscar directorio Node-RED
-            NODERED_DIR=""
-            for d in /home/*/.node-red; do
-                if [ -d "$d" ]; then
-                    NODERED_DIR="$d"
-                    break
-                fi
-            done
+            NODERED_DIR="$NODERED_HOME"
             
             if [ -z "$NODERED_DIR" ]; then
                 echo "  ❌ No se encontró directorio Node-RED"
@@ -415,7 +452,7 @@ except:
                 echo ""
                 echo "  🔄 Reiniciando Node-RED..."
                 sudo systemctl restart nodered
-                sleep 3
+                sleep 5
                 echo "  ✅ Node-RED reiniciado"
                 
                 # Reiniciar kiosko si existe
