@@ -969,15 +969,24 @@ if not client.connect():
     sys.exit(1)
 
 try:
-    result = client.read_holding_registers(address=0, count=110, slave=$UNIT_ID)
+    # Leer en bloques porque algunas tarjetas no soportan leer 110 de golpe
+    data = []
     
-    if result.isError():
-        print(f"  ❌ Error leyendo registros: {result}")
+    # Bloque 1: registros 0-66
+    result1 = client.read_holding_registers(address=0, count=67, slave=$UNIT_ID)
+    if result1.isError():
+        print(f"  ❌ Error leyendo registros 0-66: {result1}")
         sys.exit(1)
+    data.extend(result1.registers)
     
-    data = result.registers
+    # Bloque 2: registros 67-109 (si existen)
+    result2 = client.read_holding_registers(address=67, count=43, slave=$UNIT_ID)
+    if not result2.isError():
+        data.extend(result2.registers)
+    else:
+        print("  ⚠️  Solo se pudieron leer 67 registros (0-66)")
     
-    print("  📋 Registros Tarjeta $FASE (0-109):")
+    print(f"  📋 Registros Tarjeta $FASE (0-{len(data)-1}):")
     print("")
     # Imprimir en una sola fila separados por coma
     print("  " + ",".join(str(val) for val in data))
