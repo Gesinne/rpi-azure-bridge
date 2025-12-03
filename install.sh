@@ -252,8 +252,33 @@ except:
                 exit 1
             fi
             
-            # Listar archivos .json
-            VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename)
+            # Obtener versión actual instalada
+            CURRENT_VERSION=""
+            for flowfile in /home/*/.node-red/flows.json; do
+                if [ -f "$flowfile" ]; then
+                    CURRENT_VERSION=$(python3 -c "
+import json, re
+try:
+    with open('$flowfile') as f:
+        content = f.read()
+    # Buscar fecha en formato YYYYMMDD o YYYY_MM_DD
+    match = re.search(r'([0-9]{4})_?([0-9]{2})_?([0-9]{2})', content)
+    if match:
+        print(f'{match.group(1)}{match.group(2)}{match.group(3)}')
+except:
+    pass
+" 2>/dev/null)
+                    break
+                fi
+            done
+            
+            # Listar archivos .json con fecha
+            VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}' | sort -r)
+            
+            if [ -z "$VERSIONS" ]; then
+                # Si no hay con fecha, mostrar todos
+                VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename)
+            fi
             
             if [ -z "$VERSIONS" ]; then
                 echo "  ❌ No se encontraron archivos .json en el repositorio"
@@ -262,16 +287,36 @@ except:
             fi
             
             echo ""
-            echo "  Versiones disponibles:"
+            if [ -n "$CURRENT_VERSION" ]; then
+                echo "  📋 Versión actual instalada: $CURRENT_VERSION"
+            fi
+            echo ""
+            echo "  Versiones disponibles (iguales o superiores):"
             echo ""
             
             i=1
             declare -a VERSION_ARRAY
             for v in $VERSIONS; do
-                echo "  $i) $v"
-                VERSION_ARRAY[$i]="$v"
-                i=$((i+1))
+                # Extraer fecha del nombre del archivo
+                FILE_DATE=$(echo "$v" | grep -oE '^[0-9]{8}' || echo "00000000")
+                
+                # Mostrar solo si es igual o superior a la actual (o si no hay actual)
+                if [ -z "$CURRENT_VERSION" ] || [ "$FILE_DATE" -ge "$CURRENT_VERSION" ] 2>/dev/null || [ "$FILE_DATE" = "00000000" ]; then
+                    if [ "$FILE_DATE" = "$CURRENT_VERSION" ]; then
+                        echo "  $i) $v (actual)"
+                    else
+                        echo "  $i) $v"
+                    fi
+                    VERSION_ARRAY[$i]="$v"
+                    i=$((i+1))
+                fi
             done
+            
+            if [ $i -eq 1 ]; then
+                echo "  ✅ Ya tienes la última versión"
+                rm -rf "$TEMP_DIR"
+                exit 0
+            fi
             
             echo ""
             read -p "  Selecciona versión [1-$((i-1))]: " VERSION_CHOICE
