@@ -159,9 +159,20 @@ docker-compose down 2>/dev/null || true
 
 # Construir e iniciar
 echo "  Iniciando servicio (puede tardar 1-2 minutos)..."
-docker-compose up -d --build > /dev/null 2>&1
-
-echo "  ✅ Servicio iniciado"
+if docker-compose up -d --build 2>&1 | tail -5; then
+    sleep 3
+    if docker-compose ps | grep -q "Up"; then
+        echo "  ✅ Servicio iniciado"
+    else
+        echo "  ❌ Error: El contenedor no arrancó"
+        echo ""
+        docker-compose logs --tail=20
+        exit 1
+    fi
+else
+    echo "  ❌ Error al construir el contenedor"
+    exit 1
+fi
 
 echo ""
 echo "  ╔══════════════════════════════════════════════╗"
