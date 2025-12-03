@@ -71,9 +71,10 @@ if [ -f "$OVERRIDE_FILE" ]; then
     echo "  3) Cambiar a modo Servidor Remoto (mqtt.gesinne.cloud)"
     echo "  4) Ver estado actual"
     echo "  5) Actualizar Flow Node-RED"
-    echo "  6) Salir"
+    echo "  6) Restaurar Flow anterior (backup)"
+    echo "  7) Salir"
     echo ""
-    read -p "  Opción [1-6]: " OPTION
+    read -p "  Opción [1-7]: " OPTION
     
     case $OPTION in
         1)
@@ -580,6 +581,88 @@ with open('$CONFIG_FILE', 'w') as f:
             else
                 echo "  ⚠️  No se encontró equipo_config.json"
                 echo "  Crea el archivo en: /home/gesinne/config/equipo_config.json"
+            fi
+            
+            exit 0
+            ;;
+        6)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Restaurar Flow anterior"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            # Buscar backups
+            NODERED_DIR=""
+            for d in /home/*/.node-red; do
+                if [ -d "$d" ]; then
+                    NODERED_DIR="$d"
+                    break
+                fi
+            done
+            
+            if [ -z "$NODERED_DIR" ]; then
+                echo "  ❌ No se encontró directorio Node-RED"
+                exit 1
+            fi
+            
+            BACKUPS=$(ls -t "$NODERED_DIR"/flows.json.backup.* 2>/dev/null)
+            
+            if [ -z "$BACKUPS" ]; then
+                echo "  ❌ No hay backups disponibles"
+                exit 1
+            fi
+            
+            echo "  Backups disponibles (más reciente primero):"
+            echo ""
+            
+            i=1
+            declare -a BACKUP_ARRAY
+            for b in $BACKUPS; do
+                BACKUP_DATE=$(basename "$b" | sed 's/flows.json.backup.//')
+                FORMATTED_DATE=$(echo "$BACKUP_DATE" | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3 \4:\5:\6/')
+                BACKUP_SIZE=$(du -h "$b" | cut -f1)
+                echo "  $i) $FORMATTED_DATE ($BACKUP_SIZE)"
+                BACKUP_ARRAY[$i]="$b"
+                i=$((i+1))
+                # Mostrar máximo 10
+                if [ $i -gt 10 ]; then
+                    break
+                fi
+            done
+            
+            echo ""
+            read -p "  Selecciona backup [1-$((i-1))]: " BACKUP_CHOICE
+            
+            SELECTED_BACKUP="${BACKUP_ARRAY[$BACKUP_CHOICE]}"
+            
+            if [ -z "$SELECTED_BACKUP" ] || [ ! -f "$SELECTED_BACKUP" ]; then
+                echo "  ❌ Opción no válida"
+                exit 1
+            fi
+            
+            echo ""
+            echo "  📥 Restaurando backup..."
+            
+            # Hacer backup del actual antes de restaurar
+            cp "$NODERED_DIR/flows.json" "$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S)"
+            
+            # Restaurar
+            cp "$SELECTED_BACKUP" "$NODERED_DIR/flows.json"
+            echo "  ✅ Flow restaurado"
+            echo ""
+            echo "  🔄 Reiniciando Node-RED..."
+            sudo systemctl restart nodered
+            sleep 3
+            echo "  ✅ Node-RED reiniciado"
+            
+            # Reiniciar kiosko si existe
+            if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                echo ""
+                echo "  🔄 Reiniciando modo kiosko..."
+                sudo systemctl restart kiosk.service
+                sleep 2
+                echo "  ✅ Kiosko reiniciado"
             fi
             
             exit 0
