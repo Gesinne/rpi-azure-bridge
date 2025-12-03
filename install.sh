@@ -969,7 +969,7 @@ if not client.connect():
     sys.exit(1)
 
 try:
-    result = client.read_holding_registers(address=0, count=67, slave=$UNIT_ID)
+    result = client.read_holding_registers(address=0, count=110, slave=$UNIT_ID)
     
     if result.isError():
         print(f"  ❌ Error leyendo registros: {result}")
@@ -977,42 +977,10 @@ try:
     
     data = result.registers
     
-    print("  ┌─────────────────────────────────────────────────────────────┐")
-    print("  │  REGISTROS TARJETA $FASE                                    │")
-    print("  ├─────────────────────────────────────────────────────────────┤")
-    print(f"  │  Tensión Entrada:    {data[4]/100:>8.2f} V                       │")
-    print(f"  │  Tensión Salida:     {data[3]/100:>8.2f} V                       │")
-    print(f"  │  Diferencia:         {(data[4]-data[3])/100:>8.2f} V                       │")
-    print(f"  │  Corriente:          {data[6]/10:>8.1f} A                        │")
-    print(f"  │  Corriente Chopper:  {data[7]/100:>8.2f} A                       │")
-    print(f"  │  Frecuencia:         {data[5]/100:>8.2f} Hz                      │")
-    print(f"  │  Factor Potencia:    {data[15]/100:>8.2f}                         │")
-    print(f"  │  Temperatura:        {data[17]/10:>8.1f} °C                       │")
-    print("  ├─────────────────────────────────────────────────────────────┤")
-    
-    # Potencia activa (32 bits)
-    pot_activa = ((data[9] << 16) | data[10]) / 10000
-    pot_reactiva = ((data[11] << 16) | data[12]) / 10000
-    pot_aparente = ((data[13] << 16) | data[14]) / 10000
-    
-    print(f"  │  Potencia Activa:    {pot_activa:>8.2f} kW                      │")
-    print(f"  │  Potencia Reactiva:  {pot_reactiva:>8.2f} kVAr                    │")
-    print(f"  │  Potencia Aparente:  {pot_aparente:>8.2f} kVA                     │")
-    print("  ├─────────────────────────────────────────────────────────────┤")
-    print(f"  │  Alarma:             {data[2]:>8d}                           │")
-    print(f"  │  Estado Bypass:      {data[31]:>8d}   (0=normal,1=bypass,2=reg) │")
-    print(f"  │  Consigna:           {data[32]/10:>8.1f} V                        │")
-    print(f"  │  Estado Inicial:     {data[55]:>8d}                           │")
-    print(f"  │  Tensión Inicial:    {data[56]/10:>8.1f} V                        │")
-    print("  └─────────────────────────────────────────────────────────────┘")
+    print("  📋 Registros Tarjeta $FASE (0-109):")
     print("")
-    print("  📋 Registros raw (0-66):")
-    print("  ", end="")
-    for i, val in enumerate(data):
-        print(f"{i:02d}:{val:5d}", end="  ")
-        if (i + 1) % 8 == 0:
-            print("")
-            print("  ", end="")
+    # Imprimir en una sola fila separados por coma
+    print("  " + ",".join(str(val) for val in data))
     print("")
     
 except Exception as e:
