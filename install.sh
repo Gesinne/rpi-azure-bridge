@@ -226,22 +226,43 @@ except:
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             
-            TEMP_DIR="/tmp/nodered_flows_$$"
+            CACHE_DIR="/opt/nodered-flows-cache"
+            CREDS_FILE="/opt/nodered-flows-cache/.git_credentials"
             
-            # Solicitar credenciales de GitHub
-            echo "  🔐 Credenciales de GitHub (repo privado)"
-            echo ""
-            read -p "  Usuario GitHub: " GIT_USER
-            read -s -p "  Token/Contraseña: " GIT_TOKEN
-            echo ""
+            # Verificar si hay credenciales guardadas
+            if [ -f "$CREDS_FILE" ]; then
+                source "$CREDS_FILE"
+                echo "  🔐 Usando credenciales guardadas (usuario: $GIT_USER)"
+                echo ""
+                read -p "  ¿Usar estas credenciales? [S/n]: " USE_SAVED
+                if [ "$USE_SAVED" = "n" ] || [ "$USE_SAVED" = "N" ]; then
+                    GIT_USER=""
+                    GIT_TOKEN=""
+                fi
+            fi
             
+            # Solicitar credenciales si no hay guardadas
             if [ -z "$GIT_USER" ] || [ -z "$GIT_TOKEN" ]; then
-                echo "  ❌ Usuario y token son requeridos"
-                exit 1
+                echo "  🔐 Credenciales de GitHub (repo privado)"
+                echo ""
+                read -p "  Usuario GitHub: " GIT_USER
+                read -s -p "  Token/Contraseña: " GIT_TOKEN
+                echo ""
+                
+                if [ -z "$GIT_USER" ] || [ -z "$GIT_TOKEN" ]; then
+                    echo "  ❌ Usuario y token son requeridos"
+                    exit 1
+                fi
+                
+                # Guardar credenciales para próximas veces
+                sudo mkdir -p "$CACHE_DIR" 2>/dev/null
+                echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
+                echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
+                sudo chmod 600 "$CREDS_FILE"
+                echo "  💾 Credenciales guardadas"
             fi
             
             NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
-            CACHE_DIR="/opt/nodered-flows-cache"
             
             # Usar caché o clonar
             echo ""
