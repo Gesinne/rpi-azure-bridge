@@ -1,10 +1,17 @@
 #!/bin/bash
 #
 # Instalador automático del puente MQTT → Azure IoT Hub
-# Uso: curl -sSL https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh | sudo bash
+# Uso: curl -sSL https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh -o install.sh && sudo bash install.sh
 #
 
 set -e
+
+# Si se ejecuta via pipe, descargar y re-ejecutar
+if [ ! -t 0 ]; then
+    TEMP_SCRIPT=$(mktemp)
+    cat > "$TEMP_SCRIPT"
+    exec bash "$TEMP_SCRIPT" "$@"
+fi
 
 clear
 echo ""
