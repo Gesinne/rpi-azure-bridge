@@ -408,6 +408,15 @@ except:
                 sudo systemctl restart nodered
                 sleep 3
                 echo "  ✅ Node-RED reiniciado"
+                
+                # Reiniciar kiosko si existe
+                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                    echo ""
+                    echo "  🔄 Reiniciando modo kiosko..."
+                    sudo systemctl restart kiosk.service
+                    sleep 2
+                    echo "  ✅ Kiosko reiniciado"
+                fi
             else
                 echo "  ❌ Error: El archivo no es JSON válido"
                 exit 1
@@ -512,6 +521,15 @@ with open('$CONFIG_FILE', 'w') as f:
                     sudo systemctl restart nodered
                     sleep 2
                     echo "  ✅ Node-RED reiniciado"
+                    
+                    # Reiniciar kiosko si existe
+                    if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                        echo ""
+                        echo "  🔄 Reiniciando modo kiosko..."
+                        sudo systemctl restart kiosk.service
+                        sleep 2
+                        echo "  ✅ Kiosko reiniciado"
+                    fi
                 fi
             else
                 echo "  ⚠️  No se encontró equipo_config.json"
