@@ -127,6 +127,25 @@ except:
 " 2>/dev/null
             fi
             
+            # Mostrar firmware desde global context de Node-RED
+            for g in /home/*/.node-red/context/global/global.json; do
+                if [ -f "$g" ]; then
+                    python3 -c "
+import json
+try:
+    with open('$g') as f:
+        data = json.load(f)
+    fw1 = data.get('firmwareL1', '?')
+    fw2 = data.get('firmwareL2', '?')
+    fw3 = data.get('firmwareL3', '?')
+    print(f\"  📦 Firmware: L1={fw1} L2={fw2} L3={fw3}\")
+except:
+    pass
+" 2>/dev/null
+                    break
+                fi
+            done
+            
             show_nodered_config
             echo ""
             cd "$INSTALL_DIR" 2>/dev/null
