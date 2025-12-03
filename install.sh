@@ -127,7 +127,29 @@ except:
 " 2>/dev/null
             fi
             
-            # Mostrar firmware y versión desde global context de Node-RED
+            # Mostrar versión desde el código del flow
+            for f in /home/*/.node-red/flows.json; do
+                if [ -f "$f" ]; then
+                    python3 -c "
+import json, re
+try:
+    with open('$f') as file:
+        flows = json.load(file)
+    for node in flows:
+        if node.get('name') == 'Editar lo necesario':
+            func = node.get('func', '')
+            match = re.search(r\"global\.set\(['\"]Version['\"],\s*['\"]([^'\"]+)['\"]\)\", func)
+            if match:
+                print(f\"  📋 Versión Flow: {match.group(1)}\")
+            break
+except:
+    pass
+" 2>/dev/null
+                    break
+                fi
+            done
+            
+            # Mostrar firmware desde global context de Node-RED
             for g in /home/*/.node-red/context/global/global.json; do
                 if [ -f "$g" ]; then
                     python3 -c "
@@ -135,11 +157,9 @@ import json
 try:
     with open('$g') as f:
         data = json.load(f)
-    version = data.get('Version', '?')
     fw1 = data.get('firmwareL1', '?')
     fw2 = data.get('firmwareL2', '?')
     fw3 = data.get('firmwareL3', '?')
-    print(f\"  📋 Versión Node-RED: {version}\")
     print(f\"  📦 Firmware: L1={fw1} L2={fw2} L3={fw3}\")
 except:
     pass
