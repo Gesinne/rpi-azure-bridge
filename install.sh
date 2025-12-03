@@ -940,8 +940,20 @@ with open('$CONFIG_FILE', 'w') as f:
             esac
             
             echo ""
-            read -p "  ¿Cuántos registros quieres leer? [67]: " NUM_REGS
-            NUM_REGS=${NUM_REGS:-67}
+            echo "  ¿Cuántos registros quieres leer?"
+            echo ""
+            echo "  1) 67 registros (estándar)"
+            echo "  2) Detectar máximo automáticamente"
+            echo "  3) Número personalizado"
+            echo ""
+            read -p "  Opción [1-3]: " REG_OPTION
+            
+            case $REG_OPTION in
+                1) NUM_REGS=67; DETECT_MAX="no" ;;
+                2) NUM_REGS=200; DETECT_MAX="yes" ;;
+                3) read -p "  Número de registros: " NUM_REGS; DETECT_MAX="no" ;;
+                *) NUM_REGS=67; DETECT_MAX="no" ;;
+            esac
             
             echo ""
             echo "  ⚠️  Se parará Node-RED temporalmente para leer..."
@@ -979,25 +991,39 @@ if not client.connect():
 
 try:
     num_regs = $NUM_REGS
+    detect_max = "$DETECT_MAX" == "yes"
     
-    # Intentar leer todo de golpe primero
-    result = client.read_holding_registers(address=0, count=num_regs, slave=$UNIT_ID)
-    
-    if result.isError():
-        print(f"  ⚠️  Error leyendo {num_regs} registros de golpe: {result}")
-        print("  Intentando en bloques más pequeños...")
-        
-        # Si falla, intentar en bloques de 40
-        data = []
-        for start in range(0, num_regs, 40):
-            count = min(40, num_regs - start)
-            result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
+    if detect_max:
+        print("  🔍 Detectando número máximo de registros...")
+        print("")
+        # Probar de 10 en 10 hasta encontrar el límite
+        max_reg = 0
+        for test_count in range(10, 201, 10):
+            result = client.read_holding_registers(address=0, count=test_count, slave=$UNIT_ID)
             if result.isError():
-                print(f"  ⚠️  Error en registros {start}-{start+count-1}: {result}")
+                # Afinar buscando de 1 en 1
+                for fine_count in range(max_reg + 1, test_count):
+                    result = client.read_holding_registers(address=0, count=fine_count, slave=$UNIT_ID)
+                    if result.isError():
+                        break
+                    max_reg = fine_count
                 break
-            data.extend(result.registers)
-    else:
-        data = result.registers
+            max_reg = test_count
+        
+        print(f"  ✅ Máximo detectado: {max_reg} registros")
+        print("")
+        num_regs = max_reg
+    
+    # Leer los registros
+    data = []
+    # Leer en bloques de 40 para mayor compatibilidad
+    for start in range(0, num_regs, 40):
+        count = min(40, num_regs - start)
+        result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
+        if result.isError():
+            print(f"  ⚠️  Error en registros {start}-{start+count-1}")
+            break
+        data.extend(result.registers)
     
     if data:
         print(f"  📋 Registros Tarjeta $FASE (0-{len(data)-1}):")
