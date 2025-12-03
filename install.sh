@@ -123,7 +123,8 @@ echo ""
 
 if [ -d "$INSTALL_DIR" ]; then
     cd "$INSTALL_DIR"
-    git pull -q
+    git fetch -q
+    git reset --hard origin/main -q
     echo "  ✅ Software actualizado"
 else
     git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
