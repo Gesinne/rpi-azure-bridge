@@ -72,9 +72,10 @@ if [ -f "$OVERRIDE_FILE" ]; then
     echo "  4) Ver estado actual"
     echo "  5) Actualizar Flow Node-RED"
     echo "  6) Restaurar Flow anterior (backup)"
-    echo "  7) Salir"
+    echo "  7) Modificar configuración equipo"
+    echo "  8) Salir"
     echo ""
-    read -p "  Opción [1-7]: " OPTION
+    read -p "  Opción [1-8]: " OPTION
     
     case $OPTION in
         1)
@@ -738,6 +739,104 @@ with open('$CONFIG_FILE', 'w') as f:
                 sudo systemctl restart kiosk.service
                 sleep 2
                 echo "  ✅ Kiosko reiniciado"
+            fi
+            
+            exit 0
+            ;;
+        7)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Modificar configuración equipo"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            # Buscar equipo_config.json
+            CONFIG_FILE=""
+            for f in /home/*/config/equipo_config.json; do
+                if [ -f "$f" ]; then
+                    CONFIG_FILE="$f"
+                    break
+                fi
+            done
+            
+            if [ -z "$CONFIG_FILE" ] || [ ! -f "$CONFIG_FILE" ]; then
+                echo "  ❌ No se encontró equipo_config.json"
+                echo "  Crea el archivo en: /home/gesinne/config/equipo_config.json"
+                exit 1
+            fi
+            
+            # Leer valores actuales
+            CURRENT_SERIE=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('serie', 'N/A'))" 2>/dev/null)
+            CURRENT_POTENCIA=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('potencia', 'N/A'))" 2>/dev/null)
+            CURRENT_IMAX=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('Imax', 'N/A'))" 2>/dev/null)
+            CURRENT_T1=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('tramo1', 'N/A'))" 2>/dev/null)
+            CURRENT_T2=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('tramo2', 'N/A'))" 2>/dev/null)
+            CURRENT_T3=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('tramo3', 'N/A'))" 2>/dev/null)
+            CURRENT_T4=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('tramo4', 'N/A'))" 2>/dev/null)
+            
+            echo "  Configuración actual:"
+            echo ""
+            echo "  Serie:    $CURRENT_SERIE"
+            echo "  Potencia: $CURRENT_POTENCIA"
+            echo "  Imax:     $CURRENT_IMAX"
+            echo "  Tramo 1:  $CURRENT_T1"
+            echo "  Tramo 2:  $CURRENT_T2"
+            echo "  Tramo 3:  $CURRENT_T3"
+            echo "  Tramo 4:  $CURRENT_T4"
+            echo ""
+            
+            read -p "  ¿Modificar? [s/N]: " MODIFY
+            if [ "$MODIFY" = "s" ] || [ "$MODIFY" = "S" ]; then
+                echo ""
+                read -p "  Serie [$CURRENT_SERIE]: " NEW_SERIE
+                read -p "  Potencia [$CURRENT_POTENCIA]: " NEW_POTENCIA
+                read -p "  Imax [$CURRENT_IMAX]: " NEW_IMAX
+                read -p "  Tramo 1 [$CURRENT_T1]: " NEW_T1
+                read -p "  Tramo 2 [$CURRENT_T2]: " NEW_T2
+                read -p "  Tramo 3 [$CURRENT_T3]: " NEW_T3
+                read -p "  Tramo 4 [$CURRENT_T4]: " NEW_T4
+                
+                # Usar valores actuales si no se introducen nuevos
+                NEW_SERIE="${NEW_SERIE:-$CURRENT_SERIE}"
+                NEW_POTENCIA="${NEW_POTENCIA:-$CURRENT_POTENCIA}"
+                NEW_IMAX="${NEW_IMAX:-$CURRENT_IMAX}"
+                NEW_T1="${NEW_T1:-$CURRENT_T1}"
+                NEW_T2="${NEW_T2:-$CURRENT_T2}"
+                NEW_T3="${NEW_T3:-$CURRENT_T3}"
+                NEW_T4="${NEW_T4:-$CURRENT_T4}"
+                
+                # Guardar nueva configuración
+                python3 -c "
+import json
+with open('$CONFIG_FILE') as f:
+    data = json.load(f)
+data['serie'] = '$NEW_SERIE'
+data['potencia'] = int('$NEW_POTENCIA')
+data['Imax'] = int('$NEW_IMAX')
+data['tramo1'] = int('$NEW_T1')
+data['tramo2'] = int('$NEW_T2')
+data['tramo3'] = int('$NEW_T3')
+data['tramo4'] = int('$NEW_T4')
+with open('$CONFIG_FILE', 'w') as f:
+    json.dump(data, f, indent=4)
+" 2>/dev/null
+                
+                echo ""
+                echo "  ✅ Configuración guardada"
+                echo ""
+                echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                sudo systemctl restart nodered
+                sleep 2
+                echo "  ✅ Node-RED reiniciado"
+                
+                # Reiniciar kiosko si existe
+                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                    echo ""
+                    echo "  🔄 Reiniciando modo kiosko..."
+                    sudo systemctl restart kiosk.service
+                    sleep 2
+                    echo "  ✅ Kiosko reiniciado"
+                fi
             fi
             
             exit 0
