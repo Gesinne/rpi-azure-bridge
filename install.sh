@@ -104,35 +104,29 @@ if [ -f "$OVERRIDE_FILE" ]; then
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             
-            # Mostrar config del equipo desde Node-RED
+            # Mostrar config del equipo desde archivo de configuración
             USER_HOME="/home/$(logname 2>/dev/null || echo 'pi')"
-            for f in "$USER_HOME/.node-red/flows.json" "/home/pi/.node-red/flows.json" "/home/gesinne/.node-red/flows.json"; do
+            CONFIG_FILE=""
+            for f in "$USER_HOME/config/equipo_config.json" "/home/pi/config/equipo_config.json" "/home/gesinne/config/equipo_config.json"; do
                 if [ -f "$f" ]; then
-                    python3 -c "
-import json, re
-with open('$f') as file:
-    flows = json.load(file)
-
-# Buscar nodo 'Valores iniciales' (inject)
-for node in flows:
-    if node.get('type') == 'inject' and 'iniciales' in node.get('name', '').lower():
-        props = node.get('props', [])
-        for prop in props:
-            if prop.get('p') == 'payload':
-                val = prop.get('v', '')
-                # Extraer serie y potencia del JSON
-                try:
-                    data = json.loads(val)
-                    print(f\"  🔧 Serie: {data.get('serie', '?')}\")
-                    print(f\"  ⚡ Potencia: {data.get('potencia', '?')} kW\")
-                    print(f\"  🔌 Imax: {data.get('Imax', '?')} A\")
-                except:
-                    pass
-        break
-" 2>/dev/null
+                    CONFIG_FILE="$f"
                     break
                 fi
             done
+            
+            if [ -n "$CONFIG_FILE" ]; then
+                python3 -c "
+import json
+try:
+    with open('$CONFIG_FILE') as f:
+        data = json.load(f)
+    print(f\"  🔧 Serie: {data.get('serie', '?')}\")
+    print(f\"  ⚡ Potencia: {data.get('potencia', '?')} kW\")
+    print(f\"  🔌 Imax: {data.get('Imax', '?')} A\")
+except:
+    pass
+" 2>/dev/null
+            fi
             
             show_nodered_config
             echo ""
