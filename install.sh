@@ -70,9 +70,10 @@ if [ -f "$OVERRIDE_FILE" ]; then
     echo "  2) Cambiar a modo Azure IoT (nueva connection string)"
     echo "  3) Cambiar a modo Servidor Remoto (mqtt.gesinne.cloud)"
     echo "  4) Ver estado actual"
-    echo "  5) Salir"
+    echo "  5) Actualizar Flow Node-RED"
+    echo "  6) Salir"
     echo ""
-    read -p "  Opción [1-5]: " OPTION
+    read -p "  Opción [1-6]: " OPTION
     
     case $OPTION in
         1)
@@ -216,6 +217,110 @@ except:
             echo "  📋 Últimos logs:"
             docker-compose logs --tail=5 2>/dev/null | grep -E "✅|❌|📤|⚠️|Conectado" | tail -5
             echo ""
+            exit 0
+            ;;
+        5)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Actualizar Flow Node-RED"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            NODERED_REPO="https://raw.githubusercontent.com/Gesinne/NODERED/main"
+            
+            # Obtener lista de versiones disponibles
+            echo "  📥 Obteniendo versiones disponibles..."
+            VERSIONS=$(curl -s "https://api.github.com/repos/Gesinne/NODERED/contents" | python3 -c "
+import sys, json
+try:
+    items = json.load(sys.stdin)
+    for item in items:
+        if item.get('type') == 'dir':
+            print(item.get('name'))
+except:
+    pass
+" 2>/dev/null)
+            
+            # Añadir opción de flows.json en raíz (original)
+            echo ""
+            echo "  Versiones disponibles:"
+            echo ""
+            echo "  0) original (flows.json en raíz del repo)"
+            
+            i=1
+            for v in $VERSIONS; do
+                echo "  $i) $v"
+                i=$((i+1))
+            done
+            
+            echo ""
+            read -p "  Selecciona versión [0-$((i-1))]: " VERSION_CHOICE
+            
+            # Determinar URL del flow
+            if [ "$VERSION_CHOICE" = "0" ]; then
+                FLOW_URL="$NODERED_REPO/flows.json"
+                VERSION_NAME="original"
+            else
+                j=1
+                for v in $VERSIONS; do
+                    if [ "$j" = "$VERSION_CHOICE" ]; then
+                        FLOW_URL="$NODERED_REPO/$v/flows.json"
+                        VERSION_NAME="$v"
+                        break
+                    fi
+                    j=$((j+1))
+                done
+            fi
+            
+            if [ -z "$FLOW_URL" ]; then
+                echo "  ❌ Opción no válida"
+                exit 1
+            fi
+            
+            echo ""
+            echo "  📥 Descargando $VERSION_NAME..."
+            
+            # Buscar directorio Node-RED
+            NODERED_DIR=""
+            for d in /home/*/.node-red; do
+                if [ -d "$d" ]; then
+                    NODERED_DIR="$d"
+                    break
+                fi
+            done
+            
+            if [ -z "$NODERED_DIR" ]; then
+                echo "  ❌ No se encontró directorio Node-RED"
+                exit 1
+            fi
+            
+            # Backup del flow actual
+            BACKUP_FILE="$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S)"
+            cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
+            echo "  💾 Backup creado: $BACKUP_FILE"
+            
+            # Descargar nuevo flow
+            if curl -sSL "$FLOW_URL" -o /tmp/new_flows.json; then
+                # Verificar que es JSON válido
+                if python3 -c "import json; json.load(open('/tmp/new_flows.json'))" 2>/dev/null; then
+                    cp /tmp/new_flows.json "$NODERED_DIR/flows.json"
+                    echo "  ✅ Flow instalado: $VERSION_NAME"
+                    echo ""
+                    echo "  🔄 Reiniciando Node-RED..."
+                    sudo systemctl restart nodered
+                    sleep 3
+                    echo "  ✅ Node-RED reiniciado"
+                    echo ""
+                    echo "  ⚠️  Recuerda configurar equipo_config.json con los datos del equipo"
+                else
+                    echo "  ❌ Error: El archivo descargado no es JSON válido"
+                    exit 1
+                fi
+            else
+                echo "  ❌ Error descargando flow"
+                exit 1
+            fi
+            
             exit 0
             ;;
         *)
