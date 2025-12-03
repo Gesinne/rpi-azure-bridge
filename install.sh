@@ -241,16 +241,37 @@ except:
             fi
             
             NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
+            CACHE_DIR="/opt/nodered-flows-cache"
             
-            # Clonar repo para obtener versiones
+            # Usar caché o clonar
             echo ""
             echo "  📥 Obteniendo versiones disponibles..."
-            rm -rf "$TEMP_DIR"
-            if ! git clone -q --depth 1 "$NODERED_REPO" "$TEMP_DIR" 2>/dev/null; then
-                echo "  ❌ Error accediendo al repositorio"
-                echo "  Verifica usuario y token"
-                exit 1
+            
+            if [ -d "$CACHE_DIR/.git" ]; then
+                # Ya existe, actualizar
+                cd "$CACHE_DIR"
+                git remote set-url origin "$NODERED_REPO" 2>/dev/null
+                if ! git pull -q 2>/dev/null; then
+                    echo "  ⚠️  Error actualizando, re-clonando..."
+                    rm -rf "$CACHE_DIR"
+                    if ! git clone -q --depth 1 "$NODERED_REPO" "$CACHE_DIR" 2>/dev/null; then
+                        echo "  ❌ Error accediendo al repositorio"
+                        echo "  Verifica usuario y token"
+                        exit 1
+                    fi
+                fi
+            else
+                # Primera vez, clonar
+                sudo mkdir -p "$CACHE_DIR" 2>/dev/null
+                sudo chown $(whoami) "$CACHE_DIR" 2>/dev/null
+                if ! git clone -q --depth 1 "$NODERED_REPO" "$CACHE_DIR" 2>/dev/null; then
+                    echo "  ❌ Error accediendo al repositorio"
+                    echo "  Verifica usuario y token"
+                    exit 1
+                fi
             fi
+            
+            TEMP_DIR="$CACHE_DIR"
             
             # Obtener versión actual instalada (buscar específicamente global.set('Version',...))
             CURRENT_VERSION=""
@@ -368,12 +389,8 @@ except:
                 echo "  ✅ Node-RED reiniciado"
             else
                 echo "  ❌ Error: El archivo no es JSON válido"
-                rm -rf "$TEMP_DIR"
                 exit 1
             fi
-            
-            # Limpiar
-            rm -rf "$TEMP_DIR"
             
             # Buscar y mostrar equipo_config.json
             CONFIG_FILE=""
