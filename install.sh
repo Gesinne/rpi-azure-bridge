@@ -401,9 +401,14 @@ except:
             fi
             
             # Detectar si el flow seleccionado necesita FlowFuse o Clásico
+            # FlowFuse usa nodos tipo "ui-button", "ui-chart" (con guión)
+            # Clásico usa nodos tipo "ui_button", "ui_chart" (con guión bajo)
             NEEDS_FLOWFUSE="no"
-            if echo "$VERSION_NAME" | grep -q "dbrd2"; then
+            if grep -q '"type":\s*"ui-' "$FLOW_FILE" 2>/dev/null; then
                 NEEDS_FLOWFUSE="yes"
+                echo "  📊 Flow detectado: FlowFuse Dashboard"
+            else
+                echo "  📊 Flow detectado: Dashboard Clásico"
             fi
             
             # Verificar si necesita cambiar el dashboard
@@ -674,9 +679,10 @@ with open('$CONFIG_FILE', 'w') as f:
             echo "  📥 Restaurando backup..."
             
             # Detectar si el backup necesita FlowFuse o Clásico
-            BACKUP_NAME=$(basename "$SELECTED_BACKUP")
+            # FlowFuse usa nodos tipo "ui-button", "ui-chart" (con guión)
+            # Clásico usa nodos tipo "ui_button", "ui_chart" (con guión bajo)
             NEEDS_FLOWFUSE="no"
-            if grep -q "dbrd2\|@flowfuse" "$SELECTED_BACKUP" 2>/dev/null; then
+            if grep -q '"type":\s*"ui-' "$SELECTED_BACKUP" 2>/dev/null; then
                 NEEDS_FLOWFUSE="yes"
             fi
             
