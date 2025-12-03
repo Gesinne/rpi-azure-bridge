@@ -143,9 +143,9 @@ try:
         name = node.get('name', '')
         func = node.get('func', '')
         if name in ['Editar lo necesario', 'Establecer valores globales', 'No tocar'] or 'Version' in func:
-            match = re.search(r'Version[^0-9]*([0-9]{4}_[0-9]{2}_[0-9]{2}[^\\\"\\n]*)', func)
+            match = re.search(r'([0-9]{4}_[0-9]{2}_[0-9]{2}_[a-zA-Z0-9]+)', func)
             if match:
-                print(f'  📋 Versión Flow: {match.group(1).strip()}')
+                print(f'  📋 Versión Flow: {match.group(1)}')
                 version_found = True
                 break
     
@@ -153,9 +153,9 @@ try:
         # Buscar en todo el archivo
         with open('$flowfile') as file:
             content = file.read()
-        match = re.search(r'Version[^0-9]*([0-9]{4}_[0-9]{2}_[0-9]{2}[^\\\"\\n]*)', content)
+        match = re.search(r'([0-9]{4}_[0-9]{2}_[0-9]{2}_[a-zA-Z0-9]+)', content)
         if match:
-            print(f'  📋 Versión Flow: {match.group(1).strip()}')
+            print(f'  📋 Versión Flow: {match.group(1)}')
 except Exception as e:
     pass
 " 2>/dev/null
@@ -261,8 +261,8 @@ import json, re
 try:
     with open('$flowfile') as f:
         content = f.read()
-    # Buscar fecha en formato YYYYMMDD o YYYY_MM_DD
-    match = re.search(r'([0-9]{4})_?([0-9]{2})_?([0-9]{2})', content)
+    # Buscar versión en formato YYYY_MM_DD_xxx
+    match = re.search(r'([0-9]{4})_([0-9]{2})_([0-9]{2})_[a-zA-Z0-9]+', content)
     if match:
         print(f'{match.group(1)}{match.group(2)}{match.group(3)}')
 except:
