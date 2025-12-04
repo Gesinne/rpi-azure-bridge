@@ -1107,13 +1107,17 @@ try:
             95: ("Escalón máximo del mando tensión no nula (EMMVT1)", "?ReCn"),
         }
         
-        # Imprimir cabecera
-        print("Registro\tDescripción\tParámetro\t$FASE")
+        # Imprimir con formato de tabla
+        print("")
+        print("  REGISTROS DE LECTURA - TARJETA $FASE")
+        print("")
+        print("  Reg | Parámetro                | Valor      | Descripción")
+        print("  ----|--------------------------|------------|--------------------------------------------------")
         
         for i in range(len(data)):
             if i in regs:
                 desc, nombre = regs[i]
-                print(f"{i}\t{desc}\t{nombre}\t{data[i]}")
+                print(f"  {i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
         print("")
     else:
         print("  ❌ No se pudieron leer registros")
