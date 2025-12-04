@@ -1,15 +1,28 @@
 #!/bin/bash
 #
-# Instalador automático del puente MQTT → Azure IoT Hub
+# Instalador automático GESINNE INGENIERÍA
 # 
 # COMANDO ÚNICO PARA INSTALAR O ACTUALIZAR:
-# bash <(curl -sL https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh)
+# curl -sL https://gesinne.es/rpi | bash
+# o
+# wget -qO- https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh > /tmp/g.sh && bash /tmp/g.sh
 #
+
+# Si se ejecuta desde curl/pipe, descargar y ejecutar localmente
+if [ ! -t 0 ]; then
+    SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh"
+    TEMP_SCRIPT="/tmp/gesinne_install_$$.sh"
+    curl -sL "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" "$SCRIPT_URL"
+    chmod +x "$TEMP_SCRIPT"
+    exec bash "$TEMP_SCRIPT" "$@"
+    exit 0
+fi
 
 set -e
 
 # Auto-detectar si necesita clonar o actualizar el repo
-INSTALL_DIR="/home/$(logname 2>/dev/null || echo $USER)/rpi-azure-bridge"
+USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
+INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
 if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
     git pull -q 2>/dev/null || true
