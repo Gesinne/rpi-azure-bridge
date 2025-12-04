@@ -732,7 +732,15 @@ with open('$CONFIG_FILE', 'w') as f:
                 BACKUP_DATE=$(basename "$b" | sed 's/flows.json.backup.//')
                 FORMATTED_DATE=$(echo "$BACKUP_DATE" | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3 \4:\5:\6/')
                 BACKUP_SIZE=$(du -h "$b" | cut -f1)
-                echo "  $i) $FORMATTED_DATE ($BACKUP_SIZE)"
+                # Detectar tipo de dashboard del backup
+                if grep -q '"type":\s*"ui-' "$b" 2>/dev/null; then
+                    BACKUP_TYPE="FlowFuse"
+                elif grep -q '"type":\s*"ui_' "$b" 2>/dev/null; then
+                    BACKUP_TYPE="Clásico"
+                else
+                    BACKUP_TYPE="Sin dashboard"
+                fi
+                echo "  $i) $FORMATTED_DATE - $BACKUP_TYPE ($BACKUP_SIZE)"
                 BACKUP_ARRAY[$i]="$b"
                 i=$((i+1))
                 # Mostrar máximo 10
