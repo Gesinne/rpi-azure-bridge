@@ -1978,7 +1978,7 @@ echo ""
 # Crear docker-compose.override.yml con la connection string
 cat > docker-compose.override.yml << EOF
 services:
-  mqtt-to-azure:
+  gesinne-rpi:
     environment:
       - AZURE_CONNECTION_STRING=${AZURE_CONNECTION_STRING}
 EOF
