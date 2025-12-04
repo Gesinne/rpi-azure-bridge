@@ -929,13 +929,15 @@ with open('$CONFIG_FILE', 'w') as f:
             echo "  1) Tarjeta L1 (Fase 1)"
             echo "  2) Tarjeta L2 (Fase 2)"
             echo "  3) Tarjeta L3 (Fase 3)"
+            echo "  4) TODAS las tarjetas (L1, L2, L3)"
             echo ""
-            read -p "  Opción [1-3]: " TARJETA
+            read -p "  Opción [1-4]: " TARJETA
             
             case $TARJETA in
-                1) UNIT_ID=1; FASE="L1" ;;
-                2) UNIT_ID=2; FASE="L2" ;;
-                3) UNIT_ID=3; FASE="L3" ;;
+                1) UNIT_IDS="1"; FASES="L1" ;;
+                2) UNIT_IDS="2"; FASES="L2" ;;
+                3) UNIT_IDS="3"; FASES="L3" ;;
+                4) UNIT_IDS="1 2 3"; FASES="L1 L2 L3" ;;
                 *) echo "  ❌ Opción no válida"; exit 1 ;;
             esac
             
@@ -950,7 +952,15 @@ with open('$CONFIG_FILE', 'w') as f:
             sudo systemctl stop nodered
             sleep 1
             
-            echo "  📡 Leyendo $NUM_REGS registros de Tarjeta $FASE (Unit ID: $UNIT_ID)..."
+            for UNIT_ID in $UNIT_IDS; do
+            
+            case $UNIT_ID in
+                1) FASE="L1" ;;
+                2) FASE="L2" ;;
+                3) FASE="L3" ;;
+            esac
+            
+            echo "  📡 Leyendo registros de Tarjeta $FASE (Unit ID: $UNIT_ID)..."
             echo ""
             
             python3 << EOF
@@ -1171,6 +1181,8 @@ except Exception as e:
 finally:
     client.close()
 EOF
+            
+            done  # fin del bucle for UNIT_ID
             
             echo "  🔄 Reiniciando Node-RED..."
             sudo systemctl start nodered
