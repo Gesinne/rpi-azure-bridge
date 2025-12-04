@@ -447,8 +447,8 @@ except:
                     echo ""
                     # Desinstalar clásico primero si existe
                     npm uninstall node-red-dashboard 2>/dev/null || true
-                    # Instalar FlowFuse
-                    npm install @flowfuse/node-red-dashboard --save
+                    # Instalar FlowFuse y plugins necesarios
+                    npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
                     if [ $? -eq 0 ]; then
                         echo "  ✅ FlowFuse Dashboard instalado"
                     else
@@ -462,6 +462,8 @@ except:
                     npm uninstall node-red-dashboard 2>/dev/null || true
                     echo "  ✅ Conflicto resuelto"
                 fi
+                # Asegurar que ui-led está instalado
+                npm install @flowfuse/node-red-dashboard-2-ui-led --save 2>/dev/null || true
             else
                 # Necesita Clásico
                 if [ "$HAS_CLASSIC" = "no" ]; then
