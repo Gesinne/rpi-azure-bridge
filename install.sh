@@ -74,9 +74,10 @@ if [ -f "$OVERRIDE_FILE" ]; then
     echo "  6) Restaurar Flow anterior (backup)"
     echo "  7) Modificar configuración equipo"
     echo "  8) Leer registros Modbus"
-    echo "  9) Salir"
+    echo "  9) Leer registros y ENVIAR POR EMAIL"
+    echo "  0) Salir"
     echo ""
-    read -p "  Opción [1-9]: " OPTION
+    read -p "  Opción [0-9]: " OPTION
     
     case $OPTION in
         1)
@@ -1481,7 +1482,203 @@ EOFMQTT
             
             exit 0
             ;;
-        *)
+        9)
+            # Leer registros y enviar por email
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Leer registros Modbus y ENVIAR POR EMAIL"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  ¿Qué tarjeta quieres leer?"
+            echo ""
+            echo "  1) Tarjeta L1 (Fase 1)"
+            echo "  2) Tarjeta L2 (Fase 2)"
+            echo "  3) Tarjeta L3 (Fase 3)"
+            echo "  4) TODAS las tarjetas (L1, L2, L3)"
+            echo ""
+            read -p "  Opción [1-4]: " TARJETA_EMAIL
+            
+            case $TARJETA_EMAIL in
+                1) TARJETAS_EMAIL="1" ;;
+                2) TARJETAS_EMAIL="2" ;;
+                3) TARJETAS_EMAIL="3" ;;
+                4) TARJETAS_EMAIL="1 2 3" ;;
+                *) echo "  ❌ Opción no válida"; exit 1 ;;
+            esac
+            
+            # Verificar si el contenedor está corriendo
+            if docker ps --format '{{.Names}}' | grep -q "gesinne-rpi"; then
+                echo ""
+                echo "  📧 Leyendo registros y enviando email..."
+                docker exec gesinne-rpi python enviar_email.py "$TARJETAS_EMAIL"
+            else
+                # Si no hay contenedor, usar Python directamente
+                echo ""
+                echo "  ⚠️  Contenedor no encontrado, usando Python local..."
+                echo ""
+                
+                # Obtener número de serie
+                CONFIG_FILE=""
+                for f in /home/*/config/equipo_config.json; do
+                    if [ -f "$f" ]; then
+                        CONFIG_FILE="$f"
+                        break
+                    fi
+                done
+                
+                if [ -n "$CONFIG_FILE" ]; then
+                    SERIAL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('numero_serie', 'unknown'))" 2>/dev/null)
+                else
+                    SERIAL="unknown"
+                fi
+                
+                echo "  ⚠️  Se parará Node-RED temporalmente..."
+                sudo systemctl stop nodered
+                sleep 1
+                
+                python3 << EOFEMAIL
+import os
+import sys
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
+
+# Configuración
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_USER = "gesinneasturias@gmail.com"
+SMTP_PASSWORD = "pegdowikwjuqpeoq"
+SMTP_FROM = "gesinneasturias@gmail.com"
+SMTP_TO = "patricia.garcia@gesinne.com"
+NUMERO_SERIE = "$SERIAL"
+TARJETAS = "$TARJETAS_EMAIL"
+
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    from pymodbus.client.sync import ModbusSerialClient
+
+REGISTROS = {
+    0: ("Estado actual del chopper", "Estado actual"),
+    1: ("Modo de funcionamiento", "Topología actual"),
+    2: ("Alarma", "Alarma"),
+    3: ("Tensión de salida (Vo)", "V salida"),
+    4: ("Tensión de entrada (Vin)", "V entrada"),
+    5: ("Frecuencia", "Hz"),
+    6: ("Corriente salida Equipo", "I Salida"),
+    7: ("Corriente salida Chopper", "I Chopper"),
+    17: ("Temperatura interna", "Temperatura"),
+    41: ("Número de serie", "Nº serie"),
+    42: ("Tensión nominal", "V nominal"),
+    46: ("Topología", "Topología"),
+    47: ("Dead-time", "Dead-time"),
+    48: ("Dirección MODBUS", "Modbus"),
+    55: ("Estado inicial", "Estado ini"),
+    56: ("V inicial", "V inicial"),
+    57: ("Temperatura máxima", "Temp máx"),
+    63: ("Ángulo cargas altas", "Áng altas"),
+    64: ("Ángulo cargas bajas", "Áng bajas"),
+    66: ("Sensibilidad transitorios", "Sens trans"),
+}
+
+client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
+
+contenido = []
+contenido.append("=" * 80)
+contenido.append(f"PARÁMETROS DE CONFIGURACIÓN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+contenido.append(f"Equipo S/N: {NUMERO_SERIE}")
+contenido.append("=" * 80)
+
+if client.connect():
+    for unit_id in [int(x) for x in TARJETAS.split()]:
+        data = []
+        for start in range(0, 96, 40):
+            count = min(40, 96 - start)
+            result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+            if not result.isError():
+                data.extend(result.registers)
+            else:
+                break
+        
+        if len(data) > 48:
+            dir_modbus = data[48]
+            placa = {1: "L1 (Fase 1)", 2: "L2 (Fase 2)", 3: "L3 (Fase 3)"}.get(dir_modbus, "Desconocida")
+            
+            contenido.append("")
+            contenido.append("╔" + "═" * 78 + "╗")
+            contenido.append(f"║  PLACA: {placa:20s}  -  Dirección Modbus: {dir_modbus}                        ║")
+            contenido.append("╚" + "═" * 78 + "╝")
+            contenido.append("")
+            contenido.append("Reg | Parámetro                | Valor      | Descripción")
+            contenido.append("----|--------------------------|------------|--------------------------------------------------")
+            
+            for i in range(len(data)):
+                if i in REGISTROS:
+                    desc, nombre = REGISTROS[i]
+                    contenido.append(f"{i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+    
+    client.close()
+
+contenido.append("")
+contenido.append("=" * 80)
+
+texto = "\n".join(contenido)
+print(texto)
+
+# Enviar email
+msg = MIMEMultipart('alternative')
+msg['Subject'] = f"📋 Configuración Modbus - Equipo {NUMERO_SERIE} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+msg['From'] = SMTP_FROM
+msg['To'] = SMTP_TO
+
+text_part = MIMEText(texto, 'plain', 'utf-8')
+msg.attach(text_part)
+
+html_content = f"""
+<html>
+<head><style>
+body {{ font-family: Arial, sans-serif; }}
+pre {{ background-color: #f4f4f4; padding: 15px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 12px; }}
+.header {{ background-color: #3498db; color: white; padding: 10px 20px; border-radius: 5px; }}
+</style></head>
+<body>
+<div class="header">
+<h2>📋 Configuración Modbus - Equipo {NUMERO_SERIE}</h2>
+<p>Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+</div>
+<pre>{texto}</pre>
+</body>
+</html>
+"""
+html_part = MIMEText(html_content, 'html', 'utf-8')
+msg.attach(html_part)
+
+try:
+    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+    server.starttls()
+    server.login(SMTP_USER, SMTP_PASSWORD)
+    server.sendmail(SMTP_FROM, SMTP_TO.split(','), msg.as_string())
+    server.quit()
+    print(f"\n✅ Email enviado a: {SMTP_TO}")
+except Exception as e:
+    print(f"\n❌ Error enviando email: {e}")
+EOFEMAIL
+                
+                echo ""
+                echo "  🔄 Reiniciando Node-RED..."
+                sudo systemctl start nodered
+                sleep 2
+                
+                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                    sudo systemctl restart kiosk.service
+                fi
+            fi
+            
+            echo "  ✅ Listo"
+            exit 0
+            ;;
+        0|*)
             echo ""
             echo "  👋 Saliendo"
             exit 0
