@@ -1018,108 +1018,102 @@ try:
         print("")
         print("  " + ",".join(str(val) for val in data))
         print("")
-        print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("  DATOS EN TIEMPO REAL (0-21)")
-        print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print(f"   0  Estado actual:         {data[0]}")
-        print(f"   1  Topología actual:      {data[1]}")
-        print(f"   2  Alarma:                {data[2]}")
-        print(f"   3  V salida:              {data[3]/100:.2f} V")
-        print(f"   4  V entrada:             {data[4]/100:.2f} V")
-        print(f"   5  Hz:                    {data[5]/100:.2f}")
-        print(f"   6  I Salida:              {data[6]/10:.1f} A")
-        print(f"   7  I Chopper:             {data[7]/100:.2f} A")
-        print(f"   8  I Primario trafo:      {data[8]/100:.2f} A")
-        pot_activa = ((data[9] << 16) | data[10]) / 10000
-        pot_reactiva = ((data[11] << 16) | data[12]) / 10000
-        pot_aparente = ((data[13] << 16) | data[14]) / 10000
-        print(f"  9-10 P activa:             {pot_activa:.2f} kW")
-        print(f" 11-12 P reactiva:           {pot_reactiva:.2f} kVAr")
-        print(f" 13-14 P aparente:           {pot_aparente:.2f} kVA")
-        print(f"  15  Factor de Potencia:    {data[15]/100:.2f}")
-        print(f"  16  Tipo de FP:            {data[16]}")
-        print(f"  17  Temperatura:           {data[17]/10:.1f} °C")
-        print(f"  18  Temperatura de alarma: {data[18]/10:.1f} °C")
-        print(f"  19  Enable externo:        {data[19]}")
-        print(f"  20  Tiempo para despejar:  {data[20]} s")
-        print(f"  21  Enable PCB:            {data[21]}")
-        print("")
-        print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("  ESTADO (30-34)")
-        print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print(f"  30  Flag Estado:           {data[30]}")
-        print(f"  31  Estado deseado:        {data[31]}  (0=normal, 1=bypass, 2=reg)")
-        print(f"  32  Consigna deseada:      {data[32]/10:.1f} V")
-        print(f"  33  Bucle de control:      {data[33]}")
-        print(f"  34  Mando chopper:         {data[34]}")
-        print("")
-        print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print("  CONFIGURACIÓN (40-69)")
-        print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        print(f"  40  Flag Configuración:    {data[40]}")
-        print(f"  41  Nº de serie placas:    {data[41]}")
-        print(f"  42  V nominal:             {data[42]/10:.1f} V")
-        print(f"  43  V primario autotrafo:  {data[43]/10:.1f} V")
-        print(f"  44  V secundario autotrafo:{data[44]/10:.1f} V")
-        print(f"  45  V secundario trafo:    {data[45]/10:.1f} V")
-        print(f"  46  Topología:             {data[46]}  (0-4)")
-        print(f"  47  Dead-time:             {data[47]}")
-        print(f"  48  Modbus:                {data[48]}")
-        print(f"  49  I nominal salida:      {data[49]}")
-        print(f"  50  I nominal chopper:     {data[50]}")
-        print(f"  51  I máxima chopper:      {data[51]}")
-        print(f"  52  I máxima chopper:      {data[52]}")
-        print(f"  53  Tiempo apagado CC/TT:  {data[53]}")
-        print(f"  54  Contador apagados SC:  {data[54]}")
-        print(f"  55  Estado inicial:        {data[55]}  (0 o 2)")
-        print(f"  56  V inicial:             {data[56]/10:.1f} V")
-        print(f"  57  Temperatura máxima:    {data[57]/10:.1f} °C")
-        print(f"  58  Decremento T reenc:    {data[58]/10:.1f} °C")
-        print(f"  59  Contador apagados ST:  {data[59]}")
-        print(f"  60  Tipo V placa:          {data[60]}  (0 o 1)")
-        print(f"  61  Velocidad Modbus:      {data[61]}  (0-2)")
-        print(f"  62  Package transistores:  {data[62]}  (0 o 1)")
-        print(f"  63  Ángulo cargas altas:   {data[63]}")
-        print(f"  64  Ángulo cargas bajas:   {data[64]}")
-        print(f"  65  % para carga baja:     {data[65]}")
-        print(f"  66  Sensib. transitorios:  {data[66]}  (0-4)")
-        if len(data) > 67:
-            print(f"  67  Sensib. derivada:      {data[67]}")
-            print(f"  68  N/A:                   {data[68]}")
-            print(f"  69  ?ReCo:                 {data[69]}")
-        print("")
-        if len(data) > 70:
-            print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print("  CALIBRACIÓN (70-86)")
-            print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print(f"  70  Flag Calibración:      {data[70]}")
-            print(f"  71  ?Ca00:                 {data[71]}")
-            print(f"  72  ?Ca01:                 {data[72]}")
-            print(f"  73  ?Ca03:                 {data[73]}")
-            print(f"  74  ?Ca04:                 {data[74]}")
-            print(f"  75  ?Ca06:                 {data[75]}")
-            print(f"  76  ?Ca07:                 {data[76]}")
-            print(f"  77  ?Ca08:                 {data[77]}")
-            print(f"  78  ?Ca09:                 {data[78]}")
-            print(f"  79  ?Ca10:                 {data[79]}")
-            print(f"  80  ?Ca11:                 {data[80]}")
-            print(f"  81  ?Ca12:                 {data[81]}")
-            print(f"  82  ?Ca13:                 {data[82]}")
-            print(f"  83  ?Ca14:                 {data[83]}")
-            print(f"  84  ?Ca15:                 {data[84]}")
-            print(f"  85  ?R:                    {data[85]}")
-            print(f"  86  ?ReCa:                 {data[86]}")
-        if len(data) > 90:
-            print("")
-            print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print("  CONTROL (90-95)")
-            print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            print(f"  90  Flag Control:          {data[90]}")
-            print(f"  91  ?Cn00:                 {data[91]}")
-            print(f"  92  ?Cn01:                 {data[92]}")
-            print(f"  93  ?Cn02:                 {data[93]}")
-            print(f"  94  ?Cn03:                 {data[94]}")
-            print(f"  95  ?ReCn:                 {data[95]}")
+        
+        # Definir registros con: (descripción larga, nombre corto)
+        regs = {
+            0: ("Estado actual del chopper", "Estado actual"),
+            1: ("Modo de funcionamiento (topología) actual", "Topología actual"),
+            2: ("Alarma", "Alarma"),
+            3: ("Tensión de salida (Vo)", "V salida"),
+            4: ("Tensión de entrada (Vin)", "V entrada"),
+            5: ("Frecuencia", "Hz"),
+            6: ("Corriente de salida del Equipo", "I Salida"),
+            7: ("Corriente de salida del Chopper", "I Chopper"),
+            8: ("Corriente por primario del trafo", "I Primario trafo"),
+            9: ("Potencia activa de salida (parte alta)", "P activa (alta)"),
+            10: ("Potencia activa de salida (parte baja)", "P activa (baja)"),
+            11: ("Potencia reactiva de salida (parte alta)", "P reactiva (alta)"),
+            12: ("Potencia reactiva de salida (parte baja)", "P reactiva (baja)"),
+            13: ("Potencia aparente de salida (parte alta)", "P aparente (alta)"),
+            14: ("Potencia aparente de salida (parte baja)", "P aparente (baja)"),
+            15: ("Factor de potencia", "Factor de Potencia"),
+            16: ("Tipo de factor de potencia", "Tipo de FP"),
+            17: ("Temperatura interna", "Temperatura"),
+            18: ("Temperatura para despejar alarma", "Temperatura de alarma"),
+            19: ("Estado del Enable de regulación externo", "Enable externo"),
+            20: ("Tiempo restante para reencendido", "Tiempo para despejar"),
+            21: ("Estado del Enable de regulación Switch PCB", "Enable PCB"),
+            22: ("N/A", "N/A"), 23: ("N/A", "N/A"), 24: ("N/A", "N/A"), 25: ("N/A", "N/A"),
+            26: ("N/A", "N/A"), 27: ("N/A", "N/A"), 28: ("N/A", "N/A"), 29: ("N/A", "N/A"),
+            30: ("Flag escritura registros de ESTADO", "Flag Estado"),
+            31: ("Estado deseado del Chopper", "Estado deseado"),
+            32: ("Tensión de consigna deseada", "Consigna deseada"),
+            33: ("Bucle de control del Chopper", "Bucle de control"),
+            34: ("Mando del control del Chopper", "Mando chopper"),
+            35: ("N/A", "N/A"), 36: ("N/A", "N/A"), 37: ("N/A", "N/A"), 38: ("N/A", "N/A"), 39: ("N/A", "N/A"),
+            40: ("Flag escritura registros de CONFIGURACIÓN", "Flag Configuración"),
+            41: ("Número de serie", "Nº de serie placas"),
+            42: ("Tensión nominal", "V nominal"),
+            43: ("Tensión de primario del autotransformador", "V primario autotrafo"),
+            44: ("Tensión de primario del transformador", "V secundario autotrafo"),
+            45: ("Tensión de secundario del transformador", "V secundario trafo"),
+            46: ("Topología del equipo", "Topología"),
+            47: ("Dead-time (DT)", "Dead-time"),
+            48: ("Dirección MODBUS", "Modbus"),
+            49: ("Corriente nominal de medida de salida del Equipo", "I nominal salida"),
+            50: ("Corriente nominal de medida de salida del Chopper", "I nominal chopper"),
+            51: ("Corriente máxima chopper (valor eficaz)", "I máxima chopper"),
+            52: ("Corriente máxima chopper (valor pico)", "I máxima chopper"),
+            53: ("Tiempo de apagado después de CC/TT", "Tiempo de apagado CC/TT"),
+            54: ("Número de apagados por sobrecorriente", "Contador apagados SC"),
+            55: ("Estado inicial del Chopper", "Estado inicial"),
+            56: ("Tensión de consigna inicial", "V inicial"),
+            57: ("Temperatura interna máxima", "Temperatura máxima"),
+            58: ("Decremento de temperatura para reencendido", "Decremento T reenc"),
+            59: ("Número de apagados por sobretemperatura", "Contador apagados ST"),
+            60: ("Tipo de alimentación de la placa", "Tipo V placa"),
+            61: ("Velocidad de comunicación MODBUS", "Velocidad Modbus"),
+            62: ("Empaquetado (package) de los transistores", "Package transistores"),
+            63: ("Ángulo de cambio de tensión para cargas altas", "Ángulo cargas altas"),
+            64: ("Ángulo de cambio de tensión para cargas bajas", "Ángulo cargas bajas"),
+            65: ("Porcentaje de corriente máxima para carga baja", "% para carga baja"),
+            66: ("Sensibilidad detección transitorios", "Sensibilidad transitorios"),
+            67: ("Sensibilidad detección derivada corriente", "Sensibilidad derivada"),
+            68: ("N/A", "N/A"),
+            69: ("Restablece la configuración por defecto", "?ReCo"),
+            70: ("Flag escritura registros de CALIBRACIÓN", "Flag Calibración"),
+            71: ("Parámetro K de la tensión de salida V0", "?Ca00"),
+            72: ("Parámetro K de la tensión de entrada Vin", "?Ca01"),
+            73: ("Parámetro b de la tensión de salida V0", "?Ca03"),
+            74: ("Parámetro b de la tensión de entrada Vin", "?Ca04"),
+            75: ("Parámetro K de la corriente de salida del Chopper", "?Ca06"),
+            76: ("Parámetro K de la corriente de salida del Equipo", "?Ca07"),
+            77: ("Parámetro b de la corriente de salida del Chopper", "?Ca08"),
+            78: ("Parámetro b de la corriente de salida del Equipo", "?Ca09"),
+            79: ("Valor del ruido de la corriente del Chopper", "?Ca10"),
+            80: ("Valor del ruido de la corriente del Equipo", "?Ca11"),
+            81: ("Parámetro K de la potencia de salida", "?Ca12"),
+            82: ("Parámetro b de la potencia de salida", "?Ca13"),
+            83: ("Desfase de muestras entre tensión y corriente", "?Ca14"),
+            84: ("Parámetro de calibración de la medida de frecuencia", "?Ca15"),
+            85: ("Calibra el ruido de los canales de corriente", "?R"),
+            86: ("Restablece la calibración por defecto", "?ReCa"),
+            87: ("N/A", "N/A"), 88: ("N/A", "N/A"), 89: ("N/A", "N/A"),
+            90: ("Flag escritura registros de CONTROL", "Flag Control"),
+            91: ("Parámetro A del control de tensión", "?Cn00"),
+            92: ("Parámetro B del control de tensión", "?Cn01"),
+            93: ("Escalón máximo del mando de tensión (EMM)", "?Cn02"),
+            94: ("Escalón máximo del mando tensión nula (EMMVT0)", "?Cn03"),
+            95: ("Escalón máximo del mando tensión no nula (EMMVT1)", "?ReCn"),
+        }
+        
+        for i in range(len(data)):
+            if i in regs:
+                desc, nombre = regs[i]
+                print(f"{i}")
+                print(f"{desc}")
+                print(f"{nombre}")
+                print(f"{data[i]}")
         print("")
     else:
         print("  ❌ No se pudieron leer registros")
