@@ -30,13 +30,9 @@ if [ "$SCRIPT_PATH" != "$INSTALL_DIR/install.sh" ]; then
     echo ""
     echo "  🔄 Obteniendo última versión..."
     
-    if [ -d "$INSTALL_DIR/.git" ]; then
-        cd "$INSTALL_DIR"
-        git fetch -q origin main 2>/dev/null || true
-        git reset --hard origin/main -q 2>/dev/null || true
-    else
-        git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null || true
-    fi
+    # Borrar y clonar siempre
+    rm -rf "$INSTALL_DIR"
+    git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null || true
     
     # Ejecutar el script del repo
     exec sudo bash "$INSTALL_DIR/install.sh" "$@"
