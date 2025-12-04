@@ -1527,7 +1527,17 @@ EOFMQTT
                 done
                 
                 if [ -n "$CONFIG_FILE" ]; then
-                    SERIAL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('numero_serie', 'unknown'))" 2>/dev/null)
+                    SERIAL=$(python3 -c "
+import json
+try:
+    with open('$CONFIG_FILE') as f:
+        data = json.load(f)
+    # Buscar en varios campos posibles
+    sn = data.get('serie') or data.get('numero_serie') or data.get('s_n') or 'unknown'
+    print(sn)
+except:
+    print('unknown')
+" 2>/dev/null)
                 else
                     SERIAL="unknown"
                 fi
