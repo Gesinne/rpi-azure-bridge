@@ -7,10 +7,9 @@ import sys
 import json
 from datetime import datetime
 
-# Configuración desde variables de entorno
-SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyAMA0')
-SERIAL_BAUDRATE = int(os.getenv('SERIAL_BAUDRATE', '115200'))
-NUMERO_SERIE = os.getenv('NUMERO_SERIE', 'unknown')
+# Configuración Modbus - HARDCODEADO, NO MODIFICAR
+SERIAL_PORT = "/dev/ttyAMA0"
+SERIAL_BAUDRATE = 115200
 
 # Mapa de registros completo (96 registros)
 REGISTROS = {

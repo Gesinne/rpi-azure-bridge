@@ -1,46 +1,16 @@
 services:
   # Contenedor único para Raspberry Pi - Gesinne
+  # NOTA: Toda la configuración está en el Dockerfile, NO MODIFICAR
   gesinne-rpi:
     build: .
     container_name: gesinne-rpi
     restart: unless-stopped
-    privileged: true  # Necesario para acceso a /dev/ttyAMA0
+    privileged: true
     network_mode: host
+    read_only: true
     
     volumes:
-      # Acceso al puerto serie Modbus
       - /dev/ttyAMA0:/dev/ttyAMA0
-    
-    environment:
-      # Broker MQTT local
-      - MQTT_BROKER=localhost
-      - MQTT_PORT=1883
-      - MQTT_TOPIC=#
-      
-      # Azure IoT Hub (opcional, dejar vacío si no se usa)
-      - AZURE_CONNECTION_STRING=
-      
-      # Intervalo de envío MQTT→Azure (1 para S1, 10 para F1 gratuito)
-      - SEND_INTERVAL=1
-      
-      # Puerto healthcheck
-      - HEALTHCHECK_PORT=8080
-      
-      # Configuración Modbus
-      - SERIAL_PORT=/dev/ttyAMA0
-      - SERIAL_BAUDRATE=115200
-      
-      # Configuración SMTP para envío de emails
-      - SMTP_SERVER=smtp.gmail.com
-      - SMTP_PORT=587
-      - SMTP_USER=gesinneasturias@gmail.com
-      - SMTP_PASSWORD=pegdowikwjuqpeoq
-      - SMTP_FROM=gesinneasturias@gmail.com
-      - SMTP_TO=patricia.garcia@gesinne.com,victorbarrero@gesinne.com
-      
-      # Datos del equipo
-      - NUMERO_SERIE=
-      - POTENCIA_NOMINAL=175
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]

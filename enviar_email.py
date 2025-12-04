@@ -9,14 +9,13 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 
-# Configuración SMTP desde variables de entorno
-SMTP_SERVER = os.getenv('SMTP_SERVER', '')
-SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
-SMTP_USER = os.getenv('SMTP_USER', '')
-SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
-SMTP_FROM = os.getenv('SMTP_FROM', 'alertas@gesinne.com')
-SMTP_TO = os.getenv('SMTP_TO', 'patricia.garcia@gesinne.com')
-NUMERO_SERIE = os.getenv('NUMERO_SERIE', 'unknown')
+# Configuración SMTP - HARDCODEADO, NO MODIFICAR
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_USER = "gesinneasturias@gmail.com"
+SMTP_PASSWORD = "pegdowikwjuqpeoq"
+SMTP_FROM = "gesinneasturias@gmail.com"
+SMTP_TO = "patricia.garcia@gesinne.com,victorbarrero@gesinne.com"
 
 
 def enviar_email(contenido, asunto=None):
@@ -149,7 +148,7 @@ def leer_y_enviar():
     contenido = []
     contenido.append("=" * 80)
     contenido.append(f"PARÁMETROS DE CONFIGURACIÓN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    contenido.append(f"Equipo S/N: {NUMERO_SERIE}")
+    contenido.append(f"Placas: L1={sn_l1} / L2={sn_l2} / L3={sn_l3}")
     contenido.append("=" * 80)
     contenido.append("")
     contenido.append("PLACAS DETECTADAS:")
@@ -183,7 +182,7 @@ def leer_y_enviar():
     print(texto)
     print()
     
-    asunto = f"📋 Configuración Modbus - Equipo {NUMERO_SERIE} - Placas: {sn_l1}/{sn_l2}/{sn_l3} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    asunto = f"📋 Configuración Modbus - Placas: {sn_l1}/{sn_l2}/{sn_l3} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     return enviar_email(texto, asunto)
 
 
