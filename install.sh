@@ -1560,7 +1560,7 @@ SMTP_PORT = 587
 SMTP_USER = "gesinneasturias@gmail.com"
 SMTP_PASSWORD = "pegdowikwjuqpeoq"
 SMTP_FROM = "gesinneasturias@gmail.com"
-SMTP_TO = "patricia.garcia@gesinne.com"
+SMTP_TO = "patricia.garcia@gesinne.com,victorbarrero@gesinne.com"
 NUMERO_SERIE = "$SERIAL"
 TARJETAS = "$TARJETAS_EMAIL"
 
