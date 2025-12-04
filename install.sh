@@ -19,7 +19,7 @@ clear
 echo ""
 echo "  ╔══════════════════════════════════════════════╗"
 echo "  ║                                              ║"
-echo "  ║   INSTALADOR GESINNE - Azure IoT Bridge      ║"
+echo "  ║         GESINNE INGENIERÍA                   ║"
 echo "  ║                                              ║"
 echo "  ╚══════════════════════════════════════════════╝"
 echo ""
