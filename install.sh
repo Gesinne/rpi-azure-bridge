@@ -947,11 +947,39 @@ with open('$CONFIG_FILE', 'w') as f:
             DETECT_MAX="yes"
             
             echo ""
-            echo "  ⚠️  Se parará Node-RED temporalmente para leer..."
-            echo ""
+            echo "  ⚠️  Liberando puerto serie..."
             
-            sudo systemctl stop nodered
+            # Parar Node-RED
+            sudo systemctl stop nodered 2>/dev/null
             sleep 1
+            
+            # Parar contenedor Docker si existe
+            if docker ps -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
+                echo "  🐳 Parando contenedor gesinne-rpi..."
+                docker stop gesinne-rpi 2>/dev/null
+                sleep 1
+            fi
+            
+            # Matar cualquier proceso que use el puerto
+            PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
+            if [ -n "$PIDS" ]; then
+                echo "  🔄 Liberando puerto de otros procesos..."
+                for PID in $PIDS; do
+                    sudo kill $PID 2>/dev/null
+                done
+                sleep 2
+            fi
+            
+            # Verificar que el puerto está libre
+            RETRY=0
+            while sudo lsof /dev/ttyAMA0 >/dev/null 2>&1 && [ $RETRY -lt 5 ]; do
+                echo "  ⏳ Esperando a que se libere el puerto..."
+                sleep 2
+                RETRY=$((RETRY + 1))
+            done
+            
+            echo "  ✅ Puerto serie liberado"
+            echo ""
             
             for UNIT_ID in $UNIT_IDS; do
             
@@ -1327,9 +1355,15 @@ EOFTXT
             echo "  ✅ Archivo guardado: $ARCHIVO"
             
             echo ""
-            echo "  🔄 Reiniciando Node-RED..."
+            echo "  🔄 Reiniciando servicios..."
             sudo systemctl start nodered
-            sleep 2
+            sleep 1
+            
+            # Reiniciar contenedor Docker si existía
+            if docker ps -a -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
+                echo "  🐳 Reiniciando contenedor gesinne-rpi..."
+                docker start gesinne-rpi 2>/dev/null
+            fi
             
             # Reiniciar kiosko si existe
             if systemctl is-active --quiet kiosk.service 2>/dev/null; then
