@@ -24,8 +24,8 @@ set -e
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
 INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
 
-# Si no se ha actualizado aún, actualizar y re-ejecutar desde el repo
-if [ -z "$GESINNE_UPDATED" ]; then
+# Si no se ha actualizado aún (argumento --updated), actualizar y re-ejecutar desde el repo
+if [ "$1" != "--updated" ]; then
     echo ""
     echo "  🔄 Obteniendo última versión..."
     
@@ -34,8 +34,7 @@ if [ -z "$GESINNE_UPDATED" ]; then
     git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null || true
     
     # Ejecutar el script del repo con marca de actualizado
-    export GESINNE_UPDATED=1
-    exec sudo -E bash "$INSTALL_DIR/install.sh" "$@"
+    exec sudo bash "$INSTALL_DIR/install.sh" --updated
 fi
 
 cd "$INSTALL_DIR"
