@@ -1648,14 +1648,11 @@ REGISTROS = {
 
 client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
 
-contenido = []
-contenido.append("=" * 80)
-contenido.append(f"PARÁMETROS DE CONFIGURACIÓN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-contenido.append(f"Equipo S/N: {NUMERO_SERIE}")
-contenido.append("=" * 80)
+# Leer las 3 fases siempre
+placas_leidas = {}
 
 if client.connect():
-    for unit_id in [int(x) for x in TARJETAS.split()]:
+    for unit_id in [1, 2, 3]:
         data = []
         for start in range(0, 96, 40):
             count = min(40, 96 - start)
@@ -1666,23 +1663,54 @@ if client.connect():
                 break
         
         if len(data) > 48:
-            dir_modbus = data[48]
-            placa = {1: "L1 (Fase 1)", 2: "L2 (Fase 2)", 3: "L3 (Fase 3)"}.get(dir_modbus, "Desconocida")
-            
-            contenido.append("")
-            contenido.append("╔" + "═" * 78 + "╗")
-            contenido.append(f"║  PLACA: {placa:20s}  -  Dirección Modbus: {dir_modbus}                        ║")
-            contenido.append("╚" + "═" * 78 + "╝")
-            contenido.append("")
-            contenido.append("Reg | Parámetro                | Valor      | Descripción")
-            contenido.append("----|--------------------------|------------|--------------------------------------------------")
-            
-            for i in range(len(data)):
-                if i in REGISTROS:
-                    desc, nombre = REGISTROS[i]
-                    contenido.append(f"{i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+            placas_leidas[unit_id] = data
     
     client.close()
+
+# Verificar que tenemos las 3 fases
+if len(placas_leidas) < 3:
+    fases_ok = [f"L{k}" for k in placas_leidas.keys()]
+    fases_fail = [f"L{k}" for k in [1,2,3] if k not in placas_leidas]
+    print(f"⚠️  Solo se pudieron leer {len(placas_leidas)} fases: {', '.join(fases_ok)}")
+    print(f"❌ Fases sin respuesta: {', '.join(fases_fail)}")
+    print("❌ No se envía email hasta tener las 3 fases")
+    sys.exit(1)
+
+# Obtener números de serie de cada placa
+sn_l1 = placas_leidas[1][41]
+sn_l2 = placas_leidas[2][41]
+sn_l3 = placas_leidas[3][41]
+
+contenido = []
+contenido.append("=" * 80)
+contenido.append(f"PARÁMETROS DE CONFIGURACIÓN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+contenido.append(f"Equipo S/N: {NUMERO_SERIE}")
+contenido.append("=" * 80)
+contenido.append("")
+contenido.append("PLACAS DETECTADAS:")
+contenido.append(f"  • L1 (Fase 1) - Nº Serie Placa: {sn_l1}")
+contenido.append(f"  • L2 (Fase 2) - Nº Serie Placa: {sn_l2}")
+contenido.append(f"  • L3 (Fase 3) - Nº Serie Placa: {sn_l3}")
+contenido.append("=" * 80)
+
+for unit_id in [1, 2, 3]:
+    data = placas_leidas[unit_id]
+    dir_modbus = data[48]
+    sn_placa = data[41]
+    fase = f"L{unit_id}"
+    
+    contenido.append("")
+    contenido.append("╔" + "═" * 78 + "╗")
+    contenido.append(f"║  {fase} - Nº Serie Placa: {sn_placa:<10}  -  Dirección Modbus: {dir_modbus}                  ║")
+    contenido.append("╚" + "═" * 78 + "╝")
+    contenido.append("")
+    contenido.append("Reg | Parámetro                | Valor      | Descripción")
+    contenido.append("----|--------------------------|------------|--------------------------------------------------")
+    
+    for i in range(len(data)):
+        if i in REGISTROS:
+            desc, nombre = REGISTROS[i]
+            contenido.append(f"{i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
 
 contenido.append("")
 contenido.append("=" * 80)
@@ -1692,7 +1720,7 @@ print(texto)
 
 # Enviar email
 msg = MIMEMultipart('alternative')
-msg['Subject'] = f"📋 Configuración Modbus - Equipo {NUMERO_SERIE} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+msg['Subject'] = f"📋 Configuración Modbus - Equipo {NUMERO_SERIE} - Placas: {sn_l1}/{sn_l2}/{sn_l3} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 msg['From'] = SMTP_FROM
 msg['To'] = SMTP_TO
 
