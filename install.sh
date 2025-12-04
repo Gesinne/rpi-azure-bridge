@@ -759,7 +759,22 @@ with open('$CONFIG_FILE', 'w') as f:
             done
             
             echo ""
-            read -p "  Selecciona backup [1-$((i-1))]: " BACKUP_CHOICE
+            echo "  0) 🗑️  Borrar todos los backups"
+            echo ""
+            read -p "  Selecciona backup [0-$((i-1))]: " BACKUP_CHOICE
+            
+            # Opción borrar backups
+            if [ "$BACKUP_CHOICE" = "0" ]; then
+                echo ""
+                read -p "  ⚠️  ¿Seguro que quieres borrar TODOS los backups? [s/N]: " CONFIRM_DELETE
+                if [ "$CONFIRM_DELETE" = "s" ] || [ "$CONFIRM_DELETE" = "S" ]; then
+                    rm -f "$NODERED_DIR"/flows.json.backup.*
+                    echo "  ✅ Backups borrados"
+                else
+                    echo "  ❌ Cancelado"
+                fi
+                exit 0
+            fi
             
             SELECTED_BACKUP="${BACKUP_ARRAY[$BACKUP_CHOICE]}"
             
