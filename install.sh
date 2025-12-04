@@ -1364,28 +1364,54 @@ EOFTXT
                 *) echo "  ❌ Opción no válida"; exit 1 ;;
             esac
             
-            # Verificar si el contenedor está corriendo
-            if docker ps --format '{{.Names}}' | grep -q "gesinne-rpi"; then
-                echo ""
-                echo "  📧 Leyendo registros y enviando email..."
-                docker exec gesinne-rpi python enviar_email.py "$TARJETAS_EMAIL"
-            else
-                # Si no hay contenedor, usar Python directamente
-                echo ""
-                echo "  ⚠️  Contenedor no encontrado, usando Python local..."
-                echo ""
-                
-                # Obtener número de serie
-                CONFIG_FILE=""
-                for f in /home/*/config/equipo_config.json; do
-                    if [ -f "$f" ]; then
-                        CONFIG_FILE="$f"
-                        break
-                    fi
+            echo ""
+            echo "  📧 Preparando envío de email..."
+            echo ""
+            echo "  ⚠️  Liberando puerto serie..."
+            
+            # Parar Node-RED
+            sudo systemctl stop nodered 2>/dev/null
+            sleep 1
+            
+            # Parar contenedor Docker si existe
+            if docker ps -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
+                echo "  🐳 Parando contenedor gesinne-rpi..."
+                docker stop gesinne-rpi 2>/dev/null
+                sleep 1
+            fi
+            
+            # Matar cualquier proceso que use el puerto
+            PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
+            if [ -n "$PIDS" ]; then
+                echo "  🔄 Liberando puerto de otros procesos..."
+                for PID in $PIDS; do
+                    sudo kill $PID 2>/dev/null
                 done
-                
-                if [ -n "$CONFIG_FILE" ]; then
-                    SERIAL=$(python3 -c "
+                sleep 2
+            fi
+            
+            # Verificar que el puerto está libre
+            RETRY=0
+            while sudo lsof /dev/ttyAMA0 >/dev/null 2>&1 && [ $RETRY -lt 5 ]; do
+                echo "  ⏳ Esperando a que se libere el puerto..."
+                sleep 2
+                RETRY=$((RETRY + 1))
+            done
+            
+            echo "  ✅ Puerto serie liberado"
+            echo ""
+            
+            # Obtener número de serie
+            CONFIG_FILE=""
+            for f in /home/*/config/equipo_config.json; do
+                if [ -f "$f" ]; then
+                    CONFIG_FILE="$f"
+                    break
+                fi
+            done
+            
+            if [ -n "$CONFIG_FILE" ]; then
+                SERIAL=$(python3 -c "
 import json
 try:
     with open('$CONFIG_FILE') as f:
@@ -1396,42 +1422,13 @@ try:
 except:
     print('unknown')
 " 2>/dev/null)
-                else
-                    SERIAL="unknown"
-                fi
-                
-                echo "  ⚠️  Liberando puerto serie..."
-                
-                # Parar Node-RED
-                sudo systemctl stop nodered 2>/dev/null
-                sleep 1
-                
-                # Parar contenedor Docker si existe
-                if docker ps -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
-                    echo "  🐳 Parando contenedor gesinne-rpi..."
-                    docker stop gesinne-rpi 2>/dev/null
-                    sleep 1
-                fi
-                
-                # Matar cualquier proceso que use el puerto
-                PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
-                if [ -n "$PIDS" ]; then
-                    echo "  🔄 Liberando puerto de otros procesos..."
-                    for PID in $PIDS; do
-                        sudo kill $PID 2>/dev/null
-                    done
-                    sleep 2
-                fi
-                
-                # Verificar que el puerto está libre
-                RETRY=0
-                while sudo lsof /dev/ttyAMA0 >/dev/null 2>&1 && [ $RETRY -lt 5 ]; do
-                    echo "  ⏳ Esperando a que se libere el puerto..."
-                    sleep 2
-                    RETRY=$((RETRY + 1))
-                done
-                
-                python3 << EOFEMAIL
+            else
+                SERIAL="unknown"
+            fi
+            
+            echo "  📧 Leyendo registros y enviando email..."
+            
+            python3 << EOFEMAIL
 import os
 import sys
 import smtplib
@@ -1666,21 +1663,20 @@ try:
 except Exception as e:
     print(f"\n❌ Error enviando email: {e}")
 EOFEMAIL
-                
-                echo ""
-                echo "  🔄 Reiniciando servicios..."
-                sudo systemctl start nodered
-                sleep 1
-                
-                # Reiniciar contenedor Docker si existía
-                if docker ps -a -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
-                    echo "  🐳 Reiniciando contenedor gesinne-rpi..."
-                    docker start gesinne-rpi 2>/dev/null
-                fi
-                
-                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
-                    sudo systemctl restart kiosk.service
-                fi
+            
+            echo ""
+            echo "  🔄 Reiniciando servicios..."
+            sudo systemctl start nodered
+            sleep 1
+            
+            # Reiniciar contenedor Docker si existía
+            if docker ps -a -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
+                echo "  🐳 Reiniciando contenedor gesinne-rpi..."
+                docker start gesinne-rpi 2>/dev/null
+            fi
+            
+            if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                sudo systemctl restart kiosk.service
             fi
             
             echo "  ✅ Listo"
