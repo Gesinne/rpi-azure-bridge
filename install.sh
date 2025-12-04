@@ -474,7 +474,7 @@ except:
                 echo "  📋 Versión actual instalada: $CURRENT_VERSION"
             fi
             echo ""
-            echo "  Versiones disponibles (iguales o superiores):"
+            echo "  Últimas 5 versiones disponibles:"
             echo ""
             
             i=1
@@ -483,20 +483,23 @@ except:
                 # Extraer fecha del nombre del archivo
                 FILE_DATE=$(echo "$v" | grep -oE '^[0-9]{8}' || echo "00000000")
                 
-                # Mostrar solo si es igual o superior a la actual (o si no hay actual)
-                if [ -z "$CURRENT_VERSION" ] || [ "$FILE_DATE" -ge "$CURRENT_VERSION" ] 2>/dev/null || [ "$FILE_DATE" = "00000000" ]; then
-                    if [ "$FILE_DATE" = "$CURRENT_VERSION" ]; then
-                        echo "  $i) $v (actual)"
-                    else
-                        echo "  $i) $v"
-                    fi
-                    VERSION_ARRAY[$i]="$v"
-                    i=$((i+1))
+                # Marcar si es la versión actual
+                if [ "$FILE_DATE" = "$CURRENT_VERSION" ]; then
+                    echo "  $i) $v (actual)"
+                else
+                    echo "  $i) $v"
+                fi
+                VERSION_ARRAY[$i]="$v"
+                i=$((i+1))
+                
+                # Mostrar máximo 5
+                if [ $i -gt 5 ]; then
+                    break
                 fi
             done
             
             if [ $i -eq 1 ]; then
-                echo "  ✅ Ya tienes la última versión"
+                echo "  ❌ No hay versiones disponibles"
                 rm -rf "$TEMP_DIR"
                 exit 0
             fi
