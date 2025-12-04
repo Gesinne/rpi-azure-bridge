@@ -73,8 +73,8 @@ if [ -f "$OVERRIDE_FILE" ]; then
     echo "  5) Actualizar Flow Node-RED"
     echo "  6) Restaurar Flow anterior (backup)"
     echo "  7) Modificar configuración equipo"
-    echo "  8) Leer registros Modbus"
-    echo "  9) Leer registros y ENVIAR POR EMAIL"
+    echo "  8) Ver los 96 registros de la placa"
+    echo "  9) Descargar parámetros (enviar por EMAIL)"
     echo "  0) Salir"
     echo ""
     read -p "  Opción [0-9]: " OPTION
@@ -922,7 +922,7 @@ with open('$CONFIG_FILE', 'w') as f:
         8)
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Leer registros Modbus"
+            echo "  Ver los 96 registros de la placa"
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             echo "  ¿Qué tarjeta quieres leer?"
@@ -1486,7 +1486,7 @@ EOFMQTT
             # Leer registros y enviar por email
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Leer registros Modbus y ENVIAR POR EMAIL"
+            echo "  Descargar parámetros (enviar por EMAIL)"
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             echo "  ¿Qué tarjeta quieres leer?"
