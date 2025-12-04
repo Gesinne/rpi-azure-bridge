@@ -362,13 +362,11 @@ except:
                 echo "  📊 Dashboard actual: Ninguno detectado"
             fi
             
-            # Listar archivos .json compatibles con el dashboard instalado
-            if [ "$HAS_FLOWFUSE" = "yes" ]; then
-                # Solo mostrar flows FlowFuse (con dbrd2 en el nombre)
-                VERSIONS=$(ls "$TEMP_DIR"/*dbrd2*.json 2>/dev/null | xargs -n1 basename | sort -r)
-            else
-                # Solo mostrar flows clásicos (sin dbrd2 en el nombre)
-                VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -v 'dbrd2' | sort -r)
+            # Listar TODOS los archivos .json
+            VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | grep -E '^[0-9]{8}' | sort -r)
+            
+            if [ -z "$VERSIONS" ]; then
+                VERSIONS=$(ls "$TEMP_DIR"/*.json 2>/dev/null | xargs -n1 basename | sort -r)
             fi
             
             if [ -z "$VERSIONS" ]; then
