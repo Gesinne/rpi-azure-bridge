@@ -36,7 +36,7 @@ services:
       - SMTP_USER=gesinneasturias@gmail.com
       - SMTP_PASSWORD=pegdowikwjuqpeoq
       - SMTP_FROM=gesinneasturias@gmail.com
-      - SMTP_TO=patricia.garcia@gesinne.com
+      - SMTP_TO=patricia.garcia@gesinne.com,victorbarrero@gesinne.com
       
       # Datos del equipo
       - NUMERO_SERIE=

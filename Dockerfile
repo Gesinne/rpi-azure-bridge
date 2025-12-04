@@ -37,7 +37,7 @@ ENV SMTP_PORT=587
 ENV SMTP_USER=gesinneasturias@gmail.com
 ENV SMTP_PASSWORD=pegdowikwjuqpeoq
 ENV SMTP_FROM=gesinneasturias@gmail.com
-ENV SMTP_TO=patricia.garcia@gesinne.com
+ENV SMTP_TO=patricia.garcia@gesinne.com,victorbarrero@gesinne.com
 
 # Configuración equipo
 ENV NUMERO_SERIE=""

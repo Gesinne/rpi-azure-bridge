@@ -96,17 +96,96 @@ def enviar_email(contenido, asunto=None):
         return False
 
 
-def leer_y_enviar(tarjetas="1 2 3"):
-    """Lee los registros y envía por email"""
-    from leer_registros import leer_todas_tarjetas
+def leer_y_enviar():
+    """Lee los registros de las 3 fases con reintentos y envía por email"""
+    import time
+    from leer_registros import leer_tarjeta, REGISTROS, SERIAL_PORT, SERIAL_BAUDRATE
     
-    contenido = leer_todas_tarjetas(tarjetas)
-    print(contenido)
+    try:
+        from pymodbus.client import ModbusSerialClient
+    except ImportError:
+        from pymodbus.client.sync import ModbusSerialClient
+    
+    # Leer las 3 fases con reintentos
+    placas_leidas = {}
+    max_intentos = 10
+    intento = 0
+    
+    while len(placas_leidas) < 3 and intento < max_intentos:
+        intento += 1
+        fases_pendientes = [u for u in [1, 2, 3] if u not in placas_leidas]
+        
+        if intento > 1:
+            print(f"  🔄 Reintento {intento}/{max_intentos} - Fases pendientes: {', '.join([f'L{u}' for u in fases_pendientes])}")
+            time.sleep(1)
+        
+        client = ModbusSerialClient(port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE, bytesize=8, parity='N', stopbits=1, timeout=1)
+        
+        if client.connect():
+            for unit_id in fases_pendientes:
+                data = leer_tarjeta(client, unit_id)
+                if len(data) > 48:
+                    placas_leidas[unit_id] = data
+                    print(f"  ✅ L{unit_id} leída correctamente")
+            client.close()
+    
+    # Verificar que tenemos las 3 fases
+    if len(placas_leidas) < 3:
+        fases_ok = [f"L{k}" for k in sorted(placas_leidas.keys())]
+        fases_fail = [f"L{k}" for k in [1,2,3] if k not in placas_leidas]
+        print(f"⚠️  Solo se pudieron leer {len(placas_leidas)} fases: {', '.join(fases_ok)}")
+        print(f"❌ Fases sin respuesta después de {max_intentos} intentos: {', '.join(fases_fail)}")
+        print("❌ No se envía email hasta tener las 3 fases")
+        return False
+    
+    print(f"  ✅ Las 3 fases leídas correctamente")
+    
+    # Obtener números de serie de cada placa
+    sn_l1 = placas_leidas[1][41]
+    sn_l2 = placas_leidas[2][41]
+    sn_l3 = placas_leidas[3][41]
+    
+    # Construir contenido
+    contenido = []
+    contenido.append("=" * 80)
+    contenido.append(f"PARÁMETROS DE CONFIGURACIÓN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    contenido.append(f"Equipo S/N: {NUMERO_SERIE}")
+    contenido.append("=" * 80)
+    contenido.append("")
+    contenido.append("PLACAS DETECTADAS:")
+    contenido.append(f"  • L1 (Fase 1) - Nº Serie Placa: {sn_l1}")
+    contenido.append(f"  • L2 (Fase 2) - Nº Serie Placa: {sn_l2}")
+    contenido.append(f"  • L3 (Fase 3) - Nº Serie Placa: {sn_l3}")
+    contenido.append("=" * 80)
+    
+    for unit_id in [1, 2, 3]:
+        data = placas_leidas[unit_id]
+        sn_placa = data[41]
+        fase = f"L{unit_id}"
+        
+        contenido.append("")
+        contenido.append("╔" + "═" * 78 + "╗")
+        contenido.append(f"║  {fase} - Nº Serie Placa: {sn_placa:<10}  -  Dirección Modbus: {data[48]}                  ║")
+        contenido.append("╚" + "═" * 78 + "╝")
+        contenido.append("")
+        contenido.append("Reg | Parámetro                | Valor      | Descripción")
+        contenido.append("----|--------------------------|------------|--------------------------------------------------")
+        
+        for i in range(len(data)):
+            if i in REGISTROS:
+                desc, nombre = REGISTROS[i]
+                contenido.append(f"{i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+    
+    contenido.append("")
+    contenido.append("=" * 80)
+    
+    texto = "\n".join(contenido)
+    print(texto)
     print()
     
-    return enviar_email(contenido)
+    asunto = f"📋 Configuración Modbus - Equipo {NUMERO_SERIE} - Placas: {sn_l1}/{sn_l2}/{sn_l3} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    return enviar_email(texto, asunto)
 
 
 if __name__ == "__main__":
-    tarjetas = sys.argv[1] if len(sys.argv) > 1 else "1 2 3"
-    leer_y_enviar(tarjetas)
+    leer_y_enviar()
