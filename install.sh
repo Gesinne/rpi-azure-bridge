@@ -1184,23 +1184,24 @@ EOF
             
             done  # fin del bucle for UNIT_ID
             
-            # Preguntar si quiere guardar en archivo
+            # Guardar automáticamente en archivo
+            ARCHIVO="/home/$(logname 2>/dev/null || echo 'pi')/parametros_configuracion.txt"
             echo ""
-            read -p "  ¿Guardar resultados en archivo? [s/N]: " GUARDAR
-            if [ "$GUARDAR" = "s" ] || [ "$GUARDAR" = "S" ]; then
-                ARCHIVO="/home/$(logname 2>/dev/null || echo 'pi')/registros_modbus_$(date +%Y%m%d_%H%M%S).txt"
-                echo "  💾 Guardando en: $ARCHIVO"
-                # Volver a ejecutar y guardar en archivo
-                for UNIT_ID in $UNIT_IDS; do
-                    case $UNIT_ID in
-                        1) FASE="L1" ;;
-                        2) FASE="L2" ;;
-                        3) FASE="L3" ;;
-                    esac
-                    echo "" >> "$ARCHIVO"
-                    echo "TARJETA $FASE (Unit ID: $UNIT_ID) - $(date)" >> "$ARCHIVO"
-                    echo "Registro;Parámetro;Valor;Descripción" >> "$ARCHIVO"
-                    python3 << EOFCSV
+            echo "  💾 Guardando en: $ARCHIVO"
+            
+            # Crear archivo con formato bonito
+            echo "================================================================================" > "$ARCHIVO"
+            echo "PARÁMETROS DE CONFIGURACIÓN - $(date)" >> "$ARCHIVO"
+            echo "================================================================================" >> "$ARCHIVO"
+            
+            for UNIT_ID in $UNIT_IDS; do
+                case $UNIT_ID in
+                    1) FASE="L1" ;;
+                    2) FASE="L2" ;;
+                    3) FASE="L3" ;;
+                esac
+                
+                python3 << EOFTXT >> "$ARCHIVO"
 import sys
 try:
     from pymodbus.client import ModbusSerialClient
@@ -1219,75 +1220,110 @@ if client.connect():
             break
     client.close()
     
-    regs = {
-        0: ("Estado actual del chopper", "Estado actual"),
-        1: ("Modo de funcionamiento", "Topología actual"),
-        2: ("Alarma", "Alarma"),
-        3: ("Tensión de salida (Vo)", "V salida"),
-        4: ("Tensión de entrada (Vin)", "V entrada"),
-        5: ("Frecuencia", "Hz"),
-        6: ("Corriente de salida del Equipo", "I Salida"),
-        7: ("Corriente de salida del Chopper", "I Chopper"),
-        8: ("Corriente por primario del trafo", "I Primario trafo"),
-        9: ("Potencia activa (alta)", "P activa (alta)"),
-        10: ("Potencia activa (baja)", "P activa (baja)"),
-        11: ("Potencia reactiva (alta)", "P reactiva (alta)"),
-        12: ("Potencia reactiva (baja)", "P reactiva (baja)"),
-        13: ("Potencia aparente (alta)", "P aparente (alta)"),
-        14: ("Potencia aparente (baja)", "P aparente (baja)"),
-        15: ("Factor de potencia", "Factor de Potencia"),
-        16: ("Tipo de factor de potencia", "Tipo de FP"),
-        17: ("Temperatura interna", "Temperatura"),
-        18: ("Temperatura alarma", "Temp alarma"),
-        19: ("Enable externo", "Enable externo"),
-        20: ("Tiempo reencendido", "Tiempo reenc"),
-        21: ("Enable PCB", "Enable PCB"),
-        30: ("Flag Estado", "Flag Estado"),
-        31: ("Estado deseado", "Estado deseado"),
-        32: ("Consigna deseada", "Consigna"),
-        33: ("Bucle control", "Bucle control"),
-        34: ("Mando chopper", "Mando chopper"),
-        40: ("Flag Configuración", "Flag Config"),
-        41: ("Número de serie", "Nº serie"),
-        42: ("Tensión nominal", "V nominal"),
-        43: ("V primario autotrafo", "V prim auto"),
-        44: ("V secundario autotrafo", "V sec auto"),
-        45: ("V secundario trafo", "V sec trafo"),
-        46: ("Topología", "Topología"),
-        47: ("Dead-time", "Dead-time"),
-        48: ("Dirección MODBUS", "Modbus"),
-        49: ("I nominal salida", "I nom salida"),
-        50: ("I nominal chopper", "I nom chopper"),
-        51: ("I máxima chopper eficaz", "I max eficaz"),
-        52: ("I máxima chopper pico", "I max pico"),
-        53: ("Tiempo apagado CC/TT", "T apagado"),
-        54: ("Contador apagados SC", "Cnt SC"),
-        55: ("Estado inicial", "Estado ini"),
-        56: ("V inicial", "V inicial"),
-        57: ("Temperatura máxima", "Temp máx"),
-        58: ("Decremento T", "Decr T"),
-        59: ("Contador apagados ST", "Cnt ST"),
-        60: ("Tipo V placa", "Tipo V"),
-        61: ("Velocidad Modbus", "Vel Modbus"),
-        62: ("Package transistores", "Package"),
-        63: ("Ángulo cargas altas", "Áng altas"),
-        64: ("Ángulo cargas bajas", "Áng bajas"),
-        65: ("% carga baja", "% carga baja"),
-        66: ("Sensibilidad transitorios", "Sens trans"),
-        67: ("Sensibilidad derivada", "Sens deriv"),
-        69: ("Reset config", "?ReCo"),
-        70: ("Flag Calibración", "Flag Calib"),
-        90: ("Flag Control", "Flag Control"),
-    }
-    
-    for i in range(len(data)):
-        if i in regs:
-            desc, nombre = regs[i]
-            print(f"{i};{nombre};{data[i]};{desc}")
-EOFCSV
-                done >> "$ARCHIVO"
-                echo "  ✅ Archivo guardado: $ARCHIVO"
-            fi
+    if len(data) > 48:
+        dir_modbus = data[48]
+        placa = {1: "L1 (Fase 1)", 2: "L2 (Fase 2)", 3: "L3 (Fase 3)"}.get(dir_modbus, f"Desconocida")
+        
+        print("")
+        print(f"╔══════════════════════════════════════════════════════════════════════════════╗")
+        print(f"║  PLACA: {placa:20s}  -  Dirección Modbus: {dir_modbus}                        ║")
+        print(f"╚══════════════════════════════════════════════════════════════════════════════╝")
+        print("")
+        print("Reg | Parámetro                | Valor      | Descripción")
+        print("----|--------------------------|------------|--------------------------------------------------")
+        
+        regs = {
+            0: ("Estado actual del chopper", "Estado actual"),
+            1: ("Modo de funcionamiento", "Topología actual"),
+            2: ("Alarma", "Alarma"),
+            3: ("Tensión de salida (Vo)", "V salida"),
+            4: ("Tensión de entrada (Vin)", "V entrada"),
+            5: ("Frecuencia", "Hz"),
+            6: ("Corriente salida Equipo", "I Salida"),
+            7: ("Corriente salida Chopper", "I Chopper"),
+            8: ("Corriente primario trafo", "I Primario"),
+            9: ("Potencia activa (alta)", "P activa (alta)"),
+            10: ("Potencia activa (baja)", "P activa (baja)"),
+            11: ("Potencia reactiva (alta)", "P reactiva (alta)"),
+            12: ("Potencia reactiva (baja)", "P reactiva (baja)"),
+            13: ("Potencia aparente (alta)", "P aparente (alta)"),
+            14: ("Potencia aparente (baja)", "P aparente (baja)"),
+            15: ("Factor de potencia", "Factor Potencia"),
+            16: ("Tipo factor potencia", "Tipo FP"),
+            17: ("Temperatura interna", "Temperatura"),
+            18: ("Temperatura alarma", "Temp alarma"),
+            19: ("Enable externo", "Enable externo"),
+            20: ("Tiempo reencendido", "Tiempo reenc"),
+            21: ("Enable PCB", "Enable PCB"),
+            30: ("Flag Estado", "Flag Estado"),
+            31: ("Estado deseado", "Estado deseado"),
+            32: ("Consigna deseada", "Consigna"),
+            33: ("Bucle control", "Bucle control"),
+            34: ("Mando chopper", "Mando chopper"),
+            40: ("Flag Configuración", "Flag Config"),
+            41: ("Número de serie", "Nº serie"),
+            42: ("Tensión nominal", "V nominal"),
+            43: ("V primario autotrafo", "V prim auto"),
+            44: ("V secundario autotrafo", "V sec auto"),
+            45: ("V secundario trafo", "V sec trafo"),
+            46: ("Topología", "Topología"),
+            47: ("Dead-time", "Dead-time"),
+            48: ("Dirección MODBUS", "Modbus"),
+            49: ("I nominal salida", "I nom salida"),
+            50: ("I nominal chopper", "I nom chopper"),
+            51: ("I máxima chopper eficaz", "I max eficaz"),
+            52: ("I máxima chopper pico", "I max pico"),
+            53: ("Tiempo apagado CC/TT", "T apagado"),
+            54: ("Contador apagados SC", "Cnt SC"),
+            55: ("Estado inicial", "Estado ini"),
+            56: ("V inicial", "V inicial"),
+            57: ("Temperatura máxima", "Temp máx"),
+            58: ("Decremento T", "Decr T"),
+            59: ("Contador apagados ST", "Cnt ST"),
+            60: ("Tipo V placa", "Tipo V"),
+            61: ("Velocidad Modbus", "Vel Modbus"),
+            62: ("Package transistores", "Package"),
+            63: ("Ángulo cargas altas", "Áng altas"),
+            64: ("Ángulo cargas bajas", "Áng bajas"),
+            65: ("% carga baja", "% carga baja"),
+            66: ("Sensibilidad transitorios", "Sens trans"),
+            67: ("Sensibilidad derivada", "Sens deriv"),
+            69: ("Reset config", "?ReCo"),
+            70: ("Flag Calibración", "Flag Calib"),
+            71: ("K tensión salida", "?Ca00"),
+            72: ("K tensión entrada", "?Ca01"),
+            73: ("b tensión salida", "?Ca03"),
+            74: ("b tensión entrada", "?Ca04"),
+            75: ("K corriente chopper", "?Ca06"),
+            76: ("K corriente equipo", "?Ca07"),
+            77: ("b corriente chopper", "?Ca08"),
+            78: ("b corriente equipo", "?Ca09"),
+            79: ("Ruido I chopper", "?Ca10"),
+            80: ("Ruido I equipo", "?Ca11"),
+            81: ("K potencia salida", "?Ca12"),
+            82: ("b potencia salida", "?Ca13"),
+            83: ("Desfase V-I", "?Ca14"),
+            84: ("Calib frecuencia", "?Ca15"),
+            85: ("Calib ruido I", "?R"),
+            86: ("Reset calibración", "?ReCa"),
+            90: ("Flag Control", "Flag Control"),
+            91: ("Parámetro A control", "?Cn00"),
+            92: ("Parámetro B control", "?Cn01"),
+            93: ("Escalón max EMM", "?Cn02"),
+            94: ("Escalón max V0", "?Cn03"),
+            95: ("Escalón max V1", "?ReCn"),
+        }
+        
+        for i in range(len(data)):
+            if i in regs:
+                desc, nombre = regs[i]
+                print(f"{i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+EOFTXT
+            done
+            
+            echo "" >> "$ARCHIVO"
+            echo "================================================================================" >> "$ARCHIVO"
+            echo "  ✅ Archivo guardado: $ARCHIVO"
             
             echo "  🔄 Reiniciando Node-RED..."
             sudo systemctl start nodered
