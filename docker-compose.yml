@@ -33,9 +33,9 @@ services:
       # Configuración SMTP para envío de emails
       - SMTP_SERVER=smtp.gmail.com
       - SMTP_PORT=587
-      - SMTP_USER=
-      - SMTP_PASSWORD=
-      - SMTP_FROM=alertas@gesinne.com
+      - SMTP_USER=gesinneasturias@gmail.com
+      - SMTP_PASSWORD=pegdowikwjuqpeoq
+      - SMTP_FROM=gesinneasturias@gmail.com
       - SMTP_TO=patricia.garcia@gesinne.com
       
       # Datos del equipo

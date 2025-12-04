@@ -32,11 +32,11 @@ ENV SERIAL_PORT=/dev/ttyAMA0
 ENV SERIAL_BAUDRATE=115200
 
 # Configuración SMTP
-ENV SMTP_SERVER=""
+ENV SMTP_SERVER=smtp.gmail.com
 ENV SMTP_PORT=587
-ENV SMTP_USER=""
-ENV SMTP_PASSWORD=""
-ENV SMTP_FROM=alertas@gesinne.com
+ENV SMTP_USER=gesinneasturias@gmail.com
+ENV SMTP_PASSWORD=pegdowikwjuqpeoq
+ENV SMTP_FROM=gesinneasturias@gmail.com
 ENV SMTP_TO=patricia.garcia@gesinne.com
 
 # Configuración equipo
