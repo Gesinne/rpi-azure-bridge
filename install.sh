@@ -92,24 +92,28 @@ except:
     fi
 }
 
+# Mostrar siempre el menú principal
 if [ -f "$OVERRIDE_FILE" ]; then
     echo "  ✅ Bridge Azure IoT instalado"
-    show_nodered_config
-    echo ""
-    echo "  ¿Qué deseas hacer?"
-    echo ""
-    echo "  1) Modo de conexión (Azure IoT / Servidor Remoto)"
-    echo "  2) Actualizar Flow Node-RED"
-    echo "  3) Restaurar Flow anterior (backup)"
-    echo "  4) Ver/Modificar configuración equipo"
-    echo "  5) Ver los 96 registros de la placa"
-    echo "  6) Descargar parámetros (enviar por EMAIL)"
-    echo "  0) Salir"
-    echo ""
-    read -p "  Opción [0-9]: " OPTION
-    
-    case $OPTION in
-        1)
+else
+    echo "  ⚠️  Bridge no configurado"
+fi
+show_nodered_config
+echo ""
+echo "  ¿Qué deseas hacer?"
+echo ""
+echo "  1) Modo de conexión (Azure IoT / Servidor Remoto)"
+echo "  2) Actualizar Flow Node-RED"
+echo "  3) Restaurar Flow anterior (backup)"
+echo "  4) Ver/Modificar configuración equipo"
+echo "  5) Ver los 96 registros de la placa"
+echo "  6) Descargar parámetros (enviar por EMAIL)"
+echo "  0) Salir"
+echo ""
+read -p "  Opción [0-6]: " OPTION
+
+case $OPTION in
+    1)
             # Modo de conexión - ir al menú de selección
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1687,23 +1691,6 @@ EOFEMAIL
             exit 0
             ;;
     esac
-else
-    # Primera instalación - preguntar modo
-    echo ""
-    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  PASO 1: Modo de conexión"
-    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  ¿Cómo quieres enviar los datos?"
-    echo ""
-    echo "  1) Azure IoT Hub (localhost → Azure → Servidor)"
-    echo "     Node-RED envía a localhost, el bridge reenvía a Azure"
-    echo ""
-    echo "  2) Servidor directo (Node-RED → mqtt.gesinne.cloud)"
-    echo "     Node-RED envía directamente al servidor (modo tradicional)"
-    echo ""
-    read -p "  Opción [1/2]: " CONNECTION_MODE
-fi
 
 # Solo pedir connection string si elige Azure
 if [ "$CONNECTION_MODE" = "1" ]; then
