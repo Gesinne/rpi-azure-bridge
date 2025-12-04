@@ -790,8 +790,10 @@ with open('$CONFIG_FILE', 'w') as f:
                 BACKUP_VERSION=$(echo "$BACKUP_NAME" | sed 's/flows.json.backup.//' | cut -d'.' -f2-)
                 FORMATTED_DATE=$(echo "$BACKUP_DATE" | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3 \4:\5:\6/')
                 BACKUP_SIZE=$(du -h "$b" | cut -f1)
-                # Detectar tipo de dashboard del backup
-                if grep -q '"type": "ui-' "$b" 2>/dev/null || grep -q '"type":"ui-' "$b" 2>/dev/null; then
+                # Detectar tipo de dashboard del backup (por nombre o contenido)
+                if echo "$BACKUP_NAME" | grep -q "dbrd2"; then
+                    BACKUP_TYPE="[FlowFuse]"
+                elif grep -q '"type": "ui-' "$b" 2>/dev/null || grep -q '"type":"ui-' "$b" 2>/dev/null; then
                     BACKUP_TYPE="[FlowFuse]"
                 elif grep -q '"type": "ui_' "$b" 2>/dev/null || grep -q '"type":"ui_' "$b" 2>/dev/null; then
                     BACKUP_TYPE="[Clásico]"
