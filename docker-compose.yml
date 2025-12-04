@@ -1,24 +1,46 @@
 services:
-  # Puente MQTT → Azure v2.0
-  mqtt-to-azure:
+  # Contenedor único para Raspberry Pi - Gesinne
+  gesinne-rpi:
     build: .
-    container_name: mqtt-to-azure
+    container_name: gesinne-rpi
     restart: unless-stopped
+    privileged: true  # Necesario para acceso a /dev/ttyAMA0
     network_mode: host
+    
+    volumes:
+      # Acceso al puerto serie Modbus
+      - /dev/ttyAMA0:/dev/ttyAMA0
+    
     environment:
-      # Broker MQTT local (Mosquitto en la Raspberry)
+      # Broker MQTT local
       - MQTT_BROKER=localhost
       - MQTT_PORT=1883
       - MQTT_TOPIC=#
       
-      # Connection String del cliente (MODIFICAR)
-      - AZURE_CONNECTION_STRING=HostName=xxx.azure-devices.net;DeviceId=xxx;SharedAccessKey=xxx
+      # Azure IoT Hub (opcional, dejar vacío si no se usa)
+      - AZURE_CONNECTION_STRING=
       
-      # Intervalo de envío (1 para S1, 10 para F1 gratuito)
+      # Intervalo de envío MQTT→Azure (1 para S1, 10 para F1 gratuito)
       - SEND_INTERVAL=1
       
-      # Puerto healthcheck (accesible en http://localhost:8080/health)
+      # Puerto healthcheck
       - HEALTHCHECK_PORT=8080
+      
+      # Configuración Modbus
+      - SERIAL_PORT=/dev/ttyAMA0
+      - SERIAL_BAUDRATE=115200
+      
+      # Configuración SMTP para envío de emails
+      - SMTP_SERVER=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=
+      - SMTP_PASSWORD=
+      - SMTP_FROM=alertas@gesinne.com
+      - SMTP_TO=patricia.garcia@gesinne.com
+      
+      # Datos del equipo
+      - NUMERO_SERIE=
+      - POTENCIA_NOMINAL=175
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]

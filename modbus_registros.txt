@@ -1,0 +1,138 @@
+================================================================================
+MAPA DE REGISTROS MODBUS - REGULADOR DE TENSIÓN GESINNE
+================================================================================
+
+Cada tarjeta (L1, L2, L3) tiene 96 registros (0-95)
+Node-RED lee 67 registros (0-66) cada 0.5 segundos
+Unit ID: 1=L1, 2=L2, 3=L3
+
+================================================================================
+REGISTROS DE LECTURA (Función 3) - DATOS EN TIEMPO REAL
+================================================================================
+
+Reg | Variable              | Fórmula              | Unidad  | Descripción
+----|----------------------|----------------------|---------|---------------------------
+  2 | alarma               | data[2]              |         | Código de alarma (0=OK)
+  3 | v_salida_voltios     | data[3] / 100        | V       | Tensión de salida
+  4 | v_entrada_voltios    | data[4] / 100        | V       | Tensión de entrada
+  5 | frecuencia           | data[5] / 100        | Hz      | Frecuencia de red
+  6 | corriente            | data[6] / 10         | A       | Corriente
+  7 | i_chopper            | data[7] / 100        | A       | Corriente chopper
+ 9  | potencia_activa_high | data[9]              |         | Potencia activa (word alto)
+ 10 | potencia_activa_low  | data[10]             |         | Potencia activa (word bajo)
+    |                      | (high<<16|low)/10000 | kW      | Potencia activa combinada
+ 11 | potencia_react_high  | data[11]             |         | Potencia reactiva (word alto)
+ 12 | potencia_react_low   | data[12]             |         | Potencia reactiva (word bajo)
+    |                      | (high<<16|low)/10000 | kVAr    | Potencia reactiva combinada
+ 13 | potencia_apar_high   | data[13]             |         | Potencia aparente (word alto)
+ 14 | potencia_apar_low    | data[14]             |         | Potencia aparente (word bajo)
+    |                      | (high<<16|low)/10000 | kVA     | Potencia aparente combinada
+ 15 | factor_potencia      | data[15] / 100       |         | Cos φ (factor de potencia)
+ 17 | temperatura          | data[17] / 10        | °C      | Temperatura del equipo
+ 18 | temp_admisible       | data[18] / 10        | °C      | Temperatura admisible (55.0)
+
+================================================================================
+REGISTROS DE CONFIGURACIÓN (30-56)
+================================================================================
+
+Reg | Variable              | Valor ejemplo | Descripción
+----|----------------------|---------------|---------------------------
+ 30 | habilitar            | 0             | Habilitar tarjeta (escribir 43981)
+ 31 | estado_bypass        | 0             | 0=normal, 1=bypass, 2=regulación
+ 32 | consigna             | 2200          | Tensión consigna (÷10 = 220.0 V)
+ 33 | ?                    | 1             | 
+ 34 | ?                    | 1235          | 
+ 40 | habilitar_config     | 0             | Escribir 47818 para habilitar config
+ 41 | ?                    | 121           | 
+ 42 | ?                    | 2400          | 
+ 43 | ?                    | 2300          | 
+ 44 | ?                    | 2300          | 
+ 45 | ?                    | 230           | 
+ 46 | direccion_modbus     | 2             | Dirección Modbus (1, 2 o 3)
+ 47 | velocidad_modbus     | 3             | Velocidad Modbus
+ 48 | ?                    | 1             | 
+ 49 | ?                    | 53696         | 
+ 50 | ?                    | 15            | 
+ 51 | sensibilidad_trans   | 105           | Sensibilidad transitorios
+ 52 | ?                    | 180           | 
+ 53 | dead_time            | 30            | Dead time
+ 54 | ?                    | 1             | 
+ 55 | estado_inicial       | 0             | Estado inicial (0 o 2)
+ 56 | tension_inicial      | 2200          | Tensión inicial (÷10 = 220.0 V)
+
+================================================================================
+REGISTROS DE PARÁMETROS (57-95)
+================================================================================
+
+Reg | Variable              | Valor ejemplo | Descripción
+----|----------------------|---------------|---------------------------
+ 57 | temp_admisible       | 550           | Temperatura admisible (÷10 = 55.0°C)
+ 58 | ?                    | 100           | 
+ 63 | angulo_tens_alta     | 179           | Ángulo tensión cargas altas
+ 64 | angulo_tens_baja     | 179           | Ángulo tensión cargas bajas
+ 65 | ?                    | 5             | 
+ 67 | topologia            | 3             | Topología (0-4)
+ 70 | ?                    | 29478         | 
+ 71 | ?                    | 29403         | 
+ 74 | ?                    | 36697         | 
+ 75 | ?                    | 34534         | 
+ 80 | ?                    | 26015         | 
+ 82 | tipo_alimentacion    | 1             | Tipo alimentación (0 o 1)
+ 83 | ?                    | 32800         | 
+ 90 | ?                    | 150           | 
+ 91 | ?                    | 40            | 
+ 92 | ?                    | 15            | 
+ 93 | ?                    | 15            | 
+ 94 | ?                    | 0             | 
+ 95 | ?                    | (último)      |
+
+================================================================================
+REGISTROS DE ESCRITURA (Función 6)
+================================================================================
+
+Reg | Valor    | Hex    | Descripción
+----|----------|--------|--------------------------------------------------
+ 30 | 43981    | 0xABCD | Habilitar tarjeta
+ 31 | 1        |        | Activar bypass
+ 31 | 2        |        | Activar regulación (prueba ahorro)
+ 32 | variable |        | Escribir tensión de consigna
+ 40 | 47818    | 0xBACA | Habilitar modo configuración
+ 55 | variable |        | Escribir estado inicial
+ 56 | variable |        | Escribir tensión inicial
+110 | 51914    | 0xCACA | Flag especial (paso 1)
+111 | 51914    | 0xCACA | Flag especial confirmación (paso 2)
+
+================================================================================
+VARIABLES GLOBALES GENERADAS
+================================================================================
+
+Variable           | Descripción
+-------------------|--------------------------------------------------
+VinL1, VinL2, VinL3           | Tensión entrada por fase
+VoutL1, VoutL2, VoutL3        | Tensión salida por fase
+potenciapruebaL1/L2/L3        | Potencia activa por fase (W)
+potencia_entradaL1/L2/L3      | Potencia entrada calculada
+sumaPotencias                  | Suma de potencias de las 3 fases
+ConsignaL1, ConsignaL2, ConsignaL3 | Consigna por fase
+VinicialL1, VinicialL2, VinicialL3 | Tensión inicial por fase
+EstadoInicialL1/L2/L3         | Estado inicial por fase
+AlarmasL1, AlarmasL2, AlarmasL3   | Código de alarma por fase
+bypassL1, bypassL2, bypassL3  | Estado bypass por fase
+ApagadoL1, ApagadoL2, ApagadoL3   | Estado apagado por fase
+ahorroglobal                   | Porcentaje de ahorro calculado
+
+================================================================================
+CONFIGURACIÓN MODBUS
+================================================================================
+
+Puerto serie:    /dev/ttyAMA0
+Baudrate:        115200
+Databits:        8
+Stopbits:        1
+Paridad:         none
+Tipo:            RTU-BUFFERED
+Timeout:         200ms
+Command delay:   200ms
+Intervalo:       500ms (0.5 segundos)
+
+================================================================================
