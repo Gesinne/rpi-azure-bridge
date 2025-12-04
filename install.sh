@@ -99,6 +99,21 @@ else
     echo "  ⚠️  Bridge no configurado"
 fi
 show_nodered_config
+
+# Mostrar URL del kiosko si existe
+KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-gesinne})/kiosk.sh"
+if [ -f "$KIOSK_SCRIPT" ]; then
+    KIOSK_URL=$(grep -oP 'http://[^ ]+' "$KIOSK_SCRIPT" 2>/dev/null | head -1)
+    if [ -n "$KIOSK_URL" ]; then
+        if echo "$KIOSK_URL" | grep -q "/dashboard"; then
+            echo "  🖥️  Kiosko: $KIOSK_URL (FlowFuse)"
+        elif echo "$KIOSK_URL" | grep -q "/ui"; then
+            echo "  🖥️  Kiosko: $KIOSK_URL (Clásico)"
+        else
+            echo "  🖥️  Kiosko: $KIOSK_URL"
+        fi
+    fi
+fi
 echo ""
 echo "  ¿Qué deseas hacer?"
 echo ""
