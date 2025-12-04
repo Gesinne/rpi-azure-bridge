@@ -513,8 +513,8 @@ except:
                 exit 1
             fi
             
-            # Backup del flow actual
-            BACKUP_FILE="$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S)"
+            # Backup del flow actual con nombre de versión
+            BACKUP_FILE="$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S).${VERSION_NAME%.json}"
             cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
             echo "  💾 Backup creado: $BACKUP_FILE"
             
@@ -729,7 +729,11 @@ with open('$CONFIG_FILE', 'w') as f:
             i=1
             declare -a BACKUP_ARRAY
             for b in $BACKUPS; do
-                BACKUP_DATE=$(basename "$b" | sed 's/flows.json.backup.//')
+                BACKUP_NAME=$(basename "$b")
+                # Extraer fecha y versión del nombre
+                # Formato: flows.json.backup.YYYYMMDDHHMMSS o flows.json.backup.YYYYMMDDHHMMSS.version
+                BACKUP_DATE=$(echo "$BACKUP_NAME" | sed 's/flows.json.backup.//' | cut -d'.' -f1)
+                BACKUP_VERSION=$(echo "$BACKUP_NAME" | sed 's/flows.json.backup.//' | cut -d'.' -f2-)
                 FORMATTED_DATE=$(echo "$BACKUP_DATE" | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3 \4:\5:\6/')
                 BACKUP_SIZE=$(du -h "$b" | cut -f1)
                 # Detectar tipo de dashboard del backup
@@ -740,7 +744,12 @@ with open('$CONFIG_FILE', 'w') as f:
                 else
                     BACKUP_TYPE=""
                 fi
-                echo "  $i) $FORMATTED_DATE $BACKUP_TYPE ($BACKUP_SIZE)"
+                # Mostrar versión si existe
+                if [ -n "$BACKUP_VERSION" ] && [ "$BACKUP_VERSION" != "$BACKUP_DATE" ]; then
+                    echo "  $i) $FORMATTED_DATE - $BACKUP_VERSION $BACKUP_TYPE ($BACKUP_SIZE)"
+                else
+                    echo "  $i) $FORMATTED_DATE $BACKUP_TYPE ($BACKUP_SIZE)"
+                fi
                 BACKUP_ARRAY[$i]="$b"
                 i=$((i+1))
                 # Mostrar máximo 10
