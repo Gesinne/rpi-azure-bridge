@@ -438,64 +438,39 @@ except:
             # Verificar si necesita cambiar el dashboard
             cd "$NODERED_HOME"
             
+            # Siempre limpiar ambos dashboards para evitar conflictos
+            echo ""
+            echo "  🧹 Limpiando dashboards anteriores..."
+            npm uninstall node-red-dashboard 2>/dev/null || true
+            npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
+            npm uninstall @flowfuse/node-red-dashboard-2-ui-led 2>/dev/null || true
+            
+            KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo $SUDO_USER)/kiosk.sh"
+            
             if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
-                # Necesita FlowFuse
-                if [ "$HAS_FLOWFUSE" = "no" ]; then
-                    echo ""
-                    echo "  ⚠️  Este flow requiere FlowFuse Dashboard"
-                    echo "  Instalando (puede tardar unos minutos)..."
-                    echo ""
-                    # Desinstalar clásico primero si existe
-                    npm uninstall node-red-dashboard 2>/dev/null || true
-                    # Instalar FlowFuse y plugins necesarios
-                    npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
-                    if [ $? -eq 0 ]; then
-                        echo "  ✅ FlowFuse Dashboard instalado"
-                    else
-                        echo "  ❌ Error instalando FlowFuse Dashboard"
-                        exit 1
-                    fi
-                elif [ "$HAS_CLASSIC" = "yes" ]; then
-                    # Tiene ambos, quitar el clásico para evitar conflictos
-                    echo ""
-                    echo "  ⚠️  Detectados ambos dashboards, limpiando conflicto..."
-                    npm uninstall node-red-dashboard 2>/dev/null || true
-                    echo "  ✅ Conflicto resuelto"
+                echo "  📦 Instalando FlowFuse Dashboard (puede tardar)..."
+                npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
+                if [ $? -eq 0 ]; then
+                    echo "  ✅ FlowFuse Dashboard instalado"
+                else
+                    echo "  ❌ Error instalando FlowFuse Dashboard"
+                    exit 1
                 fi
-                # Asegurar que ui-led está instalado
-                npm install @flowfuse/node-red-dashboard-2-ui-led --save 2>/dev/null || true
                 # Cambiar URL del kiosko a /dashboard
-                KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo $SUDO_USER)/kiosk.sh"
                 if [ -f "$KIOSK_SCRIPT" ]; then
                     sed -i 's|http://localhost:1880/ui|http://localhost:1880/dashboard|g' "$KIOSK_SCRIPT"
                     echo "  🖥️  Kiosko actualizado a /dashboard"
                 fi
             else
-                # Necesita Clásico
-                if [ "$HAS_CLASSIC" = "no" ]; then
-                    echo ""
-                    echo "  ⚠️  Este flow requiere Dashboard Clásico"
-                    echo "  Instalando (puede tardar unos minutos)..."
-                    echo ""
-                    # Desinstalar FlowFuse primero si existe
-                    npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
-                    # Instalar clásico
-                    npm install node-red-dashboard --save
-                    if [ $? -eq 0 ]; then
-                        echo "  ✅ Dashboard Clásico instalado"
-                    else
-                        echo "  ❌ Error instalando Dashboard Clásico"
-                        exit 1
-                    fi
-                elif [ "$HAS_FLOWFUSE" = "yes" ]; then
-                    # Tiene ambos, quitar FlowFuse para evitar conflictos
-                    echo ""
-                    echo "  ⚠️  Detectados ambos dashboards, limpiando conflicto..."
-                    npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
-                    echo "  ✅ Conflicto resuelto"
+                echo "  📦 Instalando Dashboard Clásico (puede tardar)..."
+                npm install node-red-dashboard --save
+                if [ $? -eq 0 ]; then
+                    echo "  ✅ Dashboard Clásico instalado"
+                else
+                    echo "  ❌ Error instalando Dashboard Clásico"
+                    exit 1
                 fi
                 # Cambiar URL del kiosko a /ui
-                KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo $SUDO_USER)/kiosk.sh"
                 if [ -f "$KIOSK_SCRIPT" ]; then
                     sed -i 's|http://localhost:1880/dashboard|http://localhost:1880/ui|g' "$KIOSK_SCRIPT"
                     echo "  🖥️  Kiosko actualizado a /ui"
