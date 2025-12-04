@@ -939,21 +939,9 @@ with open('$CONFIG_FILE', 'w') as f:
                 *) echo "  ❌ Opción no válida"; exit 1 ;;
             esac
             
-            echo ""
-            echo "  ¿Cuántos registros quieres leer?"
-            echo ""
-            echo "  1) 67 registros (estándar)"
-            echo "  2) Detectar máximo automáticamente"
-            echo "  3) Número personalizado"
-            echo ""
-            read -p "  Opción [1-3]: " REG_OPTION
-            
-            case $REG_OPTION in
-                1) NUM_REGS=67; DETECT_MAX="no" ;;
-                2) NUM_REGS=200; DETECT_MAX="yes" ;;
-                3) read -p "  Número de registros: " NUM_REGS; DETECT_MAX="no" ;;
-                *) NUM_REGS=67; DETECT_MAX="no" ;;
-            esac
+            # Siempre detectar el máximo de registros
+            NUM_REGS=200
+            DETECT_MAX="yes"
             
             echo ""
             echo "  ⚠️  Se parará Node-RED temporalmente para leer..."
