@@ -1401,53 +1401,16 @@ EOFTXT
             echo ""
             echo "  📧 Preparando envío de email..."
             echo ""
-            echo "  ⚠️  Liberando puerto serie..."
+            echo "  ⚠️  Parando Node-RED temporalmente..."
             
             # Parar Node-RED
             sudo systemctl stop nodered 2>/dev/null
-            sleep 1
             
-            # Parar contenedor Docker si existe
-            if docker ps -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
-                echo "  🐳 Parando contenedor gesinne-rpi..."
-                docker stop gesinne-rpi 2>/dev/null
-                sleep 1
-            fi
+            # Parar contenedor Docker si existe (silencioso)
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
             
-            # Matar cualquier proceso que use el puerto
-            PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
-            if [ -n "$PIDS" ]; then
-                echo "  🔄 Liberando puerto de otros procesos..."
-                for PID in $PIDS; do
-                    sudo kill $PID 2>/dev/null
-                done
-                sleep 2
-            fi
-            
-            # Verificar que el puerto está libre
-            RETRY=0
-            while sudo lsof /dev/ttyAMA0 >/dev/null 2>&1 && [ $RETRY -lt 10 ]; do
-                echo "  ⏳ Esperando a que se libere el puerto... (intento $((RETRY+1))/10)"
-                # Intentar matar de nuevo
-                PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
-                if [ -n "$PIDS" ]; then
-                    for PID in $PIDS; do
-                        sudo kill -9 $PID 2>/dev/null
-                    done
-                fi
-                sleep 2
-                RETRY=$((RETRY + 1))
-            done
-            
-            if sudo lsof /dev/ttyAMA0 >/dev/null 2>&1; then
-                echo "  ❌ No se pudo liberar el puerto serie"
-                echo "  🔄 Reiniciando servicios..."
-                sudo systemctl start nodered
-                docker start gesinne-rpi 2>/dev/null
-                exit 1
-            fi
-            
-            echo "  ✅ Puerto serie liberado"
+            sleep 2
+            echo "  ✅ Servicios parados"
             echo ""
             
             # Obtener número de serie
@@ -1716,17 +1679,7 @@ EOFEMAIL
             echo ""
             echo "  🔄 Reiniciando servicios..."
             sudo systemctl start nodered
-            sleep 1
-            
-            # Reiniciar contenedor Docker si existía
-            if docker ps -a -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
-                echo "  🐳 Reiniciando contenedor gesinne-rpi..."
-                docker start gesinne-rpi 2>/dev/null
-            fi
-            
-            if systemctl is-active --quiet kiosk.service 2>/dev/null; then
-                sudo systemctl restart kiosk.service
-            fi
+            docker start gesinne-rpi >/dev/null 2>&1 || true
             
             echo "  ✅ Listo"
             exit 0
