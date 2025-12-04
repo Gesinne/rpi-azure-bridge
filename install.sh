@@ -982,38 +982,16 @@ with open('$CONFIG_FILE', 'w') as f:
             DETECT_MAX="yes"
             
             echo ""
-            echo "  ⚠️  Liberando puerto serie..."
+            echo "  ⚠️  Parando Node-RED temporalmente..."
             
             # Parar Node-RED
             sudo systemctl stop nodered 2>/dev/null
-            sleep 1
             
-            # Parar contenedor Docker si existe
-            if docker ps -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
-                echo "  🐳 Parando contenedor gesinne-rpi..."
-                docker stop gesinne-rpi 2>/dev/null
-                sleep 1
-            fi
+            # Parar contenedor Docker si existe (silencioso)
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
             
-            # Matar cualquier proceso que use el puerto
-            PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
-            if [ -n "$PIDS" ]; then
-                echo "  🔄 Liberando puerto de otros procesos..."
-                for PID in $PIDS; do
-                    sudo kill $PID 2>/dev/null
-                done
-                sleep 2
-            fi
-            
-            # Verificar que el puerto está libre
-            RETRY=0
-            while sudo lsof /dev/ttyAMA0 >/dev/null 2>&1 && [ $RETRY -lt 5 ]; do
-                echo "  ⏳ Esperando a que se libere el puerto..."
-                sleep 2
-                RETRY=$((RETRY + 1))
-            done
-            
-            echo "  ✅ Puerto serie liberado"
+            sleep 2
+            echo "  ✅ Servicios parados"
             echo ""
             
             for UNIT_ID in $UNIT_IDS; do
