@@ -24,18 +24,25 @@ set -e
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
 INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
 
-echo ""
-echo "  🔄 Obteniendo última versión..."
-
-if [ -d "$INSTALL_DIR/.git" ]; then
-    cd "$INSTALL_DIR"
-    git fetch -q origin main 2>/dev/null || true
-    git reset --hard origin/main -q 2>/dev/null || true
-else
-    # Clonar si no existe
-    git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null || true
-    cd "$INSTALL_DIR" 2>/dev/null || true
+# Si no estamos ejecutando desde el repo, actualizar y re-ejecutar desde el repo
+SCRIPT_PATH="$(realpath "$0" 2>/dev/null || echo "$0")"
+if [ "$SCRIPT_PATH" != "$INSTALL_DIR/install.sh" ]; then
+    echo ""
+    echo "  🔄 Obteniendo última versión..."
+    
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        cd "$INSTALL_DIR"
+        git fetch -q origin main 2>/dev/null || true
+        git reset --hard origin/main -q 2>/dev/null || true
+    else
+        git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null || true
+    fi
+    
+    # Ejecutar el script del repo
+    exec sudo bash "$INSTALL_DIR/install.sh" "$@"
 fi
+
+cd "$INSTALL_DIR"
 
 clear
 echo ""
