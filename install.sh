@@ -1426,11 +1426,26 @@ EOFTXT
             
             # Verificar que el puerto está libre
             RETRY=0
-            while sudo lsof /dev/ttyAMA0 >/dev/null 2>&1 && [ $RETRY -lt 5 ]; do
-                echo "  ⏳ Esperando a que se libere el puerto..."
+            while sudo lsof /dev/ttyAMA0 >/dev/null 2>&1 && [ $RETRY -lt 10 ]; do
+                echo "  ⏳ Esperando a que se libere el puerto... (intento $((RETRY+1))/10)"
+                # Intentar matar de nuevo
+                PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
+                if [ -n "$PIDS" ]; then
+                    for PID in $PIDS; do
+                        sudo kill -9 $PID 2>/dev/null
+                    done
+                fi
                 sleep 2
                 RETRY=$((RETRY + 1))
             done
+            
+            if sudo lsof /dev/ttyAMA0 >/dev/null 2>&1; then
+                echo "  ❌ No se pudo liberar el puerto serie"
+                echo "  🔄 Reiniciando servicios..."
+                sudo systemctl start nodered
+                docker start gesinne-rpi 2>/dev/null
+                exit 1
+            fi
             
             echo "  ✅ Puerto serie liberado"
             echo ""
