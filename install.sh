@@ -1184,6 +1184,111 @@ EOF
             
             done  # fin del bucle for UNIT_ID
             
+            # Preguntar si quiere guardar en archivo
+            echo ""
+            read -p "  ¿Guardar resultados en archivo? [s/N]: " GUARDAR
+            if [ "$GUARDAR" = "s" ] || [ "$GUARDAR" = "S" ]; then
+                ARCHIVO="/home/$(logname 2>/dev/null || echo 'pi')/registros_modbus_$(date +%Y%m%d_%H%M%S).txt"
+                echo "  💾 Guardando en: $ARCHIVO"
+                # Volver a ejecutar y guardar en archivo
+                for UNIT_ID in $UNIT_IDS; do
+                    case $UNIT_ID in
+                        1) FASE="L1" ;;
+                        2) FASE="L2" ;;
+                        3) FASE="L3" ;;
+                    esac
+                    echo "" >> "$ARCHIVO"
+                    echo "TARJETA $FASE (Unit ID: $UNIT_ID) - $(date)" >> "$ARCHIVO"
+                    echo "Registro;Parámetro;Valor;Descripción" >> "$ARCHIVO"
+                    python3 << EOFCSV
+import sys
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    from pymodbus.client.sync import ModbusSerialClient
+
+client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
+if client.connect():
+    data = []
+    for start in range(0, 96, 40):
+        count = min(40, 96 - start)
+        result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
+        if not result.isError():
+            data.extend(result.registers)
+        else:
+            break
+    client.close()
+    
+    regs = {
+        0: ("Estado actual del chopper", "Estado actual"),
+        1: ("Modo de funcionamiento", "Topología actual"),
+        2: ("Alarma", "Alarma"),
+        3: ("Tensión de salida (Vo)", "V salida"),
+        4: ("Tensión de entrada (Vin)", "V entrada"),
+        5: ("Frecuencia", "Hz"),
+        6: ("Corriente de salida del Equipo", "I Salida"),
+        7: ("Corriente de salida del Chopper", "I Chopper"),
+        8: ("Corriente por primario del trafo", "I Primario trafo"),
+        9: ("Potencia activa (alta)", "P activa (alta)"),
+        10: ("Potencia activa (baja)", "P activa (baja)"),
+        11: ("Potencia reactiva (alta)", "P reactiva (alta)"),
+        12: ("Potencia reactiva (baja)", "P reactiva (baja)"),
+        13: ("Potencia aparente (alta)", "P aparente (alta)"),
+        14: ("Potencia aparente (baja)", "P aparente (baja)"),
+        15: ("Factor de potencia", "Factor de Potencia"),
+        16: ("Tipo de factor de potencia", "Tipo de FP"),
+        17: ("Temperatura interna", "Temperatura"),
+        18: ("Temperatura alarma", "Temp alarma"),
+        19: ("Enable externo", "Enable externo"),
+        20: ("Tiempo reencendido", "Tiempo reenc"),
+        21: ("Enable PCB", "Enable PCB"),
+        30: ("Flag Estado", "Flag Estado"),
+        31: ("Estado deseado", "Estado deseado"),
+        32: ("Consigna deseada", "Consigna"),
+        33: ("Bucle control", "Bucle control"),
+        34: ("Mando chopper", "Mando chopper"),
+        40: ("Flag Configuración", "Flag Config"),
+        41: ("Número de serie", "Nº serie"),
+        42: ("Tensión nominal", "V nominal"),
+        43: ("V primario autotrafo", "V prim auto"),
+        44: ("V secundario autotrafo", "V sec auto"),
+        45: ("V secundario trafo", "V sec trafo"),
+        46: ("Topología", "Topología"),
+        47: ("Dead-time", "Dead-time"),
+        48: ("Dirección MODBUS", "Modbus"),
+        49: ("I nominal salida", "I nom salida"),
+        50: ("I nominal chopper", "I nom chopper"),
+        51: ("I máxima chopper eficaz", "I max eficaz"),
+        52: ("I máxima chopper pico", "I max pico"),
+        53: ("Tiempo apagado CC/TT", "T apagado"),
+        54: ("Contador apagados SC", "Cnt SC"),
+        55: ("Estado inicial", "Estado ini"),
+        56: ("V inicial", "V inicial"),
+        57: ("Temperatura máxima", "Temp máx"),
+        58: ("Decremento T", "Decr T"),
+        59: ("Contador apagados ST", "Cnt ST"),
+        60: ("Tipo V placa", "Tipo V"),
+        61: ("Velocidad Modbus", "Vel Modbus"),
+        62: ("Package transistores", "Package"),
+        63: ("Ángulo cargas altas", "Áng altas"),
+        64: ("Ángulo cargas bajas", "Áng bajas"),
+        65: ("% carga baja", "% carga baja"),
+        66: ("Sensibilidad transitorios", "Sens trans"),
+        67: ("Sensibilidad derivada", "Sens deriv"),
+        69: ("Reset config", "?ReCo"),
+        70: ("Flag Calibración", "Flag Calib"),
+        90: ("Flag Control", "Flag Control"),
+    }
+    
+    for i in range(len(data)):
+        if i in regs:
+            desc, nombre = regs[i]
+            print(f"{i};{nombre};{data[i]};{desc}")
+EOFCSV
+                done >> "$ARCHIVO"
+                echo "  ✅ Archivo guardado: $ARCHIVO"
+            fi
+            
             echo "  🔄 Reiniciando Node-RED..."
             sudo systemctl start nodered
             sleep 2
