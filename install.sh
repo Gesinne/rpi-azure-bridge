@@ -23,9 +23,18 @@ set -e
 # Auto-detectar si necesita clonar o actualizar el repo
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
 INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
+
+echo ""
+echo "  🔄 Obteniendo última versión..."
+
 if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
-    git pull -q 2>/dev/null || true
+    git fetch -q origin main 2>/dev/null || true
+    git reset --hard origin/main -q 2>/dev/null || true
+else
+    # Clonar si no existe
+    git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null || true
+    cd "$INSTALL_DIR" 2>/dev/null || true
 fi
 
 clear
