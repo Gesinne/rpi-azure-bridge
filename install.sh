@@ -18,8 +18,6 @@ if [ ! -t 0 ]; then
     exit 0
 fi
 
-set -e
-
 # Auto-detectar si necesita clonar o actualizar el repo
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
 INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
@@ -30,13 +28,14 @@ if [ "$1" != "--updated" ]; then
     echo "  🔄 Obteniendo última versión..."
     
     # Borrar y clonar siempre
-    rm -rf "$INSTALL_DIR"
-    git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null || true
+    rm -rf "$INSTALL_DIR" 2>/dev/null || true
+    git clone https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
     
     # Ejecutar el script del repo con marca de actualizado
-    exec sudo bash "$INSTALL_DIR/install.sh" --updated
+    exec bash "$INSTALL_DIR/install.sh" --updated
 fi
 
+set -e
 cd "$INSTALL_DIR"
 
 clear
