@@ -14,7 +14,7 @@ if [ ! -t 0 ]; then
     TEMP_SCRIPT="/tmp/gesinne_install_$$.sh"
     curl -sL "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" "$SCRIPT_URL"
     chmod +x "$TEMP_SCRIPT"
-    exec bash "$TEMP_SCRIPT" "$@"
+    exec sudo bash "$TEMP_SCRIPT" "$@"
     exit 0
 fi
 
