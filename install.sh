@@ -1646,35 +1646,50 @@ REGISTROS = {
     95: ("Escalón máximo del mando tensión no nula (EMMVT1)", "?ReCn"),
 }
 
-client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
+import time
 
-# Leer las 3 fases siempre
+# Leer las 3 fases con reintentos
 placas_leidas = {}
+max_intentos = 10
+intento = 0
 
-if client.connect():
-    for unit_id in [1, 2, 3]:
-        data = []
-        for start in range(0, 96, 40):
-            count = min(40, 96 - start)
-            result = client.read_holding_registers(address=start, count=count, slave=unit_id)
-            if not result.isError():
-                data.extend(result.registers)
-            else:
-                break
-        
-        if len(data) > 48:
-            placas_leidas[unit_id] = data
+while len(placas_leidas) < 3 and intento < max_intentos:
+    intento += 1
+    fases_pendientes = [u for u in [1, 2, 3] if u not in placas_leidas]
     
-    client.close()
+    if intento > 1:
+        print(f"  🔄 Reintento {intento}/{max_intentos} - Fases pendientes: {', '.join([f'L{u}' for u in fases_pendientes])}")
+        time.sleep(1)
+    
+    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
+    
+    if client.connect():
+        for unit_id in fases_pendientes:
+            data = []
+            for start in range(0, 96, 40):
+                count = min(40, 96 - start)
+                result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+                if not result.isError():
+                    data.extend(result.registers)
+                else:
+                    break
+            
+            if len(data) > 48:
+                placas_leidas[unit_id] = data
+                print(f"  ✅ L{unit_id} leída correctamente")
+        
+        client.close()
 
 # Verificar que tenemos las 3 fases
 if len(placas_leidas) < 3:
-    fases_ok = [f"L{k}" for k in placas_leidas.keys()]
+    fases_ok = [f"L{k}" for k in sorted(placas_leidas.keys())]
     fases_fail = [f"L{k}" for k in [1,2,3] if k not in placas_leidas]
     print(f"⚠️  Solo se pudieron leer {len(placas_leidas)} fases: {', '.join(fases_ok)}")
-    print(f"❌ Fases sin respuesta: {', '.join(fases_fail)}")
+    print(f"❌ Fases sin respuesta después de {max_intentos} intentos: {', '.join(fases_fail)}")
     print("❌ No se envía email hasta tener las 3 fases")
     sys.exit(1)
+
+print(f"  ✅ Las 3 fases leídas correctamente")
 
 # Obtener números de serie de cada placa
 sn_l1 = placas_leidas[1][41]
