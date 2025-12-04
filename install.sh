@@ -1116,8 +1116,17 @@ try:
             print("  Reg | Parámetro                | Valor      | Descripción")
             print("  ----|--------------------------|------------|--------------------------------------------------")
         
+        # Identificar la placa por el registro 48 (Dirección MODBUS)
+        dir_modbus = data[48] if len(data) > 48 else 0
+        placa_nombre = {1: "L1 (Fase 1)", 2: "L2 (Fase 2)", 3: "L3 (Fase 3)"}.get(dir_modbus, f"Desconocida ({dir_modbus})")
+        
+        print("")
+        print(f"  ╔══════════════════════════════════════════════════════════════════════════════╗")
+        print(f"  ║  PLACA IDENTIFICADA: {placa_nombre:20s}  -  Dirección Modbus: {dir_modbus}            ║")
+        print(f"  ╚══════════════════════════════════════════════════════════════════════════════╝")
+        
         # DATOS EN TIEMPO REAL (0-29)
-        print_header("DATOS EN TIEMPO REAL (0-29) - TARJETA $FASE")
+        print_header("DATOS EN TIEMPO REAL (0-29)")
         for i in range(0, 30):
             if i in regs and i < len(data):
                 desc, nombre = regs[i]
