@@ -464,6 +464,12 @@ except:
                 fi
                 # Asegurar que ui-led está instalado
                 npm install @flowfuse/node-red-dashboard-2-ui-led --save 2>/dev/null || true
+                # Cambiar URL del kiosko a /dashboard
+                KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo $SUDO_USER)/kiosk.sh"
+                if [ -f "$KIOSK_SCRIPT" ]; then
+                    sed -i 's|http://localhost:1880/ui|http://localhost:1880/dashboard|g' "$KIOSK_SCRIPT"
+                    echo "  🖥️  Kiosko actualizado a /dashboard"
+                fi
             else
                 # Necesita Clásico
                 if [ "$HAS_CLASSIC" = "no" ]; then
@@ -487,6 +493,12 @@ except:
                     echo "  ⚠️  Detectados ambos dashboards, limpiando conflicto..."
                     npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
                     echo "  ✅ Conflicto resuelto"
+                fi
+                # Cambiar URL del kiosko a /ui
+                KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo $SUDO_USER)/kiosk.sh"
+                if [ -f "$KIOSK_SCRIPT" ]; then
+                    sed -i 's|http://localhost:1880/dashboard|http://localhost:1880/ui|g' "$KIOSK_SCRIPT"
+                    echo "  🖥️  Kiosko actualizado a /ui"
                 fi
             fi
             
