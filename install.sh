@@ -1406,6 +1406,13 @@ except:
                 sudo systemctl stop nodered 2>/dev/null
                 sleep 1
                 
+                # Parar contenedor Docker si existe
+                if docker ps -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
+                    echo "  🐳 Parando contenedor gesinne-rpi..."
+                    docker stop gesinne-rpi 2>/dev/null
+                    sleep 1
+                fi
+                
                 # Matar cualquier proceso que use el puerto
                 PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
                 if [ -n "$PIDS" ]; then
@@ -1661,9 +1668,15 @@ except Exception as e:
 EOFEMAIL
                 
                 echo ""
-                echo "  🔄 Reiniciando Node-RED..."
+                echo "  🔄 Reiniciando servicios..."
                 sudo systemctl start nodered
-                sleep 2
+                sleep 1
+                
+                # Reiniciar contenedor Docker si existía
+                if docker ps -a -q -f name=gesinne-rpi 2>/dev/null | grep -q .; then
+                    echo "  🐳 Reiniciando contenedor gesinne-rpi..."
+                    docker start gesinne-rpi 2>/dev/null
+                fi
                 
                 if systemctl is-active --quiet kiosk.service 2>/dev/null; then
                     sudo systemctl restart kiosk.service
