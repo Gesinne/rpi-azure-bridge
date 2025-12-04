@@ -1325,6 +1325,145 @@ EOFTXT
             echo "================================================================================" >> "$ARCHIVO"
             echo "  ✅ Archivo guardado: $ARCHIVO"
             
+            # Publicar por MQTT
+            echo ""
+            echo "  📡 Publicando configuración por MQTT..."
+            
+            # Obtener número de serie del equipo
+            CONFIG_FILE=""
+            for f in /home/*/config/equipo_config.json; do
+                if [ -f "$f" ]; then
+                    CONFIG_FILE="$f"
+                    break
+                fi
+            done
+            
+            if [ -n "$CONFIG_FILE" ]; then
+                SERIAL=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('numero_serie', 'unknown'))" 2>/dev/null)
+            else
+                SERIAL="unknown"
+            fi
+            
+            # Obtener configuración MQTT de Node-RED
+            NODERED_DIR=""
+            for d in /home/*/.node-red; do
+                if [ -d "$d" ]; then
+                    NODERED_DIR="$d"
+                    break
+                fi
+            done
+            
+            if [ -n "$NODERED_DIR" ] && [ -f "$NODERED_DIR/flows.json" ]; then
+                # Leer configuración MQTT y publicar
+                python3 << EOFMQTT
+import json
+import sys
+
+# Leer configuración MQTT de Node-RED
+try:
+    with open('$NODERED_DIR/flows.json', 'r') as f:
+        flows = json.load(f)
+    
+    mqtt_broker = 'localhost'
+    mqtt_port = 1883
+    mqtt_tls = False
+    
+    for node in flows:
+        if node.get('type') == 'mqtt-broker':
+            mqtt_broker = node.get('broker', 'localhost')
+            mqtt_port = int(node.get('port', 1883))
+            mqtt_tls = node.get('usetls', False)
+            break
+    
+    # Leer credenciales si existen
+    mqtt_user = None
+    mqtt_pass = None
+    try:
+        with open('$NODERED_DIR/flows_cred.json', 'r') as f:
+            creds = json.load(f)
+            for node_id, node_creds in creds.items():
+                if 'user' in node_creds:
+                    mqtt_user = node_creds.get('user')
+                    mqtt_pass = node_creds.get('password')
+                    break
+    except:
+        pass
+    
+    # Conectar y publicar
+    try:
+        import paho.mqtt.client as mqtt
+    except ImportError:
+        print("  ⚠️  paho-mqtt no instalado, instalando...")
+        import subprocess
+        subprocess.run([sys.executable, '-m', 'pip', 'install', 'paho-mqtt', '-q'])
+        import paho.mqtt.client as mqtt
+    
+    # Leer registros de cada tarjeta y crear JSON
+    from pymodbus.client import ModbusSerialClient
+    
+    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
+    
+    config_data = {
+        "numero_serie": "$SERIAL",
+        "timestamp": __import__('datetime').datetime.now().isoformat(),
+        "tarjetas": {}
+    }
+    
+    if client.connect():
+        for unit_id in [1, 2, 3]:
+            fase = f"L{unit_id}"
+            data = []
+            for start in range(0, 96, 40):
+                count = min(40, 96 - start)
+                result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+                if not result.isError():
+                    data.extend(result.registers)
+                else:
+                    break
+            
+            if len(data) > 48:
+                config_data["tarjetas"][fase] = {
+                    "direccion_modbus": data[48],
+                    "numero_serie_placa": data[41],
+                    "v_nominal": data[42],
+                    "v_primario_auto": data[43],
+                    "v_secundario_auto": data[44],
+                    "v_secundario_trafo": data[45],
+                    "topologia": data[46],
+                    "dead_time": data[47],
+                    "estado_inicial": data[55],
+                    "v_inicial": data[56],
+                    "temp_maxima": data[57],
+                    "angulo_cargas_altas": data[63] if len(data) > 63 else None,
+                    "angulo_cargas_bajas": data[64] if len(data) > 64 else None,
+                    "sensibilidad_transitorios": data[66] if len(data) > 66 else None,
+                    "registros_raw": data
+                }
+        client.close()
+    
+    # Publicar por MQTT
+    mqtt_client = mqtt.Client()
+    if mqtt_user:
+        mqtt_client.username_pw_set(mqtt_user, mqtt_pass)
+    if mqtt_tls:
+        mqtt_client.tls_set()
+    
+    try:
+        mqtt_client.connect(mqtt_broker, mqtt_port, 60)
+        topic = f"Equipo/{config_data['numero_serie']}/configuracion"
+        mqtt_client.publish(topic, json.dumps(config_data), qos=1, retain=True)
+        mqtt_client.disconnect()
+        print(f"  ✅ Publicado en: {topic}")
+    except Exception as e:
+        print(f"  ⚠️  No se pudo publicar MQTT: {e}")
+
+except Exception as e:
+    print(f"  ⚠️  Error MQTT: {e}")
+EOFMQTT
+            else
+                echo "  ⚠️  No se encontró configuración de Node-RED"
+            fi
+            
             echo "  🔄 Reiniciando Node-RED..."
             sudo systemctl start nodered
             sleep 2
