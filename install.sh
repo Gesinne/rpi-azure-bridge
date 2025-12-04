@@ -1542,9 +1542,29 @@ except:
                     SERIAL="unknown"
                 fi
                 
-                echo "  ⚠️  Se parará Node-RED temporalmente..."
-                sudo systemctl stop nodered
+                echo "  ⚠️  Liberando puerto serie..."
+                
+                # Parar Node-RED
+                sudo systemctl stop nodered 2>/dev/null
                 sleep 1
+                
+                # Matar cualquier proceso que use el puerto
+                PIDS=$(sudo lsof -t /dev/ttyAMA0 2>/dev/null)
+                if [ -n "$PIDS" ]; then
+                    echo "  🔄 Liberando puerto de otros procesos..."
+                    for PID in $PIDS; do
+                        sudo kill $PID 2>/dev/null
+                    done
+                    sleep 2
+                fi
+                
+                # Verificar que el puerto está libre
+                RETRY=0
+                while sudo lsof /dev/ttyAMA0 >/dev/null 2>&1 && [ $RETRY -lt 5 ]; do
+                    echo "  ⏳ Esperando a que se libere el puerto..."
+                    sleep 2
+                    RETRY=$((RETRY + 1))
+                done
                 
                 python3 << EOFEMAIL
 import os
