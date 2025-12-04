@@ -1107,17 +1107,52 @@ try:
             95: ("Escalón máximo del mando tensión no nula (EMMVT1)", "?ReCn"),
         }
         
-        # Imprimir con formato de tabla
-        print("")
-        print("  REGISTROS DE LECTURA - TARJETA $FASE")
-        print("")
-        print("  Reg | Parámetro                | Valor      | Descripción")
-        print("  ----|--------------------------|------------|--------------------------------------------------")
+        # Imprimir con formato de tabla por secciones
+        def print_header(titulo):
+            print("")
+            print(f"  {'='*80}")
+            print(f"  {titulo}")
+            print(f"  {'='*80}")
+            print("  Reg | Parámetro                | Valor      | Descripción")
+            print("  ----|--------------------------|------------|--------------------------------------------------")
         
-        for i in range(len(data)):
-            if i in regs:
+        # DATOS EN TIEMPO REAL (0-29)
+        print_header("DATOS EN TIEMPO REAL (0-29) - TARJETA $FASE")
+        for i in range(0, 30):
+            if i in regs and i < len(data):
                 desc, nombre = regs[i]
                 print(f"  {i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+        
+        # ESTADO (30-39)
+        print_header("REGISTROS DE ESTADO (30-39)")
+        for i in range(30, 40):
+            if i in regs and i < len(data):
+                desc, nombre = regs[i]
+                print(f"  {i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+        
+        # CONFIGURACIÓN (40-69)
+        print_header("REGISTROS DE CONFIGURACIÓN ?Co (40-69)")
+        for i in range(40, 70):
+            if i in regs and i < len(data):
+                desc, nombre = regs[i]
+                print(f"  {i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+        
+        # CALIBRACIÓN (70-89)
+        if len(data) > 70:
+            print_header("REGISTROS DE CALIBRACIÓN ?Ca (70-89)")
+            for i in range(70, 90):
+                if i in regs and i < len(data):
+                    desc, nombre = regs[i]
+                    print(f"  {i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+        
+        # CONTROL (90-95)
+        if len(data) > 90:
+            print_header("REGISTROS DE CONTROL ?Cn (90-95)")
+            for i in range(90, 96):
+                if i in regs and i < len(data):
+                    desc, nombre = regs[i]
+                    print(f"  {i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+        
         print("")
     else:
         print("  ❌ No se pudieron leer registros")
