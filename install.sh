@@ -1395,7 +1395,11 @@ try:
     except ImportError:
         print("  ⚠️  paho-mqtt no instalado, instalando...")
         import subprocess
-        subprocess.run([sys.executable, '-m', 'pip', 'install', 'paho-mqtt', '-q'])
+        # Intentar con apt primero, luego pip con --break-system-packages
+        result = subprocess.run(['sudo', 'apt-get', 'install', '-y', 'python3-paho-mqtt'], 
+                               capture_output=True, text=True)
+        if result.returncode != 0:
+            subprocess.run([sys.executable, '-m', 'pip', 'install', 'paho-mqtt', '--break-system-packages', '-q'])
         import paho.mqtt.client as mqtt
     
     # Leer registros de cada tarjeta y crear JSON
