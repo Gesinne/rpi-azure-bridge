@@ -2340,40 +2340,73 @@ EOFEMAIL
             echo "  ¿Qué quieres limpiar?"
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
-            echo "  1) Limpiar logs antiguos (journalctl --vacuum-time=3d)"
-            echo "  2) Limpiar caché apt (apt clean)"
-            echo "  3) Limpiar Docker (imágenes y contenedores sin usar)"
-            echo "  4) Limpiar TODO (logs + apt + docker)"
+            echo "  1) Limpiar journal systemd (vacuum 3 días)"
+            echo "  2) Limpiar logs /var/log (rotar y comprimir)"
+            echo "  3) Limpiar caché apt (apt clean)"
+            echo "  4) Limpiar Docker (imágenes y contenedores sin usar)"
+            echo "  5) Limpiar TODO (journal + logs + apt + docker)"
             echo "  0) No limpiar, volver al menú"
             echo ""
-            read -p "  Opción [0-4]: " CLEAN_OPT
+            read -p "  Opción [0-5]: " CLEAN_OPT
             
             case $CLEAN_OPT in
                 1)
                     echo ""
-                    echo "  🧹 Limpiando logs antiguos..."
+                    echo "  🧹 Limpiando journal systemd..."
                     sudo journalctl --vacuum-time=3d
-                    echo "  ✅ Logs limpiados"
+                    sudo journalctl --vacuum-size=100M
+                    echo "  ✅ Journal limpiado"
                     ;;
                 2)
+                    echo ""
+                    echo "  🧹 Limpiando logs en /var/log..."
+                    # Rotar logs
+                    sudo logrotate -f /etc/logrotate.conf 2>/dev/null || true
+                    # Borrar logs antiguos (.gz, .1, .2, etc)
+                    sudo find /var/log -type f -name "*.gz" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.1" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.2" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.[3-9]" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.old" -delete 2>/dev/null
+                    # Vaciar logs activos grandes
+                    sudo truncate -s 0 /var/log/syslog 2>/dev/null || true
+                    sudo truncate -s 0 /var/log/messages 2>/dev/null || true
+                    sudo truncate -s 0 /var/log/daemon.log 2>/dev/null || true
+                    sudo truncate -s 0 /var/log/kern.log 2>/dev/null || true
+                    echo "  ✅ Logs limpiados"
+                    ;;
+                3)
                     echo ""
                     echo "  🧹 Limpiando caché apt..."
                     sudo apt-get clean
                     sudo apt-get autoremove -y
                     echo "  ✅ Caché apt limpiada"
                     ;;
-                3)
+                4)
                     echo ""
                     echo "  🧹 Limpiando Docker..."
                     docker system prune -af 2>/dev/null || echo "  ⚠️ Docker no disponible"
                     echo "  ✅ Docker limpiado"
                     ;;
-                4)
+                5)
                     echo ""
                     echo "  🧹 Limpiando TODO..."
                     echo ""
-                    echo "  → Logs antiguos..."
+                    echo "  → Journal systemd..."
                     sudo journalctl --vacuum-time=3d
+                    sudo journalctl --vacuum-size=100M
+                    echo ""
+                    echo "  → Logs /var/log..."
+                    sudo logrotate -f /etc/logrotate.conf 2>/dev/null || true
+                    sudo find /var/log -type f -name "*.gz" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.1" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.2" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.[3-9]" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.old" -delete 2>/dev/null
+                    sudo truncate -s 0 /var/log/syslog 2>/dev/null || true
+                    sudo truncate -s 0 /var/log/messages 2>/dev/null || true
+                    sudo truncate -s 0 /var/log/daemon.log 2>/dev/null || true
+                    sudo truncate -s 0 /var/log/kern.log 2>/dev/null || true
                     echo ""
                     echo "  → Caché apt..."
                     sudo apt-get clean
