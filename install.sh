@@ -2100,6 +2100,27 @@ sn_l1 = placas_leidas[1][41]
 sn_l2 = placas_leidas[2][41]
 sn_l3 = placas_leidas[3][41]
 
+# Nombres cortos para columnas
+REGS_CORTOS = {
+    0: "Estado", 1: "Topología", 2: "Alarma", 3: "V salida", 4: "V entrada",
+    5: "Hz", 6: "I Salida", 7: "I Chopper", 8: "I Prim trafo", 9: "P act(H)",
+    10: "P act(L)", 11: "P react(H)", 12: "P react(L)", 13: "P apar(H)",
+    14: "P apar(L)", 15: "FP", 16: "Tipo FP", 17: "Temp", 18: "T alarma",
+    19: "Enable ext", 20: "T reenc", 21: "Enable PCB",
+    30: "Flag Est", 31: "Est desead", 32: "Consigna", 33: "Bucle ctrl", 34: "Mando",
+    40: "Flag Conf", 41: "Nº Serie", 42: "V nominal", 43: "V prim auto",
+    44: "V sec auto", 45: "V sec trafo", 46: "Topología", 47: "Dead-time",
+    48: "Dir Modbus", 49: "I nom sal", 50: "I nom chop", 51: "I max chop",
+    52: "I max pico", 53: "T apag CC", 54: "Cnt SC", 55: "Est inicial",
+    56: "V inicial", 57: "T máxima", 58: "Dec T reenc", 59: "Cnt ST",
+    60: "Tipo V", 61: "Vel Modbus", 62: "Package", 63: "Áng alta",
+    64: "Áng baja", 65: "% carga", 66: "Sens trans", 67: "Sens deriv", 69: "ReCo",
+    70: "Flag Cal", 71: "Ca00", 72: "Ca01", 73: "Ca03", 74: "Ca04",
+    75: "Ca06", 76: "Ca07", 77: "Ca08", 78: "Ca09", 79: "Ca10",
+    80: "Ca11", 81: "Ca12", 82: "Ca13", 83: "Ca14", 84: "Ca15", 85: "R", 86: "ReCa",
+    90: "Flag Ctrl", 91: "Cn00", 92: "Cn01", 93: "Cn02", 94: "Cn03", 95: "ReCn"
+}
+
 contenido = []
 contenido.append("=" * 80)
 contenido.append(f"PARÁMETROS DE CONFIGURACIÓN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -2111,25 +2132,27 @@ contenido.append(f"  • L1 (Fase 1) - Nº Serie Placa: {sn_l1}")
 contenido.append(f"  • L2 (Fase 2) - Nº Serie Placa: {sn_l2}")
 contenido.append(f"  • L3 (Fase 3) - Nº Serie Placa: {sn_l3}")
 contenido.append("=" * 80)
+contenido.append("")
 
-for unit_id in [1, 2, 3]:
-    data = placas_leidas[unit_id]
-    dir_modbus = data[48]
-    sn_placa = data[41]
-    fase = f"L{unit_id}"
-    
-    contenido.append("")
-    contenido.append("╔" + "═" * 78 + "╗")
-    contenido.append(f"║  {fase} - Nº Serie Placa: {sn_placa:<10}  -  Dirección Modbus: {dir_modbus}                  ║")
-    contenido.append("╚" + "═" * 78 + "╝")
-    contenido.append("")
-    contenido.append("Reg | Parámetro                | Valor      | Descripción")
-    contenido.append("----|--------------------------|------------|--------------------------------------------------")
-    
-    for i in range(len(data)):
-        if i in REGISTROS:
-            desc, nombre = REGISTROS[i]
-            contenido.append(f"{i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
+# Mostrar en 3 columnas
+contenido.append(f"{'Reg':<4} {'Parámetro':<16} {'L1':>8} {'L2':>8} {'L3':>8}   {'Diferencia'}")
+contenido.append(f"{'─'*4} {'─'*16} {'─'*8} {'─'*8} {'─'*8}   {'─'*12}")
+
+def add_section(title, start, end):
+    contenido.append(f"\n── {title} ──")
+    for i in range(start, end):
+        if i in REGS_CORTOS:
+            v1 = placas_leidas[1][i] if i < len(placas_leidas[1]) else 0
+            v2 = placas_leidas[2][i] if i < len(placas_leidas[2]) else 0
+            v3 = placas_leidas[3][i] if i < len(placas_leidas[3]) else 0
+            diff = "⚠️ DIFF" if not (v1 == v2 == v3) else ""
+            contenido.append(f"{i:<4} {REGS_CORTOS[i]:<16} {v1:>8} {v2:>8} {v3:>8}   {diff}")
+
+add_section("TIEMPO REAL", 0, 22)
+add_section("ESTADO", 30, 35)
+add_section("CONFIGURACIÓN", 40, 70)
+add_section("CALIBRACIÓN", 70, 87)
+add_section("CONTROL", 90, 96)
 
 contenido.append("")
 contenido.append("=" * 80)
