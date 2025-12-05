@@ -444,8 +444,8 @@ except:
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             
-            # Versión Node-RED
-            NODERED_VERSION=$(node-red --version 2>/dev/null || echo "No instalado")
+            # Versión Node-RED (solo primera línea con versión)
+            NODERED_VERSION=$(node-red --version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "No instalado")
             echo "  🔴 Node-RED: $NODERED_VERSION"
             
             # Versión Node.js
@@ -454,9 +454,13 @@ except:
             
             # Versión RPI Connect
             if command -v rpi-connect &> /dev/null; then
-                RPICONNECT_VERSION=$(rpi-connect --version 2>/dev/null | head -1 || echo "?")
+                RPICONNECT_VERSION=$(rpi-connect --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
                 RPICONNECT_STATUS=$(systemctl is-active rpi-connect 2>/dev/null || echo "inactivo")
-                echo "  🔗 RPI Connect: $RPICONNECT_VERSION ($RPICONNECT_STATUS)"
+                if [ "$RPICONNECT_STATUS" = "active" ]; then
+                    echo "  🔗 RPI Connect: v$RPICONNECT_VERSION (🟢 activo)"
+                else
+                    echo "  🔗 RPI Connect: v$RPICONNECT_VERSION (🔴 inactivo)"
+                fi
             else
                 echo "  🔗 RPI Connect: No instalado"
             fi
