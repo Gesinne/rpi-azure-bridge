@@ -2345,9 +2345,10 @@ EOFEMAIL
             echo "  3) Limpiar caché apt (apt clean)"
             echo "  4) Limpiar Docker (imágenes y contenedores sin usar)"
             echo "  5) Limpiar TODO (journal + logs + apt + docker)"
+            echo "  6) Reducir logs permanentemente (conexión lenta)"
             echo "  0) No limpiar, volver al menú"
             echo ""
-            read -p "  Opción [0-5]: " CLEAN_OPT
+            read -p "  Opción [0-6]: " CLEAN_OPT
             
             case $CLEAN_OPT in
                 1)
@@ -2416,6 +2417,73 @@ EOFEMAIL
                     docker system prune -af 2>/dev/null || echo "  ⚠️ Docker no disponible"
                     echo ""
                     echo "  ✅ Limpieza completa"
+                    ;;
+                6)
+                    echo ""
+                    echo "  ⚙️  Configurando reducción permanente de logs..."
+                    echo ""
+                    
+                    # 1. Limitar journal a 50MB máximo
+                    echo "  → Limitando journal systemd a 50MB..."
+                    sudo mkdir -p /etc/systemd/journald.conf.d/
+                    cat << 'EOFJOURNALD' | sudo tee /etc/systemd/journald.conf.d/size.conf > /dev/null
+[Journal]
+SystemMaxUse=50M
+SystemMaxFileSize=10M
+MaxRetentionSec=3day
+EOFJOURNALD
+                    sudo systemctl restart systemd-journald
+                    
+                    # 2. Configurar logrotate más agresivo
+                    echo "  → Configurando rotación diaria de logs..."
+                    cat << 'EOFLOGROTATE' | sudo tee /etc/logrotate.d/rpi-minimal > /dev/null
+/var/log/syslog
+/var/log/messages
+/var/log/daemon.log
+/var/log/kern.log
+/var/log/auth.log
+{
+    rotate 2
+    daily
+    maxsize 10M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}
+EOFLOGROTATE
+                    
+                    # 3. Reducir nivel de log de rsyslog
+                    echo "  → Reduciendo nivel de logs rsyslog..."
+                    if [ -f /etc/rsyslog.conf ]; then
+                        # Comentar logs innecesarios
+                        sudo sed -i 's/^\*\.=debug/#\*\.=debug/' /etc/rsyslog.conf
+                        sudo sed -i 's/^\*\.=info/#\*\.=info/' /etc/rsyslog.conf
+                        sudo systemctl restart rsyslog 2>/dev/null || true
+                    fi
+                    
+                    # 4. Desactivar logs de kernel verbose
+                    echo "  → Reduciendo logs del kernel..."
+                    echo "kernel.printk = 3 3 3 3" | sudo tee /etc/sysctl.d/99-quiet-kernel.conf > /dev/null
+                    sudo sysctl -p /etc/sysctl.d/99-quiet-kernel.conf 2>/dev/null || true
+                    
+                    # 5. Limpiar logs actuales
+                    echo "  → Limpiando logs actuales..."
+                    sudo journalctl --vacuum-size=50M
+                    sudo find /var/log -type f -name "*.gz" -delete 2>/dev/null
+                    sudo find /var/log -type f -name "*.[1-9]" -delete 2>/dev/null
+                    sudo truncate -s 0 /var/log/syslog 2>/dev/null || true
+                    sudo truncate -s 0 /var/log/daemon.log 2>/dev/null || true
+                    
+                    echo ""
+                    echo "  ✅ Logs reducidos permanentemente:"
+                    echo "     • Journal limitado a 50MB"
+                    echo "     • Rotación diaria, máximo 2 archivos"
+                    echo "     • Logs debug/info desactivados"
+                    echo "     • Kernel en modo silencioso"
                     ;;
                 *)
                     echo "  ❌ Cancelado"
