@@ -957,6 +957,96 @@ with open('$CONFIG_FILE', 'w') as f:
                 echo "  Crea el archivo en: /home/gesinne/config/equipo_config.json"
             fi
             
+            # Preguntar si quiere modificar maxQueue
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Cola máxima (maxQueue)"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Obtener valor actual y recomendado
+            QUEUE_INFO=$(python3 -c "
+import json, glob
+
+# Leer RAM
+with open('/proc/meminfo') as f:
+    for line in f:
+        if line.startswith('MemTotal:'):
+            mem_kb = int(line.split()[1])
+            mem_gb = mem_kb / 1024 / 1024
+            break
+
+# Recomendado según RAM
+if mem_gb < 2.5:
+    rec = 500000
+elif mem_gb < 5.5:
+    rec = 1000000
+else:
+    rec = 2000000
+
+# Valor actual
+cur = '?'
+for f in glob.glob('/home/*/.node-red/flows.json'):
+    with open(f) as fl:
+        flows = json.load(fl)
+    for node in flows:
+        if node.get('type') == 'guaranteed-delivery':
+            cur = node.get('maxQueue', '?')
+            break
+    break
+
+print(f'{cur}|{rec}|{mem_gb:.1f}')
+" 2>/dev/null)
+            
+            CUR_QUEUE=$(echo "$QUEUE_INFO" | cut -d'|' -f1)
+            REC_QUEUE=$(echo "$QUEUE_INFO" | cut -d'|' -f2)
+            RAM_GB=$(echo "$QUEUE_INFO" | cut -d'|' -f3)
+            
+            echo ""
+            echo "  RAM: ${RAM_GB} GB"
+            echo "  Actual: $CUR_QUEUE"
+            echo "  Recomendado: $REC_QUEUE"
+            echo ""
+            read -p "  ¿Modificar maxQueue? [s/N]: " MODIFY_QUEUE
+            
+            if [ "$MODIFY_QUEUE" = "s" ] || [ "$MODIFY_QUEUE" = "S" ]; then
+                echo ""
+                echo "  Valores recomendados según RAM:"
+                echo "    - 500000 para ~2GB RAM"
+                echo "    - 1000000 para ~4GB RAM"
+                echo "    - 2000000 para ~8GB RAM"
+                echo ""
+                read -p "  Nuevo maxQueue [$CUR_QUEUE]: " NEW_QUEUE
+                NEW_QUEUE="${NEW_QUEUE:-$CUR_QUEUE}"
+                
+                FLOWS_FILE=""
+                for f in /home/*/.node-red/flows.json; do
+                    if [ -f "$f" ]; then
+                        FLOWS_FILE="$f"
+                        break
+                    fi
+                done
+                
+                python3 << EOFQUEUE
+import json
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'guaranteed-delivery':
+        node['maxQueue'] = int($NEW_QUEUE)
+        break
+with open('$FLOWS_FILE', 'w') as f:
+    json.dump(flows, f, indent=4)
+EOFQUEUE
+                
+                echo ""
+                echo "  ✅ maxQueue actualizado a $NEW_QUEUE"
+                echo ""
+                echo "  🔄 Reiniciando Node-RED..."
+                sudo systemctl restart nodered
+                sleep 2
+                echo "  ✅ Node-RED reiniciado"
+            fi
+            
             exit 0
             ;;
         3)
