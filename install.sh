@@ -240,12 +240,28 @@ except:
                     python3 -c "
 import json
 try:
+    # Leer RAM
+    with open('/proc/meminfo') as f:
+        for line in f:
+            if line.startswith('MemTotal:'):
+                mem_kb = int(line.split()[1])
+                mem_gb = mem_kb / 1024 / 1024
+                break
+    
+    # Calcular recomendado según RAM
+    if mem_gb < 2.5:
+        recommended = 500000
+    elif mem_gb < 5.5:
+        recommended = 1000000
+    else:
+        recommended = 2000000
+    
     with open('$flowfile') as f:
         flows = json.load(f)
     for node in flows:
         if node.get('type') == 'guaranteed-delivery':
             maxq = node.get('maxQueue', '?')
-            print(f'  📨 Cola máxima (guaranteed-delivery): {maxq}')
+            print(f'  📨 Cola máxima: {maxq} (RAM: {mem_gb:.1f} GB → recomendado: {recommended})')
             break
 except:
     pass
@@ -338,9 +354,10 @@ except:
             echo ""
             echo "  1) Configuración equipo (serie, potencia, tramos)"
             echo "  2) Tamaño máximo cola SD (maxSizeMB)"
+            echo "  3) Cola máxima guaranteed-delivery (maxQueue)"
             echo "  0) Nada, salir"
             echo ""
-            read -p "  Opción [0-2]: " MODIFY
+            read -p "  Opción [0-3]: " MODIFY
             
             if [ "$MODIFY" = "2" ]; then
                 # Modificar maxSizeMB en flows.json
@@ -403,6 +420,69 @@ EOFMAXSIZE
                     
                     echo ""
                     echo "  ✅ maxSizeMB actualizado a $NEW_MAXSIZE MB"
+                    echo ""
+                    echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                    sudo systemctl restart nodered
+                    sleep 2
+                    echo "  ✅ Node-RED reiniciado"
+                fi
+                exit 0
+            fi
+            
+            if [ "$MODIFY" = "3" ]; then
+                # Modificar maxQueue en flows.json
+                FLOWS_FILE=""
+                for f in /home/*/.node-red/flows.json; do
+                    if [ -f "$f" ]; then
+                        FLOWS_FILE="$f"
+                        break
+                    fi
+                done
+                
+                if [ -n "$FLOWS_FILE" ]; then
+                    # Obtener valor actual
+                    CURRENT_MAXQUEUE=$(python3 -c "
+import json
+try:
+    with open('$FLOWS_FILE') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'guaranteed-delivery':
+            print(node.get('maxQueue', 500000))
+            break
+except:
+    print('500000')
+" 2>/dev/null)
+                    
+                    echo ""
+                    echo "  Valores recomendados según RAM:"
+                    echo "    - 500000 para RPIs con ~2GB RAM"
+                    echo "    - 1000000 para RPIs con ~4GB RAM"
+                    echo "    - 2000000 para RPIs con ~8GB RAM"
+                    echo ""
+                    read -p "  Nuevo maxQueue [$CURRENT_MAXQUEUE]: " NEW_MAXQUEUE
+                    NEW_MAXQUEUE="${NEW_MAXQUEUE:-$CURRENT_MAXQUEUE}"
+                    
+                    # Actualizar en flows.json
+                    python3 << EOFMAXQUEUE
+import json
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+for node in flows:
+    if node.get('type') == 'guaranteed-delivery':
+        node['maxQueue'] = int($NEW_MAXQUEUE)
+        break
+
+with open('$FLOWS_FILE', 'w') as f:
+    json.dump(flows, f, indent=4)
+
+print("OK")
+EOFMAXQUEUE
+                    
+                    echo ""
+                    echo "  ✅ maxQueue actualizado a $NEW_MAXQUEUE"
                     echo ""
                     echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
                     sudo systemctl restart nodered
