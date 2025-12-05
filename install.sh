@@ -388,27 +388,65 @@ with open('$CONFIG_FILE', 'w') as f:
             echo ""
             echo "  📥 Obteniendo versiones disponibles..."
             
+            # Función para clonar/actualizar repo
+            clone_repo() {
+                rm -rf "$CACHE_DIR"
+                sudo mkdir -p "$CACHE_DIR" 2>/dev/null
+                sudo chown $(whoami) "$CACHE_DIR" 2>/dev/null
+                git clone -q --depth 1 "$NODERED_REPO" "$CACHE_DIR" 2>/dev/null
+            }
+            
             if [ -d "$CACHE_DIR/.git" ]; then
                 # Ya existe, actualizar
                 cd "$CACHE_DIR"
                 git remote set-url origin "$NODERED_REPO" 2>/dev/null
                 if ! git pull -q 2>/dev/null; then
                     echo "  ⚠️  Error actualizando, re-clonando..."
-                    rm -rf "$CACHE_DIR"
-                    if ! git clone -q --depth 1 "$NODERED_REPO" "$CACHE_DIR" 2>/dev/null; then
-                        echo "  ❌ Error accediendo al repositorio"
-                        echo "  Verifica usuario y token"
-                        exit 1
+                    if ! clone_repo; then
+                        echo "  ❌ Credenciales inválidas. Borrando y pidiendo nuevas..."
+                        sudo rm -f "$CREDS_FILE"
+                        rm -rf "$CACHE_DIR"
+                        echo ""
+                        echo "  🔐 Introduce nuevas credenciales de GitHub"
+                        echo ""
+                        read -p "  Usuario GitHub: " GIT_USER
+                        read -s -p "  Token/Contraseña: " GIT_TOKEN
+                        echo ""
+                        NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
+                        if ! clone_repo; then
+                            echo "  ❌ Error: credenciales incorrectas"
+                            exit 1
+                        fi
+                        # Guardar nuevas credenciales
+                        sudo mkdir -p "$CACHE_DIR" 2>/dev/null
+                        echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
+                        echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
+                        sudo chmod 600 "$CREDS_FILE"
+                        echo "  💾 Nuevas credenciales guardadas"
                     fi
                 fi
             else
                 # Primera vez, clonar
-                sudo mkdir -p "$CACHE_DIR" 2>/dev/null
-                sudo chown $(whoami) "$CACHE_DIR" 2>/dev/null
-                if ! git clone -q --depth 1 "$NODERED_REPO" "$CACHE_DIR" 2>/dev/null; then
-                    echo "  ❌ Error accediendo al repositorio"
-                    echo "  Verifica usuario y token"
-                    exit 1
+                if ! clone_repo; then
+                    echo "  ❌ Credenciales inválidas. Pidiendo nuevas..."
+                    sudo rm -f "$CREDS_FILE"
+                    echo ""
+                    echo "  🔐 Introduce nuevas credenciales de GitHub"
+                    echo ""
+                    read -p "  Usuario GitHub: " GIT_USER
+                    read -s -p "  Token/Contraseña: " GIT_TOKEN
+                    echo ""
+                    NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
+                    if ! clone_repo; then
+                        echo "  ❌ Error: credenciales incorrectas"
+                        exit 1
+                    fi
+                    # Guardar nuevas credenciales
+                    sudo mkdir -p "$CACHE_DIR" 2>/dev/null
+                    echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
+                    echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
+                    sudo chmod 600 "$CREDS_FILE"
+                    echo "  💾 Nuevas credenciales guardadas"
                 fi
             fi
             
