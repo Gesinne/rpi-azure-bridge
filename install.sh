@@ -92,42 +92,70 @@ except:
     fi
 }
 
-# Mostrar siempre el menú principal
-if [ -f "$OVERRIDE_FILE" ]; then
-    echo "  ✅ Bridge Azure IoT instalado"
-else
-    echo "  ⚠️  Bridge no configurado"
-fi
-show_nodered_config
+# Función para preguntar si volver al menú o salir
+volver_menu() {
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    read -p "  Pulsa ENTER para volver al menú (0 para salir): " VOLVER
+    if [ "$VOLVER" = "0" ]; then
+        echo ""
+        echo "  👋 ¡Hasta luego!"
+        echo ""
+        exit 0
+    fi
+}
 
-# Mostrar URL del kiosko si existe
-KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-gesinne})/kiosk.sh"
-if [ -f "$KIOSK_SCRIPT" ]; then
-    KIOSK_URL=$(grep -oP 'http://[^ ]+' "$KIOSK_SCRIPT" 2>/dev/null | head -1)
-    if [ -n "$KIOSK_URL" ]; then
-        if echo "$KIOSK_URL" | grep -q "/dashboard"; then
-            echo "  🖥️  Kiosko: $KIOSK_URL (FlowFuse)"
-        elif echo "$KIOSK_URL" | grep -q "/ui"; then
-            echo "  🖥️  Kiosko: $KIOSK_URL (Clásico)"
-        else
-            echo "  🖥️  Kiosko: $KIOSK_URL"
+# Bucle del menú principal
+while true; do
+    clear
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  🔧 Gesinne RPI Azure Bridge - Instalador"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    
+    # Mostrar estado
+    if [ -f "$OVERRIDE_FILE" ]; then
+        echo "  ✅ Bridge Azure IoT instalado"
+    else
+        echo "  ⚠️  Bridge no configurado"
+    fi
+    show_nodered_config
+
+    # Mostrar URL del kiosko si existe
+    KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-gesinne})/kiosk.sh"
+    if [ -f "$KIOSK_SCRIPT" ]; then
+        KIOSK_URL=$(grep -oP 'http://[^ ]+' "$KIOSK_SCRIPT" 2>/dev/null | head -1)
+        if [ -n "$KIOSK_URL" ]; then
+            if echo "$KIOSK_URL" | grep -q "/dashboard"; then
+                echo "  🖥️  Kiosko: $KIOSK_URL (FlowFuse)"
+            elif echo "$KIOSK_URL" | grep -q "/ui"; then
+                echo "  🖥️  Kiosko: $KIOSK_URL (Clásico)"
+            else
+                echo "  🖥️  Kiosko: $KIOSK_URL"
+            fi
         fi
     fi
-fi
-echo ""
-echo "  ¿Qué deseas hacer?"
-echo ""
-echo "  1) Modo de conexión (Azure IoT / Servidor Remoto)"
-echo "  2) Actualizar Flow Node-RED"
-echo "  3) Restaurar Flow anterior (backup)"
-echo "  4) Ver/Modificar configuración equipo"
-echo "  5) Ver los 96 registros de la placa"
-echo "  6) Descargar parámetros (enviar por EMAIL)"
-echo "  0) Salir"
-echo ""
-read -p "  Opción [0-6]: " OPTION
+    echo ""
+    echo "  ¿Qué deseas hacer?"
+    echo ""
+    echo "  1) Modo de conexión (Azure IoT / Servidor Remoto)"
+    echo "  2) Actualizar Flow Node-RED"
+    echo "  3) Restaurar Flow anterior (backup)"
+    echo "  4) Ver/Modificar configuración equipo"
+    echo "  5) Ver los 96 registros de la placa"
+    echo "  6) Descargar parámetros (enviar por EMAIL)"
+    echo "  0) Salir"
+    echo ""
+    read -p "  Opción [0-6]: " OPTION
 
-case $OPTION in
+    case $OPTION in
+        0)
+            echo ""
+            echo "  👋 ¡Hasta luego!"
+            echo ""
+            exit 0
+            ;;
     1)
             # Modo de conexión - ir al menú de selección
             echo ""
@@ -143,12 +171,19 @@ case $OPTION in
             echo "  2) Servidor directo (Node-RED → mqtt.gesinne.cloud)"
             echo "     Node-RED envía directamente al servidor (modo tradicional)"
             echo ""
-            read -p "  Opción [1/2]: " MODE_CHOICE
+            echo "  0) Volver al menú"
+            echo ""
+            read -p "  Opción [0/1/2]: " MODE_CHOICE
             case $MODE_CHOICE in
+                0) continue ;;
                 1) CONNECTION_MODE="1" ;;
                 2) CONNECTION_MODE="2" ;;
-                *) echo "  ❌ Opción no válida"; exit 1 ;;
+                *) echo "  ❌ Opción no válida"; continue ;;
             esac
+            
+            # La configuración de Azure se ejecuta después del case
+            # Salir del bucle para ejecutar el código de Azure
+            break
             ;;
         4)
             echo ""
@@ -418,7 +453,8 @@ EOFMAXQUEUE
                     sleep 2
                     echo "  ✅ Node-RED reiniciado"
                 fi
-                exit 0
+                volver_menu
+                continue
             fi
             
             if [ "$MODIFY" = "1" ]; then
@@ -486,7 +522,7 @@ with open('$CONFIG_FILE', 'w') as f:
                     echo "  ❌ No se encontró equipo_config.json"
                 fi
             fi
-            exit 0
+            volver_menu
             ;;
         2)
             echo ""
@@ -688,7 +724,8 @@ except:
             if [ $i -eq 1 ]; then
                 echo "  ❌ No hay versiones disponibles"
                 rm -rf "$TEMP_DIR"
-                exit 0
+                volver_menu
+                continue
             fi
             
             echo ""
@@ -1047,7 +1084,7 @@ EOFQUEUE
                 echo "  ✅ Node-RED reiniciado"
             fi
             
-            exit 0
+            volver_menu
             ;;
         3)
             echo ""
@@ -1129,7 +1166,8 @@ EOFQUEUE
                 else
                     echo "  ❌ Cancelado"
                 fi
-                exit 0
+                volver_menu
+                continue
             fi
             
             SELECTED_BACKUP="${BACKUP_ARRAY[$BACKUP_CHOICE]}"
@@ -1247,7 +1285,7 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                 echo "  ✅ Kiosko reiniciado"
             fi
             
-            exit 0
+            volver_menu
             ;;
         5)
             echo ""
@@ -1680,7 +1718,7 @@ EOFTXT
             
             echo "  ✅ Listo"
             
-            exit 0
+            volver_menu
             ;;
         6)
             # Leer registros y enviar por email
@@ -1990,16 +2028,15 @@ EOFEMAIL
             docker start gesinne-rpi >/dev/null 2>&1 || true
             
             echo "  ✅ Listo"
-            exit 0
+            volver_menu
             ;;
-        0|*)
-            echo ""
-            echo "  👋 Saliendo"
-            exit 0
+        *)
+            # Opción no válida, volver al menú
             ;;
     esac
+done
 
-# Solo pedir connection string si elige Azure
+# Solo pedir connection string si elige Azure (código legacy, no se usa con el bucle)
 if [ "$CONNECTION_MODE" = "1" ]; then
     echo ""
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
