@@ -1358,19 +1358,57 @@ if not client.connect():
     print("  ❌ No se pudo conectar al puerto serie")
     sys.exit(1)
 
-# Leer las 3 placas
+import time
+
+# Leer las 3 placas con reintentos
 data_all = {}
 for unit_id in [1, 2, 3]:
+    fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
+    print(f"  📡 Leyendo tarjeta {fase}...", end=" ", flush=True)
+    
     data = []
-    for start in range(0, 96, 40):
-        count = min(40, 96 - start)
-        result = client.read_holding_registers(address=start, count=count, slave=unit_id)
-        if result.isError():
+    max_retries = 3
+    for retry in range(max_retries):
+        data = []
+        success = True
+        for start in range(0, 96, 40):
+            count = min(40, 96 - start)
+            result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+            if result.isError():
+                success = False
+                break
+            data.extend(result.registers)
+        
+        if success and len(data) >= 96:
+            print("✅")
             break
-        data.extend(result.registers)
-    data_all[unit_id] = data if data else [0]*96
+        else:
+            if retry < max_retries - 1:
+                print(f"⚠️ reintentando ({retry+2}/{max_retries})...", end=" ", flush=True)
+                time.sleep(1)
+            else:
+                print("❌ sin respuesta")
+    
+    data_all[unit_id] = data if len(data) >= 96 else None
 
 client.close()
+
+# Verificar que las 3 placas respondieron
+placas_ok = [u for u in [1, 2, 3] if data_all[u] is not None]
+placas_fail = [u for u in [1, 2, 3] if data_all[u] is None]
+
+if placas_fail:
+    print("")
+    print(f"  ⚠️  No se pudo leer: {', '.join(['L'+str(u) for u in placas_fail])}")
+    if not placas_ok:
+        print("  ❌ No hay datos para mostrar")
+        sys.exit(1)
+
+# Rellenar placas sin datos con None para mostrar "---"
+for u in placas_fail:
+    data_all[u] = [None] * 96
+
+print("")
 
 # Nombres cortos de registros
 regs = {
@@ -1405,11 +1443,19 @@ def print_section(title, start, end):
     print(f"\n  ── {title} ──")
     for i in range(start, end):
         if i in regs:
-            v1 = data_all[1][i] if i < len(data_all[1]) else 0
-            v2 = data_all[2][i] if i < len(data_all[2]) else 0
-            v3 = data_all[3][i] if i < len(data_all[3]) else 0
-            diff = "⚠️ DIFF" if not (v1 == v2 == v3) else ""
-            print(f"  {i:<4} {regs[i]:<14} {v1:>8} {v2:>8} {v3:>8}   {diff}")
+            v1 = data_all[1][i] if data_all[1] and i < len(data_all[1]) and data_all[1][i] is not None else None
+            v2 = data_all[2][i] if data_all[2] and i < len(data_all[2]) and data_all[2][i] is not None else None
+            v3 = data_all[3][i] if data_all[3] and i < len(data_all[3]) and data_all[3][i] is not None else None
+            
+            s1 = f"{v1:>8}" if v1 is not None else "     ---"
+            s2 = f"{v2:>8}" if v2 is not None else "     ---"
+            s3 = f"{v3:>8}" if v3 is not None else "     ---"
+            
+            # Solo marcar diferencia si hay al menos 2 valores válidos
+            vals = [v for v in [v1, v2, v3] if v is not None]
+            diff = "⚠️ DIFF" if len(vals) >= 2 and len(set(vals)) > 1 else ""
+            
+            print(f"  {i:<4} {regs[i]:<14} {s1} {s2} {s3}   {diff}")
 
 print_section("TIEMPO REAL", 0, 22)
 print_section("ESTADO", 30, 35)
