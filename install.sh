@@ -887,6 +887,28 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                 else
                     echo "  ✅ Flow instalado: $VERSION_NAME"
                 fi
+                
+                # Copiar carpeta Logo si existe en el repo
+                USER_HOME_DIR=$(dirname "$NODERED_DIR")
+                if [ -d "$TEMP_DIR/Logo" ]; then
+                    echo "  📁 Copiando carpeta Logo..."
+                    cp -r "$TEMP_DIR/Logo" "$USER_HOME_DIR/"
+                    chown -R $(basename "$USER_HOME_DIR"):$(basename "$USER_HOME_DIR") "$USER_HOME_DIR/Logo" 2>/dev/null
+                    echo "  ✅ Carpeta Logo copiada a $USER_HOME_DIR/Logo"
+                    
+                    # Configurar httpStatic en settings.js
+                    SETTINGS_FILE="$NODERED_DIR/settings.js"
+                    if [ -f "$SETTINGS_FILE" ]; then
+                        if ! grep -q "httpStatic:" "$SETTINGS_FILE"; then
+                            # Añadir httpStatic después de la línea que contiene "module.exports"
+                            sed -i "/module.exports\s*=\s*{/a\\    httpStatic: '$USER_HOME_DIR/Logo/'," "$SETTINGS_FILE"
+                            echo "  ✅ httpStatic configurado en settings.js"
+                        else
+                            echo "  ℹ️  httpStatic ya está configurado"
+                        fi
+                    fi
+                fi
+                
                 echo ""
                 echo "  🔄 Reiniciando Node-RED..."
                 sudo systemctl restart nodered
