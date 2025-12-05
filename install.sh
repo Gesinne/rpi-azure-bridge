@@ -122,6 +122,41 @@ volver_menu() {
     fi
 }
 
+# Verificar y reparar Logo + httpStatic si falta
+for NODERED_DIR in /home/*/.node-red; do
+    if [ -d "$NODERED_DIR" ]; then
+        USER_HOME_DIR=$(dirname "$NODERED_DIR")
+        SETTINGS_FILE="$NODERED_DIR/settings.js"
+        
+        # Si no existe carpeta Logo, intentar descargarla del repo
+        if [ ! -d "$USER_HOME_DIR/Logo" ]; then
+            echo "  ⚠️  Falta carpeta Logo, descargando..."
+            TEMP_LOGO="/tmp/logo_download_$$"
+            if git clone --depth 1 --filter=blob:none --sparse https://github.com/Gesinne/nodered-flows.git "$TEMP_LOGO" 2>/dev/null; then
+                cd "$TEMP_LOGO"
+                git sparse-checkout set Logo 2>/dev/null
+                if [ -d "$TEMP_LOGO/Logo" ]; then
+                    cp -r "$TEMP_LOGO/Logo" "$USER_HOME_DIR/"
+                    chown -R $(basename "$USER_HOME_DIR"):$(basename "$USER_HOME_DIR") "$USER_HOME_DIR/Logo" 2>/dev/null
+                    echo "  ✅ Carpeta Logo instalada en $USER_HOME_DIR/Logo"
+                fi
+                cd - > /dev/null
+                rm -rf "$TEMP_LOGO"
+            fi
+        fi
+        
+        # Si existe Logo pero no está configurado httpStatic
+        if [ -d "$USER_HOME_DIR/Logo" ] && [ -f "$SETTINGS_FILE" ]; then
+            if ! grep -q "httpStatic:" "$SETTINGS_FILE"; then
+                sed -i "/module.exports\s*=\s*{/a\\    httpStatic: '$USER_HOME_DIR/Logo/'," "$SETTINGS_FILE"
+                echo "  ✅ httpStatic configurado en settings.js"
+                sudo systemctl restart nodered 2>/dev/null
+            fi
+        fi
+        break
+    fi
+done
+
 # Bucle del menú principal
 while true; do
     clear
