@@ -353,84 +353,12 @@ except:
             echo "  ¿Qué quieres modificar?"
             echo ""
             echo "  1) Configuración equipo (serie, potencia, tramos)"
-            echo "  2) Tamaño máximo cola SD (maxSizeMB)"
-            echo "  3) Cola máxima guaranteed-delivery (maxQueue)"
+            echo "  2) Cola máxima guaranteed-delivery (maxQueue)"
             echo "  0) Nada, salir"
             echo ""
-            read -p "  Opción [0-3]: " MODIFY
+            read -p "  Opción [0-2]: " MODIFY
             
             if [ "$MODIFY" = "2" ]; then
-                # Modificar maxSizeMB en flows.json
-                FLOWS_FILE=""
-                for f in /home/*/.node-red/flows.json; do
-                    if [ -f "$f" ]; then
-                        FLOWS_FILE="$f"
-                        break
-                    fi
-                done
-                
-                if [ -n "$FLOWS_FILE" ]; then
-                    # Obtener valor actual
-                    CURRENT_MAXSIZE=$(python3 -c "
-import json, re
-try:
-    with open('$FLOWS_FILE') as f:
-        content = f.read()
-    # Buscar maxSizeMB en el código del nodo
-    match = re.search(r'maxSizeMB\s*=\s*(\d+)', content)
-    if match:
-        print(match.group(1))
-    else:
-        print('200')
-except:
-    print('200')
-" 2>/dev/null)
-                    
-                    echo ""
-                    echo "  Valores recomendados según RAM:"
-                    echo "    - 200 MB para RPIs con ~2GB RAM"
-                    echo "    - 400 MB para RPIs con ~4GB RAM"
-                    echo "    - 800 MB para RPIs con ~8GB RAM"
-                    echo ""
-                    read -p "  Nuevo maxSizeMB [$CURRENT_MAXSIZE]: " NEW_MAXSIZE
-                    NEW_MAXSIZE="${NEW_MAXSIZE:-$CURRENT_MAXSIZE}"
-                    
-                    # Actualizar en flows.json (reemplazar los valores en las funciones)
-                    python3 << EOFMAXSIZE
-import json
-import re
-
-with open('$FLOWS_FILE', 'r') as f:
-    content = f.read()
-
-# El JSON tiene el código escapado, buscar patrones como:
-# maxSizeMB = 200; // Para ~2GB  (escapado como maxSizeMB = 200; // Para ~2GB)
-# También el valor por defecto: || 200
-
-# Reemplazar todos los valores numéricos después de "maxSizeMB = "
-content = re.sub(r'(maxSizeMB\s*=\s*)(\d+)', r'\g<1>$NEW_MAXSIZE', content)
-
-# Reemplazar el valor por defecto "|| 200" por "|| NEW_VALUE"
-content = re.sub(r'(\|\|\s*)200(\s*;|\s*\))', r'\g<1>$NEW_MAXSIZE\2', content)
-
-with open('$FLOWS_FILE', 'w') as f:
-    f.write(content)
-
-print("OK")
-EOFMAXSIZE
-                    
-                    echo ""
-                    echo "  ✅ maxSizeMB actualizado a $NEW_MAXSIZE MB"
-                    echo ""
-                    echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
-                    sudo systemctl restart nodered
-                    sleep 2
-                    echo "  ✅ Node-RED reiniciado"
-                fi
-                exit 0
-            fi
-            
-            if [ "$MODIFY" = "3" ]; then
                 # Modificar maxQueue en flows.json
                 FLOWS_FILE=""
                 for f in /home/*/.node-red/flows.json; do
