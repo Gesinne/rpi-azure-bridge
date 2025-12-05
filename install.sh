@@ -254,25 +254,48 @@ except:
                 fi
             done
             
-            # Mostrar maxSizeMB (calculado según RAM, igual que Node-RED)
-            python3 -c "
+            # Mostrar maxSizeMB configurado en flows.json y RAM
+            for flowfile in /home/*/.node-red/flows.json; do
+                if [ -f "$flowfile" ]; then
+                    python3 -c "
+import re
 try:
+    # Leer RAM
     with open('/proc/meminfo') as f:
         for line in f:
             if line.startswith('MemTotal:'):
                 mem_kb = int(line.split()[1])
                 mem_gb = mem_kb / 1024 / 1024
-                if mem_gb < 2.5:
-                    max_size = 200
-                elif mem_gb < 5.5:
-                    max_size = 400
-                else:
-                    max_size = 800
-                print(f'  💾 Max tamaño SD (cola): {max_size} MB (RAM: {mem_gb:.1f} GB)')
                 break
-except:
+    
+    # Leer maxSizeMB del flows.json (buscar todos los valores)
+    with open('$flowfile') as f:
+        content = f.read()
+    
+    # Buscar el valor por defecto (|| 200)
+    match = re.search(r\"flow\.get\('maxSizeMB'\)\s*\|\|\s*(\d+)\", content)
+    if match:
+        configured = match.group(1)
+    else:
+        # Buscar asignaciones directas
+        matches = re.findall(r'maxSizeMB\s*=\s*(\d+)', content)
+        configured = matches[0] if matches else '?'
+    
+    # Calcular recomendado según RAM
+    if mem_gb < 2.5:
+        recommended = 200
+    elif mem_gb < 5.5:
+        recommended = 400
+    else:
+        recommended = 800
+    
+    print(f'  � Max cola SD: {configured} MB (RAM: {mem_gb:.1f} GB → recomendado: {recommended} MB)')
+except Exception as e:
     pass
 " 2>/dev/null
+                    break
+                fi
+            done
             
             # Mostrar espacio en disco
             DISK_INFO=$(df -h / | tail -1 | awk '{print $2, $3, $4, $5}')
