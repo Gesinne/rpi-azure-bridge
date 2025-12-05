@@ -20,19 +20,19 @@ if [ ! -t 0 ]; then
     exit 0
 fi
 
-# Instalar comando 'gesinneActualizar' si no existe
-if [ ! -f /usr/local/bin/gesinneActualizar ]; then
-    cat > /usr/local/bin/gesinneActualizar << 'EOFCMD'
+# Instalar comando 'Actualizar' si no existe
+if [ ! -f /usr/local/bin/Actualizar ]; then
+    cat > /usr/local/bin/Actualizar << 'EOFCMD'
 #!/bin/bash
-# Comando gesinneActualizar - Lanza el instalador/configurador de Gesinne
+# Comando Actualizar - Lanza el instalador/configurador de Gesinne
 SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh"
 TEMP_SCRIPT="/tmp/gesinne_install_$$.sh"
 curl -sL "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" "$SCRIPT_URL"
 chmod +x "$TEMP_SCRIPT"
 exec sudo bash "$TEMP_SCRIPT" "$@"
 EOFCMD
-    chmod +x /usr/local/bin/gesinneActualizar
-    echo "  ✅ Comando 'gesinneActualizar' instalado"
+    chmod +x /usr/local/bin/Actualizar
+    echo "  ✅ Comando 'Actualizar' instalado"
 fi
 
 # Auto-detectar si necesita clonar o actualizar el repo
