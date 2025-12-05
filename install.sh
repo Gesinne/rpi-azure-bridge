@@ -234,6 +234,26 @@ except:
                 fi
             done
             
+            # Mostrar maxQueue del nodo guaranteed-delivery desde flows.json
+            for flowfile in /home/*/.node-red/flows.json; do
+                if [ -f "$flowfile" ]; then
+                    python3 -c "
+import json
+try:
+    with open('$flowfile') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'guaranteed-delivery':
+            maxq = node.get('maxQueue', '?')
+            print(f'  📨 Cola máxima (guaranteed-delivery): {maxq}')
+            break
+except:
+    pass
+" 2>/dev/null
+                    break
+                fi
+            done
+            
             # Mostrar espacio en disco
             DISK_INFO=$(df -h / | tail -1 | awk '{print $2, $3, $4, $5}')
             TOTAL=$(echo $DISK_INFO | cut -d' ' -f1)
