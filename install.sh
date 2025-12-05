@@ -438,14 +438,40 @@ except:
             docker-compose logs --tail=5 2>/dev/null | grep -E "✅|❌|📤|⚠️|Conectado" | tail -5
             echo ""
             
+            # Mostrar versiones de Node-RED y RPI Connect
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Versiones instaladas"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            # Versión Node-RED
+            NODERED_VERSION=$(node-red --version 2>/dev/null || echo "No instalado")
+            echo "  🔴 Node-RED: $NODERED_VERSION"
+            
+            # Versión Node.js
+            NODE_VERSION=$(node --version 2>/dev/null || echo "No instalado")
+            echo "  🟢 Node.js: $NODE_VERSION"
+            
+            # Versión RPI Connect
+            if command -v rpi-connect &> /dev/null; then
+                RPICONNECT_VERSION=$(rpi-connect --version 2>/dev/null | head -1 || echo "?")
+                RPICONNECT_STATUS=$(systemctl is-active rpi-connect 2>/dev/null || echo "inactivo")
+                echo "  🔗 RPI Connect: $RPICONNECT_VERSION ($RPICONNECT_STATUS)"
+            else
+                echo "  🔗 RPI Connect: No instalado"
+            fi
+            echo ""
+            
             # Preguntar si quiere modificar configuración
             echo "  ¿Qué quieres modificar?"
             echo ""
             echo "  1) Configuración equipo (serie, potencia, tramos)"
             echo "  2) Cola máxima guaranteed-delivery (maxQueue)"
+            echo "  3) Actualizar Node-RED"
+            echo "  4) Instalar/Actualizar RPI Connect"
             echo "  0) Nada, salir"
             echo ""
-            read -p "  Opción [0-2]: " MODIFY
+            read -p "  Opción [0-4]: " MODIFY
             
             if [ "$MODIFY" = "2" ]; then
                 # Modificar maxQueue en flows.json
@@ -583,6 +609,66 @@ with open('$CONFIG_FILE', 'w') as f:
                     echo "  ✅ Kiosko reiniciado"
                 fi
             fi
+            
+            if [ "$MODIFY" = "3" ]; then
+                # Actualizar Node-RED
+                echo ""
+                echo "  🔄 Actualizando Node-RED..."
+                echo ""
+                echo "  ⚠️  Esto puede tardar varios minutos"
+                echo ""
+                
+                # Parar Node-RED
+                sudo systemctl stop nodered
+                
+                # Actualizar Node-RED globalmente
+                echo "  → Actualizando Node-RED..."
+                sudo npm install -g --unsafe-perm node-red@latest 2>&1 | tail -5
+                
+                # Reiniciar Node-RED
+                echo ""
+                echo "  🔄 Reiniciando Node-RED..."
+                sudo systemctl start nodered
+                sleep 3
+                
+                # Mostrar nueva versión
+                NEW_VERSION=$(node-red --version 2>/dev/null || echo "?")
+                echo ""
+                echo "  ✅ Node-RED actualizado a: $NEW_VERSION"
+            fi
+            
+            if [ "$MODIFY" = "4" ]; then
+                # Instalar/Actualizar RPI Connect
+                echo ""
+                
+                if command -v rpi-connect &> /dev/null; then
+                    echo "  🔄 Actualizando RPI Connect..."
+                    sudo apt-get update
+                    sudo apt-get install -y rpi-connect
+                else
+                    echo "  📦 Instalando RPI Connect..."
+                    echo ""
+                    echo "  → Añadiendo repositorio..."
+                    
+                    # Instalar RPI Connect
+                    sudo apt-get update
+                    sudo apt-get install -y rpi-connect
+                    
+                    echo ""
+                    echo "  → Habilitando servicio..."
+                    sudo systemctl enable rpi-connect
+                    sudo systemctl start rpi-connect
+                fi
+                
+                # Mostrar versión y estado
+                echo ""
+                RPICONNECT_VERSION=$(rpi-connect --version 2>/dev/null | head -1 || echo "?")
+                echo "  ✅ RPI Connect: $RPICONNECT_VERSION"
+                echo ""
+                echo "  ℹ️  Para vincular, ejecuta: rpi-connect signin"
+                echo "     Luego accede desde: https://connect.raspberrypi.com"
+            fi
+            
             volver_menu
             ;;
         2)
