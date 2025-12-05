@@ -683,11 +683,29 @@ with open('$CONFIG_FILE', 'w') as f:
                 
                 # Mostrar versión y estado
                 echo ""
-                RPICONNECT_VERSION=$(rpi-connect --version 2>/dev/null | head -1 || echo "?")
-                echo "  ✅ RPI Connect: $RPICONNECT_VERSION"
-                echo ""
-                echo "  ℹ️  Para vincular, ejecuta: rpi-connect signin"
-                echo "     Luego accede desde: https://connect.raspberrypi.com"
+                RPICONNECT_VERSION=$(rpi-connect --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
+                echo "  ✅ RPI Connect: v$RPICONNECT_VERSION"
+                
+                # Comprobar si está vinculado
+                RPICONNECT_STATUS=$(rpi-connect status 2>&1)
+                if echo "$RPICONNECT_STATUS" | grep -qi "not signed in\|no está\|sin vincular"; then
+                    echo ""
+                    echo "  ⚠️  RPI Connect no está vinculado"
+                    echo ""
+                    read -p "  ¿Vincular ahora? [S/n]: " DO_SIGNIN
+                    if [ "$DO_SIGNIN" != "n" ] && [ "$DO_SIGNIN" != "N" ]; then
+                        echo ""
+                        echo "  🔗 Iniciando vinculación..."
+                        echo "  → Se abrirá un enlace. Cópialo en tu navegador para vincular."
+                        echo ""
+                        rpi-connect signin
+                        echo ""
+                        echo "  ✅ Proceso de vinculación iniciado"
+                        echo "     Accede desde: https://connect.raspberrypi.com"
+                    fi
+                else
+                    echo "  🟢 RPI Connect ya está vinculado"
+                fi
             fi
             
             volver_menu
