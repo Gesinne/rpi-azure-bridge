@@ -777,20 +777,23 @@ except:
             cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
             echo "  💾 Backup creado: $BACKUP_FILE"
             
-            # Guardar configuración MQTT actual antes de sobrescribir
-            MQTT_CONFIG=$(python3 -c "
+            # Guardar configuración MQTT y maxQueue actual antes de sobrescribir
+            PRESERVED_CONFIG=$(python3 -c "
 import json
 try:
     with open('$NODERED_DIR/flows.json', 'r') as f:
         flows = json.load(f)
+    config = {}
     for node in flows:
         if node.get('type') == 'mqtt-broker':
-            print(json.dumps({
+            config['mqtt'] = {
                 'broker': node.get('broker', 'localhost'),
                 'port': node.get('port', '1883'),
                 'usetls': node.get('usetls', False)
-            }))
-            break
+            }
+        if node.get('type') == 'guaranteed-delivery':
+            config['maxQueue'] = node.get('maxQueue', 500000)
+    print(json.dumps(config))
 except:
     pass
 " 2>/dev/null)
@@ -799,23 +802,25 @@ except:
             if python3 -c "import json; json.load(open('$FLOW_FILE'))" 2>/dev/null; then
                 cp "$FLOW_FILE" "$NODERED_DIR/flows.json"
                 
-                # Restaurar configuración MQTT si existía
-                if [ -n "$MQTT_CONFIG" ]; then
+                # Restaurar configuración MQTT y maxQueue si existía
+                if [ -n "$PRESERVED_CONFIG" ]; then
                     python3 -c "
 import json
-mqtt_config = json.loads('$MQTT_CONFIG')
+config = json.loads('$PRESERVED_CONFIG')
 with open('$NODERED_DIR/flows.json', 'r') as f:
     flows = json.load(f)
 for node in flows:
-    if node.get('type') == 'mqtt-broker':
-        node['broker'] = mqtt_config['broker']
-        node['port'] = mqtt_config['port']
-        node['usetls'] = mqtt_config['usetls']
+    if node.get('type') == 'mqtt-broker' and 'mqtt' in config:
+        node['broker'] = config['mqtt']['broker']
+        node['port'] = config['mqtt']['port']
+        node['usetls'] = config['mqtt']['usetls']
+    if node.get('type') == 'guaranteed-delivery' and 'maxQueue' in config:
+        node['maxQueue'] = config['maxQueue']
 with open('$NODERED_DIR/flows.json', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
                     echo "  ✅ Flow instalado: $VERSION_NAME"
-                    echo "  🔗 Configuración MQTT preservada: ${MQTT_CONFIG}"
+                    echo "  🔗 Configuración preservada: MQTT + maxQueue=${PRESERVED_CONFIG}"
                 else
                     echo "  ✅ Flow instalado: $VERSION_NAME"
                 fi
@@ -950,97 +955,6 @@ with open('$CONFIG_FILE', 'w') as f:
             else
                 echo "  ⚠️  No se encontró equipo_config.json"
                 echo "  Crea el archivo en: /home/gesinne/config/equipo_config.json"
-            fi
-            
-            # Preguntar si quiere ajustar valores de cola según RAM
-            echo ""
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Ajustar valores de cola según RAM"
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
-            # Detectar RAM y valores actuales
-            COLA_INFO=$(python3 << 'EOFCOLA'
-import json
-
-# Leer RAM
-with open('/proc/meminfo') as f:
-    for line in f:
-        if line.startswith('MemTotal:'):
-            mem_kb = int(line.split()[1])
-            mem_gb = mem_kb / 1024 / 1024
-            break
-
-# Valores recomendados según RAM
-if mem_gb < 2.5:
-    rec_queue, rec_size = 500000, 200
-elif mem_gb < 5.5:
-    rec_queue, rec_size = 1000000, 400
-else:
-    rec_queue, rec_size = 2000000, 800
-
-# Leer valores actuales del flows.json
-flows_file = None
-import glob
-for f in glob.glob('/home/*/.node-red/flows.json'):
-    flows_file = f
-    break
-
-cur_queue = '?'
-if flows_file:
-    with open(flows_file) as f:
-        flows = json.load(f)
-    for node in flows:
-        if node.get('type') == 'guaranteed-delivery':
-            cur_queue = node.get('maxQueue', '?')
-            break
-
-print(f"{mem_gb:.1f}|{cur_queue}|{rec_queue}|{rec_size}")
-EOFCOLA
-)
-            
-            RAM_GB=$(echo "$COLA_INFO" | cut -d'|' -f1)
-            CUR_QUEUE=$(echo "$COLA_INFO" | cut -d'|' -f2)
-            REC_QUEUE=$(echo "$COLA_INFO" | cut -d'|' -f3)
-            REC_SIZE=$(echo "$COLA_INFO" | cut -d'|' -f4)
-            
-            echo ""
-            echo "  RAM detectada: ${RAM_GB} GB"
-            echo "  Cola actual (maxQueue): $CUR_QUEUE"
-            echo "  Cola recomendada: $REC_QUEUE"
-            echo ""
-            
-            if [ "$CUR_QUEUE" != "$REC_QUEUE" ]; then
-                read -p "  ¿Ajustar maxQueue a $REC_QUEUE? [s/N]: " ADJUST_QUEUE
-                if [ "$ADJUST_QUEUE" = "s" ] || [ "$ADJUST_QUEUE" = "S" ]; then
-                    FLOWS_FILE=""
-                    for f in /home/*/.node-red/flows.json; do
-                        if [ -f "$f" ]; then
-                            FLOWS_FILE="$f"
-                            break
-                        fi
-                    done
-                    
-                    python3 << EOFADJUST
-import json
-with open('$FLOWS_FILE', 'r') as f:
-    flows = json.load(f)
-for node in flows:
-    if node.get('type') == 'guaranteed-delivery':
-        node['maxQueue'] = int($REC_QUEUE)
-        break
-with open('$FLOWS_FILE', 'w') as f:
-    json.dump(flows, f, indent=4)
-EOFADJUST
-                    
-                    echo "  ✅ maxQueue ajustado a $REC_QUEUE"
-                    echo ""
-                    echo "  🔄 Reiniciando Node-RED..."
-                    sudo systemctl restart nodered
-                    sleep 2
-                    echo "  ✅ Node-RED reiniciado"
-                fi
-            else
-                echo "  ✅ maxQueue ya está en el valor recomendado"
             fi
             
             exit 0
@@ -1179,20 +1093,23 @@ EOFADJUST
                 fi
             fi
             
-            # Guardar configuración MQTT actual antes de restaurar
-            MQTT_CONFIG=$(python3 -c "
+            # Guardar configuración MQTT y maxQueue actual antes de restaurar
+            PRESERVED_CONFIG=$(python3 -c "
 import json
 try:
     with open('$NODERED_DIR/flows.json', 'r') as f:
         flows = json.load(f)
+    config = {}
     for node in flows:
         if node.get('type') == 'mqtt-broker':
-            print(json.dumps({
+            config['mqtt'] = {
                 'broker': node.get('broker', 'localhost'),
                 'port': node.get('port', '1883'),
                 'usetls': node.get('usetls', False)
-            }))
-            break
+            }
+        if node.get('type') == 'guaranteed-delivery':
+            config['maxQueue'] = node.get('maxQueue', 500000)
+    print(json.dumps(config))
 except:
     pass
 " 2>/dev/null)
@@ -1203,23 +1120,25 @@ except:
             # Restaurar
             cp "$SELECTED_BACKUP" "$NODERED_DIR/flows.json"
             
-            # Restaurar configuración MQTT si existía
-            if [ -n "$MQTT_CONFIG" ]; then
+            # Restaurar configuración MQTT y maxQueue si existía
+            if [ -n "$PRESERVED_CONFIG" ]; then
                 python3 -c "
 import json
-mqtt_config = json.loads('$MQTT_CONFIG')
+config = json.loads('$PRESERVED_CONFIG')
 with open('$NODERED_DIR/flows.json', 'r') as f:
     flows = json.load(f)
 for node in flows:
-    if node.get('type') == 'mqtt-broker':
-        node['broker'] = mqtt_config['broker']
-        node['port'] = mqtt_config['port']
-        node['usetls'] = mqtt_config['usetls']
+    if node.get('type') == 'mqtt-broker' and 'mqtt' in config:
+        node['broker'] = config['mqtt']['broker']
+        node['port'] = config['mqtt']['port']
+        node['usetls'] = config['mqtt']['usetls']
+    if node.get('type') == 'guaranteed-delivery' and 'maxQueue' in config:
+        node['maxQueue'] = config['maxQueue']
 with open('$NODERED_DIR/flows.json', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
                 echo "  ✅ Flow restaurado"
-                echo "  🔗 Configuración MQTT preservada: ${MQTT_CONFIG}"
+                echo "  🔗 Configuración preservada: MQTT + maxQueue"
             else
                 echo "  ✅ Flow restaurado"
             fi
