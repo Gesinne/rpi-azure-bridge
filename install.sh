@@ -127,31 +127,58 @@ for NODERED_DIR in /home/*/.node-red; do
     if [ -d "$NODERED_DIR" ]; then
         USER_HOME_DIR=$(dirname "$NODERED_DIR")
         SETTINGS_FILE="$NODERED_DIR/settings.js"
+        CREDS_FILE="/opt/nodered-flows-cache/.git_credentials"
+        NEED_RESTART=false
         
         # Si no existe carpeta Logo, intentar descargarla del repo
         if [ ! -d "$USER_HOME_DIR/Logo" ]; then
+            echo ""
             echo "  ⚠️  Falta carpeta Logo, descargando..."
+            
+            # Cargar credenciales si existen
+            REPO_URL="https://github.com/Gesinne/nodered-flows.git"
+            if [ -f "$CREDS_FILE" ]; then
+                source "$CREDS_FILE"
+                if [ -n "$GIT_USER" ] && [ -n "$GIT_TOKEN" ]; then
+                    REPO_URL="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/nodered-flows.git"
+                fi
+            fi
+            
             TEMP_LOGO="/tmp/logo_download_$$"
-            if git clone --depth 1 --filter=blob:none --sparse https://github.com/Gesinne/nodered-flows.git "$TEMP_LOGO" 2>/dev/null; then
-                cd "$TEMP_LOGO"
-                git sparse-checkout set Logo 2>/dev/null
+            rm -rf "$TEMP_LOGO" 2>/dev/null
+            if git clone --depth 1 "$REPO_URL" "$TEMP_LOGO" 2>/dev/null; then
                 if [ -d "$TEMP_LOGO/Logo" ]; then
                     cp -r "$TEMP_LOGO/Logo" "$USER_HOME_DIR/"
                     chown -R $(basename "$USER_HOME_DIR"):$(basename "$USER_HOME_DIR") "$USER_HOME_DIR/Logo" 2>/dev/null
                     echo "  ✅ Carpeta Logo instalada en $USER_HOME_DIR/Logo"
+                    NEED_RESTART=true
+                else
+                    echo "  ❌ No se encontró carpeta Logo en el repo"
                 fi
-                cd - > /dev/null
-                rm -rf "$TEMP_LOGO"
+            else
+                echo "  ❌ No se pudo descargar (¿credenciales?)"
             fi
+            rm -rf "$TEMP_LOGO" 2>/dev/null
         fi
         
         # Si existe Logo pero no está configurado httpStatic
         if [ -d "$USER_HOME_DIR/Logo" ] && [ -f "$SETTINGS_FILE" ]; then
-            if ! grep -q "httpStatic:" "$SETTINGS_FILE"; then
+            if ! grep -q "httpStatic" "$SETTINGS_FILE"; then
+                echo "  ⚠️  Falta httpStatic en settings.js, configurando..."
                 sed -i "/module.exports\s*=\s*{/a\\    httpStatic: '$USER_HOME_DIR/Logo/'," "$SETTINGS_FILE"
                 echo "  ✅ httpStatic configurado en settings.js"
-                sudo systemctl restart nodered 2>/dev/null
+                NEED_RESTART=true
             fi
+        fi
+        
+        # Reiniciar Node-RED si hubo cambios
+        if [ "$NEED_RESTART" = true ]; then
+            echo "  🔄 Reiniciando Node-RED..."
+            sudo systemctl restart nodered 2>/dev/null
+            sleep 2
+            echo "  ✅ Node-RED reiniciado"
+            echo ""
+            read -p "  Presiona ENTER para continuar..."
         fi
         break
     fi
