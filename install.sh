@@ -1298,16 +1298,18 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
             echo "  1) Tarjeta L1 (Fase 1)"
             echo "  2) Tarjeta L2 (Fase 2)"
             echo "  3) Tarjeta L3 (Fase 3)"
-            echo "  4) TODAS las tarjetas (L1, L2, L3)"
+            echo "  4) TODAS en columnas (L1, L2, L3)"
+            echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [1-4]: " TARJETA
+            read -p "  Opción [0-4]: " TARJETA
             
             case $TARJETA in
-                1) UNIT_IDS="1"; FASES="L1" ;;
-                2) UNIT_IDS="2"; FASES="L2" ;;
-                3) UNIT_IDS="3"; FASES="L3" ;;
-                4) UNIT_IDS="1 2 3"; FASES="L1 L2 L3" ;;
-                *) echo "  ❌ Opción no válida"; exit 1 ;;
+                0) continue ;;
+                1) UNIT_IDS="1"; FASES="L1"; MODO_COLUMNAS="no" ;;
+                2) UNIT_IDS="2"; FASES="L2"; MODO_COLUMNAS="no" ;;
+                3) UNIT_IDS="3"; FASES="L3"; MODO_COLUMNAS="no" ;;
+                4) UNIT_IDS="1 2 3"; FASES="L1 L2 L3"; MODO_COLUMNAS="yes" ;;
+                *) echo "  ❌ Opción no válida"; continue ;;
             esac
             
             # Siempre detectar el máximo de registros
@@ -1327,6 +1329,112 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
             echo "  ✅ Servicios parados"
             echo ""
             
+            # Si es modo columnas, leer las 3 placas y mostrar en tabla
+            if [ "$MODO_COLUMNAS" = "yes" ]; then
+                echo "  📡 Leyendo las 3 tarjetas..."
+                echo ""
+                
+                python3 << 'EOFCOL'
+import sys
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  ❌ pymodbus no instalado")
+        sys.exit(1)
+
+client = ModbusSerialClient(
+    port='/dev/ttyAMA0',
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  ❌ No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+# Leer las 3 placas
+data_all = {}
+for unit_id in [1, 2, 3]:
+    data = []
+    for start in range(0, 96, 40):
+        count = min(40, 96 - start)
+        result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+        if result.isError():
+            break
+        data.extend(result.registers)
+    data_all[unit_id] = data if data else [0]*96
+
+client.close()
+
+# Nombres cortos de registros
+regs = {
+    0: "Estado", 1: "Topología", 2: "Alarma", 3: "V salida", 4: "V entrada",
+    5: "Hz", 6: "I Salida", 7: "I Chopper", 8: "I Prim trafo", 9: "P act(H)",
+    10: "P act(L)", 11: "P react(H)", 12: "P react(L)", 13: "P apar(H)",
+    14: "P apar(L)", 15: "FP", 16: "Tipo FP", 17: "Temp", 18: "T alarma",
+    19: "Enable ext", 20: "T reenc", 21: "Enable PCB",
+    30: "Flag Est", 31: "Est desead", 32: "Consigna", 33: "Bucle ctrl", 34: "Mando",
+    40: "Flag Conf", 41: "Nº Serie", 42: "V nominal", 43: "V prim auto",
+    44: "V sec auto", 45: "V sec trafo", 46: "Topología", 47: "Dead-time",
+    48: "Dir Modbus", 49: "I nom sal", 50: "I nom chop", 51: "I max chop",
+    52: "I max pico", 53: "T apag CC", 54: "Cnt SC", 55: "Est inicial",
+    56: "V inicial", 57: "T máxima", 58: "Dec T reenc", 59: "Cnt ST",
+    60: "Tipo V", 61: "Vel Modbus", 62: "Package", 63: "Áng alta",
+    64: "Áng baja", 65: "% carga", 66: "Sens trans", 67: "Sens deriv", 69: "ReCo",
+    70: "Flag Cal", 71: "Ca00", 72: "Ca01", 73: "Ca03", 74: "Ca04",
+    75: "Ca06", 76: "Ca07", 77: "Ca08", 78: "Ca09", 79: "Ca10",
+    80: "Ca11", 81: "Ca12", 82: "Ca13", 83: "Ca14", 84: "Ca15", 85: "R", 86: "ReCa",
+    90: "Flag Ctrl", 91: "Cn00", 92: "Cn01", 93: "Cn02", 94: "Cn03", 95: "ReCn"
+}
+
+# Imprimir en columnas
+print("  ╔════════════════════════════════════════════════════════════════════════════════╗")
+print("  ║  PARÁMETROS DE LAS 3 PLACAS                                                    ║")
+print("  ╚════════════════════════════════════════════════════════════════════════════════╝")
+print("")
+print(f"  {'Reg':<4} {'Parámetro':<14} {'L1':>8} {'L2':>8} {'L3':>8}   {'Diferencia'}")
+print(f"  {'─'*4} {'─'*14} {'─'*8} {'─'*8} {'─'*8}   {'─'*12}")
+
+def print_section(title, start, end):
+    print(f"\n  ── {title} ──")
+    for i in range(start, end):
+        if i in regs:
+            v1 = data_all[1][i] if i < len(data_all[1]) else 0
+            v2 = data_all[2][i] if i < len(data_all[2]) else 0
+            v3 = data_all[3][i] if i < len(data_all[3]) else 0
+            diff = "⚠️ DIFF" if not (v1 == v2 == v3) else ""
+            print(f"  {i:<4} {regs[i]:<14} {v1:>8} {v2:>8} {v3:>8}   {diff}")
+
+print_section("TIEMPO REAL", 0, 22)
+print_section("ESTADO", 30, 35)
+print_section("CONFIGURACIÓN", 40, 70)
+print_section("CALIBRACIÓN", 70, 87)
+print_section("CONTROL", 90, 96)
+
+print("")
+EOFCOL
+                
+                # Reiniciar servicios
+                echo ""
+                echo "  🔄 Reiniciando servicios..."
+                sudo systemctl start nodered
+                docker start gesinne-rpi 2>/dev/null || true
+                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                    sudo systemctl restart kiosk.service
+                fi
+                echo "  ✅ Listo"
+                
+                volver_menu
+                continue
+            fi
+            
+            # Modo normal: una placa a la vez
             for UNIT_ID in $UNIT_IDS; do
             
             case $UNIT_ID in
