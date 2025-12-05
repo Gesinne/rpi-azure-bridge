@@ -254,6 +254,26 @@ except:
                 fi
             done
             
+            # Mostrar maxSizeMB (calculado según RAM, igual que Node-RED)
+            python3 -c "
+try:
+    with open('/proc/meminfo') as f:
+        for line in f:
+            if line.startswith('MemTotal:'):
+                mem_kb = int(line.split()[1])
+                mem_gb = mem_kb / 1024 / 1024
+                if mem_gb < 2.5:
+                    max_size = 200
+                elif mem_gb < 5.5:
+                    max_size = 400
+                else:
+                    max_size = 800
+                print(f'  💾 Max tamaño SD (cola): {max_size} MB (RAM: {mem_gb:.1f} GB)')
+                break
+except:
+    pass
+" 2>/dev/null
+            
             # Mostrar espacio en disco
             DISK_INFO=$(df -h / | tail -1 | awk '{print $2, $3, $4, $5}')
             TOTAL=$(echo $DISK_INFO | cut -d' ' -f1)
