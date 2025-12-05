@@ -311,8 +311,85 @@ except:
             echo ""
             
             # Preguntar si quiere modificar configuración
-            read -p "  ¿Modificar configuración equipo? [s/N]: " MODIFY
-            if [ "$MODIFY" = "s" ] || [ "$MODIFY" = "S" ]; then
+            echo "  ¿Qué quieres modificar?"
+            echo ""
+            echo "  1) Configuración equipo (serie, potencia, tramos)"
+            echo "  2) Tamaño máximo cola SD (maxSizeMB)"
+            echo "  0) Nada, salir"
+            echo ""
+            read -p "  Opción [0-2]: " MODIFY
+            
+            if [ "$MODIFY" = "2" ]; then
+                # Modificar maxSizeMB en flows.json
+                FLOWS_FILE=""
+                for f in /home/*/.node-red/flows.json; do
+                    if [ -f "$f" ]; then
+                        FLOWS_FILE="$f"
+                        break
+                    fi
+                done
+                
+                if [ -n "$FLOWS_FILE" ]; then
+                    # Obtener valor actual
+                    CURRENT_MAXSIZE=$(python3 -c "
+import json, re
+try:
+    with open('$FLOWS_FILE') as f:
+        content = f.read()
+    # Buscar maxSizeMB en el código del nodo
+    match = re.search(r'maxSizeMB\s*=\s*(\d+)', content)
+    if match:
+        print(match.group(1))
+    else:
+        print('200')
+except:
+    print('200')
+" 2>/dev/null)
+                    
+                    echo ""
+                    echo "  Valores recomendados según RAM:"
+                    echo "    - 200 MB para RPIs con ~2GB RAM"
+                    echo "    - 400 MB para RPIs con ~4GB RAM"
+                    echo "    - 800 MB para RPIs con ~8GB RAM"
+                    echo ""
+                    read -p "  Nuevo maxSizeMB [$CURRENT_MAXSIZE]: " NEW_MAXSIZE
+                    NEW_MAXSIZE="${NEW_MAXSIZE:-$CURRENT_MAXSIZE}"
+                    
+                    # Actualizar en flows.json (reemplazar los valores en las funciones)
+                    python3 << EOFMAXSIZE
+import json
+import re
+
+with open('$FLOWS_FILE', 'r') as f:
+    content = f.read()
+
+# Reemplazar maxSizeMB = XXX por el nuevo valor en las funciones
+content = re.sub(r'(maxSizeMB\s*=\s*)\d+', r'\g<1>$NEW_MAXSIZE', content)
+
+# También actualizar los umbrales si existen
+# Buscar el patrón del switch de RAM y actualizar
+content = re.sub(r"maxSizeMB = 200;(\s*//.*2GB)?", "maxSizeMB = $NEW_MAXSIZE; // Modificado", content)
+content = re.sub(r"maxSizeMB = 400;(\s*//.*4GB)?", "maxSizeMB = $NEW_MAXSIZE; // Modificado", content)
+content = re.sub(r"maxSizeMB = 800;(\s*//.*8GB)?", "maxSizeMB = $NEW_MAXSIZE; // Modificado", content)
+
+with open('$FLOWS_FILE', 'w') as f:
+    f.write(content)
+
+print("OK")
+EOFMAXSIZE
+                    
+                    echo ""
+                    echo "  ✅ maxSizeMB actualizado a $NEW_MAXSIZE MB"
+                    echo ""
+                    echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                    sudo systemctl restart nodered
+                    sleep 2
+                    echo "  ✅ Node-RED reiniciado"
+                fi
+                exit 0
+            fi
+            
+            if [ "$MODIFY" = "1" ]; then
                 if [ -n "$CONFIG_FILE" ] && [ -f "$CONFIG_FILE" ]; then
                     # Leer valores actuales
                     CURRENT_SERIE=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('serie', 'N/A'))" 2>/dev/null)
