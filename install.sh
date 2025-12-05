@@ -457,15 +457,8 @@ except:
             
             # Versión Node.js
             NODE_VERSION=$(node --version 2>/dev/null || echo "No instalado")
-            NODE_LATEST=$(curl -s https://nodejs.org/dist/index.json 2>/dev/null | grep -oE '"version":"v[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
-            NODE_LTS=$(curl -s https://nodejs.org/dist/index.json 2>/dev/null | grep -A1 '"lts"' | grep -v false | head -2 | grep -oE '"version":"v[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
-            if [ "$NODE_VERSION" = "$NODE_LTS" ]; then
-                echo "  🟢 Node.js: $NODE_VERSION (LTS) ✅"
-            elif [ "$NODE_LTS" != "?" ]; then
-                echo "  🟢 Node.js: $NODE_VERSION (LTS: $NODE_LTS)"
-            else
-                echo "  🟢 Node.js: $NODE_VERSION"
-            fi
+            # Solo mostrar versión instalada, sin complicar con LTS
+            echo "  🟢 Node.js: $NODE_VERSION ✅"
             
             # Versión RPI Connect
             if command -v rpi-connect &> /dev/null; then
