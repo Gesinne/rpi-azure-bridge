@@ -403,14 +403,15 @@ import re
 with open('$FLOWS_FILE', 'r') as f:
     content = f.read()
 
-# Reemplazar maxSizeMB = XXX por el nuevo valor en las funciones
-content = re.sub(r'(maxSizeMB\s*=\s*)\d+', r'\g<1>$NEW_MAXSIZE', content)
+# El JSON tiene el código escapado, buscar patrones como:
+# maxSizeMB = 200; // Para ~2GB  (escapado como maxSizeMB = 200; // Para ~2GB)
+# También el valor por defecto: || 200
 
-# También actualizar los umbrales si existen
-# Buscar el patrón del switch de RAM y actualizar
-content = re.sub(r"maxSizeMB = 200;(\s*//.*2GB)?", "maxSizeMB = $NEW_MAXSIZE; // Modificado", content)
-content = re.sub(r"maxSizeMB = 400;(\s*//.*4GB)?", "maxSizeMB = $NEW_MAXSIZE; // Modificado", content)
-content = re.sub(r"maxSizeMB = 800;(\s*//.*8GB)?", "maxSizeMB = $NEW_MAXSIZE; // Modificado", content)
+# Reemplazar todos los valores numéricos después de "maxSizeMB = "
+content = re.sub(r'(maxSizeMB\s*=\s*)(\d+)', r'\g<1>$NEW_MAXSIZE', content)
+
+# Reemplazar el valor por defecto "|| 200" por "|| NEW_VALUE"
+content = re.sub(r'(\|\|\s*)200(\s*;|\s*\))', r'\g<1>$NEW_MAXSIZE\2', content)
 
 with open('$FLOWS_FILE', 'w') as f:
     f.write(content)
