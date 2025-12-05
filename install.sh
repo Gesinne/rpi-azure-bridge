@@ -163,9 +163,10 @@ while true; do
     echo "  5) Ver los 96 registros de la placa"
     echo "  6) Descargar parámetros (enviar por EMAIL)"
     echo "  7) Revisar espacio y logs"
+    echo "  8) Gestionar paleta Node-RED"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-7]: " OPTION
+    read -p "  Opción [0-8]: " OPTION
 
     case $OPTION in
         0)
@@ -2338,6 +2339,169 @@ EOFEMAIL
                 echo "  ─────────────────────────────────────────────"
                 df -h / | awk 'NR==1 {print "  " $0} NR==2 {print "  " $0}'
             fi
+            
+            volver_menu
+            ;;
+        8)
+            # Gestionar paleta Node-RED
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Gestionar paleta Node-RED"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            # Buscar directorio node_modules
+            NODERED_DIR=""
+            for d in /home/*/.node-red; do
+                if [ -d "$d" ]; then
+                    NODERED_DIR="$d"
+                    break
+                fi
+            done
+            
+            if [ -z "$NODERED_DIR" ]; then
+                echo "  ❌ No se encontró directorio .node-red"
+                volver_menu
+                continue
+            fi
+            
+            MODULES_DIR="$NODERED_DIR/node_modules"
+            
+            echo "  📦 NODOS INSTALADOS"
+            echo "  ─────────────────────────────────────────────"
+            echo ""
+            
+            # Listar nodos node-red instalados con versiones
+            if [ -d "$MODULES_DIR" ]; then
+                cd "$MODULES_DIR"
+                
+                # Buscar paquetes node-red
+                NODES_INFO=$(find . -maxdepth 2 -name "package.json" 2>/dev/null | while read pkg; do
+                    DIR=$(dirname "$pkg")
+                    NAME=$(python3 -c "import json; print(json.load(open('$pkg')).get('name', ''))" 2>/dev/null)
+                    VERSION=$(python3 -c "import json; print(json.load(open('$pkg')).get('version', '?'))" 2>/dev/null)
+                    if echo "$NAME" | grep -qE "^(node-red|@flowfuse|@node-red)"; then
+                        echo "$NAME|$VERSION"
+                    fi
+                done | sort)
+                
+                if [ -n "$NODES_INFO" ]; then
+                    echo "$NODES_INFO" | while IFS='|' read NAME VERSION; do
+                        printf "  %-45s %s\n" "$NAME" "v$VERSION"
+                    done
+                else
+                    echo "  No se encontraron nodos node-red"
+                fi
+                
+                cd - > /dev/null
+            else
+                echo "  ❌ No existe directorio node_modules"
+            fi
+            
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  ¿Qué quieres hacer?"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  1) Actualizar TODOS los nodos"
+            echo "  2) Actualizar un nodo específico"
+            echo "  3) Instalar un nodo nuevo"
+            echo "  4) Desinstalar un nodo"
+            echo "  0) Volver al menú"
+            echo ""
+            read -p "  Opción [0-4]: " PALETTE_OPT
+            
+            case $PALETTE_OPT in
+                1)
+                    echo ""
+                    echo "  🔄 Actualizando todos los nodos..."
+                    echo ""
+                    cd "$NODERED_DIR"
+                    
+                    # Parar Node-RED
+                    echo "  ⚠️  Parando Node-RED..."
+                    sudo systemctl stop nodered
+                    sleep 2
+                    
+                    # Actualizar todos los nodos node-red
+                    npm update 2>&1 | while read line; do echo "  $line"; done
+                    
+                    echo ""
+                    echo "  🔄 Reiniciando Node-RED..."
+                    sudo systemctl start nodered
+                    sleep 3
+                    echo "  ✅ Nodos actualizados"
+                    ;;
+                2)
+                    echo ""
+                    read -p "  Nombre del nodo a actualizar: " NODE_NAME
+                    if [ -n "$NODE_NAME" ]; then
+                        echo ""
+                        echo "  🔄 Actualizando $NODE_NAME..."
+                        cd "$NODERED_DIR"
+                        
+                        sudo systemctl stop nodered
+                        sleep 2
+                        
+                        npm update "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
+                        
+                        sudo systemctl start nodered
+                        sleep 3
+                        echo "  ✅ $NODE_NAME actualizado"
+                    fi
+                    ;;
+                3)
+                    echo ""
+                    echo "  Nodos comunes:"
+                    echo "    - node-red-dashboard"
+                    echo "    - @flowfuse/node-red-dashboard"
+                    echo "    - node-red-contrib-ui-led"
+                    echo "    - node-red-node-serialport"
+                    echo ""
+                    read -p "  Nombre del nodo a instalar: " NODE_NAME
+                    if [ -n "$NODE_NAME" ]; then
+                        echo ""
+                        echo "  📦 Instalando $NODE_NAME..."
+                        cd "$NODERED_DIR"
+                        
+                        sudo systemctl stop nodered
+                        sleep 2
+                        
+                        npm install "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
+                        
+                        sudo systemctl start nodered
+                        sleep 3
+                        echo "  ✅ $NODE_NAME instalado"
+                    fi
+                    ;;
+                4)
+                    echo ""
+                    read -p "  Nombre del nodo a desinstalar: " NODE_NAME
+                    if [ -n "$NODE_NAME" ]; then
+                        echo ""
+                        read -p "  ⚠️  ¿Seguro que quieres desinstalar $NODE_NAME? [s/N]: " CONFIRM
+                        if [ "$CONFIRM" = "s" ] || [ "$CONFIRM" = "S" ]; then
+                            echo ""
+                            echo "  🗑️  Desinstalando $NODE_NAME..."
+                            cd "$NODERED_DIR"
+                            
+                            sudo systemctl stop nodered
+                            sleep 2
+                            
+                            npm uninstall "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
+                            
+                            sudo systemctl start nodered
+                            sleep 3
+                            echo "  ✅ $NODE_NAME desinstalado"
+                        else
+                            echo "  ❌ Cancelado"
+                        fi
+                    fi
+                    ;;
+                *)
+                    echo "  ❌ Cancelado"
+                    ;;
+            esac
             
             volver_menu
             ;;
