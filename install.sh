@@ -446,20 +446,44 @@ except:
             
             # Versión Node-RED (solo primera línea con versión)
             NODERED_VERSION=$(node-red --version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "No instalado")
-            echo "  🔴 Node-RED: $NODERED_VERSION"
+            NODERED_LATEST=$(curl -s https://registry.npmjs.org/node-red/latest 2>/dev/null | grep -oE '"version":"[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
+            if [ "$NODERED_VERSION" = "v$NODERED_LATEST" ]; then
+                echo "  🔴 Node-RED: $NODERED_VERSION ✅"
+            elif [ "$NODERED_LATEST" != "?" ]; then
+                echo "  🔴 Node-RED: $NODERED_VERSION → v$NODERED_LATEST disponible ⬆️"
+            else
+                echo "  🔴 Node-RED: $NODERED_VERSION"
+            fi
             
             # Versión Node.js
             NODE_VERSION=$(node --version 2>/dev/null || echo "No instalado")
-            echo "  🟢 Node.js: $NODE_VERSION"
+            NODE_LATEST=$(curl -s https://nodejs.org/dist/index.json 2>/dev/null | grep -oE '"version":"v[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
+            NODE_LTS=$(curl -s https://nodejs.org/dist/index.json 2>/dev/null | grep -A1 '"lts"' | grep -v false | head -2 | grep -oE '"version":"v[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
+            if [ "$NODE_VERSION" = "$NODE_LTS" ]; then
+                echo "  🟢 Node.js: $NODE_VERSION (LTS) ✅"
+            elif [ "$NODE_LTS" != "?" ]; then
+                echo "  🟢 Node.js: $NODE_VERSION (LTS: $NODE_LTS)"
+            else
+                echo "  🟢 Node.js: $NODE_VERSION"
+            fi
             
             # Versión RPI Connect
             if command -v rpi-connect &> /dev/null; then
                 RPICONNECT_VERSION=$(rpi-connect --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
                 RPICONNECT_STATUS=$(systemctl is-active rpi-connect 2>/dev/null || echo "inactivo")
+                # Comprobar última versión disponible
+                RPICONNECT_LATEST=$(apt-cache policy rpi-connect 2>/dev/null | grep Candidate | awk '{print $2}' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
+                
                 if [ "$RPICONNECT_STATUS" = "active" ]; then
-                    echo "  🔗 RPI Connect: v$RPICONNECT_VERSION (🟢 activo)"
+                    STATUS_ICON="🟢 activo"
                 else
-                    echo "  🔗 RPI Connect: v$RPICONNECT_VERSION (🔴 inactivo)"
+                    STATUS_ICON="🔴 inactivo"
+                fi
+                
+                if [ "$RPICONNECT_VERSION" = "$RPICONNECT_LATEST" ] || [ "$RPICONNECT_LATEST" = "?" ]; then
+                    echo "  🔗 RPI Connect: v$RPICONNECT_VERSION ($STATUS_ICON) ✅"
+                else
+                    echo "  🔗 RPI Connect: v$RPICONNECT_VERSION → v$RPICONNECT_LATEST disponible ⬆️ ($STATUS_ICON)"
                 fi
             else
                 echo "  🔗 RPI Connect: No instalado"
