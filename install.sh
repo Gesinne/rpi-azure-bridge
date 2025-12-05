@@ -145,9 +145,10 @@ while true; do
     echo "  4) Ver/Modificar configuración equipo"
     echo "  5) Ver los 96 registros de la placa"
     echo "  6) Descargar parámetros (enviar por EMAIL)"
+    echo "  7) Revisar espacio y logs"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-6]: " OPTION
+    read -p "  Opción [0-7]: " OPTION
 
     case $OPTION in
         0)
@@ -2205,6 +2206,115 @@ EOFEMAIL
             docker start gesinne-rpi >/dev/null 2>&1 || true
             
             echo "  ✅ Listo"
+            volver_menu
+            ;;
+        7)
+            # Revisar espacio y logs
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Revisar espacio y logs"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            # Espacio en disco
+            echo "  📊 ESPACIO EN DISCO"
+            echo "  ─────────────────────────────────────────────"
+            df -h / | awk 'NR==1 {print "  " $0} NR==2 {print "  " $0}'
+            echo ""
+            
+            # Uso por directorio
+            echo "  📁 USO POR DIRECTORIO (top 10)"
+            echo "  ─────────────────────────────────────────────"
+            du -sh /var/log /var/cache /tmp /home/*/.node-red /var/lib/docker 2>/dev/null | sort -rh | head -10 | while read line; do
+                echo "  $line"
+            done
+            echo ""
+            
+            # Logs más grandes
+            echo "  📜 LOGS MÁS GRANDES"
+            echo "  ─────────────────────────────────────────────"
+            find /var/log -type f -name "*.log" -o -name "*.log.*" 2>/dev/null | xargs du -sh 2>/dev/null | sort -rh | head -10 | while read line; do
+                echo "  $line"
+            done
+            echo ""
+            
+            # Journal
+            JOURNAL_SIZE=$(journalctl --disk-usage 2>/dev/null | grep -oP '[0-9.]+[GMK]' | head -1)
+            echo "  📰 JOURNAL SYSTEMD: ${JOURNAL_SIZE:-desconocido}"
+            echo ""
+            
+            # Docker
+            if command -v docker &> /dev/null; then
+                echo "  🐳 DOCKER"
+                echo "  ─────────────────────────────────────────────"
+                docker system df 2>/dev/null | while read line; do
+                    echo "  $line"
+                done
+                echo ""
+            fi
+            
+            # Menú de limpieza
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  ¿Qué quieres limpiar?"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  1) Limpiar logs antiguos (journalctl --vacuum-time=3d)"
+            echo "  2) Limpiar caché apt (apt clean)"
+            echo "  3) Limpiar Docker (imágenes y contenedores sin usar)"
+            echo "  4) Limpiar TODO (logs + apt + docker)"
+            echo "  0) No limpiar, volver al menú"
+            echo ""
+            read -p "  Opción [0-4]: " CLEAN_OPT
+            
+            case $CLEAN_OPT in
+                1)
+                    echo ""
+                    echo "  🧹 Limpiando logs antiguos..."
+                    sudo journalctl --vacuum-time=3d
+                    echo "  ✅ Logs limpiados"
+                    ;;
+                2)
+                    echo ""
+                    echo "  🧹 Limpiando caché apt..."
+                    sudo apt-get clean
+                    sudo apt-get autoremove -y
+                    echo "  ✅ Caché apt limpiada"
+                    ;;
+                3)
+                    echo ""
+                    echo "  🧹 Limpiando Docker..."
+                    docker system prune -af 2>/dev/null || echo "  ⚠️ Docker no disponible"
+                    echo "  ✅ Docker limpiado"
+                    ;;
+                4)
+                    echo ""
+                    echo "  🧹 Limpiando TODO..."
+                    echo ""
+                    echo "  → Logs antiguos..."
+                    sudo journalctl --vacuum-time=3d
+                    echo ""
+                    echo "  → Caché apt..."
+                    sudo apt-get clean
+                    sudo apt-get autoremove -y
+                    echo ""
+                    echo "  → Docker..."
+                    docker system prune -af 2>/dev/null || echo "  ⚠️ Docker no disponible"
+                    echo ""
+                    echo "  ✅ Limpieza completa"
+                    ;;
+                *)
+                    echo "  ❌ Cancelado"
+                    ;;
+            esac
+            
+            # Mostrar espacio después de limpiar
+            if [ "$CLEAN_OPT" != "0" ] && [ -n "$CLEAN_OPT" ]; then
+                echo ""
+                echo "  📊 ESPACIO DESPUÉS DE LIMPIAR"
+                echo "  ─────────────────────────────────────────────"
+                df -h / | awk 'NR==1 {print "  " $0} NR==2 {print "  " $0}'
+            fi
+            
             volver_menu
             ;;
         *)
