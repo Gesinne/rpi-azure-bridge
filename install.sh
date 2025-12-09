@@ -569,9 +569,10 @@ except:
             echo "  4) Instalar/Actualizar RPI Connect"
             echo "  5) Configurar encoding UTF-8 (acentos)"
             echo "  6) Ver/Editar settings.js de Node-RED"
+            echo "  7) Configurar contextStorage (persistir variables)"
             echo "  0) Nada, salir"
             echo ""
-            read -p "  Opción [0-6]: " MODIFY
+            read -p "  Opción [0-7]: " MODIFY
             
             if [ "$MODIFY" = "2" ]; then
                 # Modificar maxQueue en flows.json
@@ -897,6 +898,12 @@ EOFUTF8
                         echo "    ❌ httpNodeMiddleware (UTF-8): NO configurado - puede dar problemas con acentos"
                     fi
                     
+                    if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
+                        echo "    ✅ contextStorage: Configurado (variables persisten)"
+                    else
+                        echo "    ❌ contextStorage: NO configurado - variables se pierden al reiniciar"
+                    fi
+                    
                     echo ""
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
@@ -935,6 +942,88 @@ EOFUTF8
                             fi
                             ;;
                     esac
+                fi
+            fi
+            
+            if [ "$MODIFY" = "7" ]; then
+                # Configurar contextStorage
+                echo ""
+                
+                SETTINGS_FILE=""
+                for sf in /home/*/.node-red/settings.js; do
+                    if [ -f "$sf" ]; then
+                        SETTINGS_FILE="$sf"
+                        break
+                    fi
+                done
+                
+                if [ -z "$SETTINGS_FILE" ]; then
+                    echo "  ❌ No se encontró settings.js"
+                else
+                    if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
+                        echo "  ✅ contextStorage ya está configurado"
+                    else
+                        echo "  🔧 Configurando contextStorage..."
+                        
+                        # Añadir contextStorage
+                        python3 << EOFCONTEXT
+import re
+
+with open('$SETTINGS_FILE', 'r') as f:
+    content = f.read()
+
+# Configuración de contextStorage
+context_code = '''
+    contextStorage: {
+        default: {
+            module: "memory"
+        },
+        file: {
+            module: "localfilesystem"
+        }
+    },'''
+
+# Buscar si hay contextStorage comentado y reemplazar
+pattern_commented = r'//\s*contextStorage:\s*\{'
+if re.search(pattern_commented, content):
+    # Hay uno comentado, mejor añadir uno nuevo
+    pattern = r'(module\.exports\s*=\s*\{)'
+    replacement = r'\1' + context_code
+    new_content = re.sub(pattern, replacement, content, count=1)
+else:
+    # Añadir después de module.exports = {
+    pattern = r'(module\.exports\s*=\s*\{)'
+    replacement = r'\1' + context_code
+    new_content = re.sub(pattern, replacement, content, count=1)
+
+if new_content != content:
+    with open('$SETTINGS_FILE', 'w') as f:
+        f.write(new_content)
+    print("OK")
+else:
+    print("NO_MATCH")
+EOFCONTEXT
+                        
+                        if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
+                            echo "  ✅ contextStorage configurado"
+                            echo ""
+                            echo "  🔄 Reiniciando Node-RED..."
+                            sudo systemctl restart nodered
+                            sleep 3
+                            echo "  ✅ Node-RED reiniciado"
+                            echo ""
+                            echo "  ℹ️  Ahora las variables de contexto se guardan en disco"
+                            echo "     y persisten después de reiniciar Node-RED"
+                        else
+                            echo "  ⚠️  No se pudo configurar automáticamente"
+                            echo ""
+                            echo "  → Añade manualmente en settings.js:"
+                            echo '     contextStorage: {'
+                            echo '         default: { module: "memory" },'
+                            echo '         file: { module: "localfilesystem" }'
+                            echo '     },'
+                        fi
+                    fi
                 fi
             fi
             
