@@ -541,6 +541,24 @@ except:
             fi
             echo ""
             
+            # Mostrar encoding actual
+            SETTINGS_FILE=""
+            for sf in /home/*/.node-red/settings.js; do
+                if [ -f "$sf" ]; then
+                    SETTINGS_FILE="$sf"
+                    break
+                fi
+            done
+            
+            if [ -n "$SETTINGS_FILE" ]; then
+                if grep -q "httpNodeMiddleware" "$SETTINGS_FILE"; then
+                    echo "  🔤 Encoding UTF-8: ✅ Configurado"
+                else
+                    echo "  🔤 Encoding UTF-8: ⚠️ No configurado (puede dar problemas con acentos)"
+                fi
+            fi
+            echo ""
+            
             # Preguntar si quiere modificar configuración
             echo "  ¿Qué quieres modificar?"
             echo ""
@@ -548,9 +566,11 @@ except:
             echo "  2) Cola máxima guaranteed-delivery (maxQueue)"
             echo "  3) Actualizar Node-RED"
             echo "  4) Instalar/Actualizar RPI Connect"
+            echo "  5) Configurar encoding UTF-8 (acentos)"
+            echo "  6) Ver/Editar settings.js de Node-RED"
             echo "  0) Nada, salir"
             echo ""
-            read -p "  Opción [0-4]: " MODIFY
+            read -p "  Opción [0-6]: " MODIFY
             
             if [ "$MODIFY" = "2" ]; then
                 # Modificar maxQueue en flows.json
@@ -763,6 +783,141 @@ with open('$CONFIG_FILE', 'w') as f:
                     fi
                 else
                     echo "  🟢 RPI Connect ya está vinculado"
+                fi
+            fi
+            
+            if [ "$MODIFY" = "5" ]; then
+                # Configurar encoding UTF-8
+                echo ""
+                
+                SETTINGS_FILE=""
+                for sf in /home/*/.node-red/settings.js; do
+                    if [ -f "$sf" ]; then
+                        SETTINGS_FILE="$sf"
+                        break
+                    fi
+                done
+                
+                if [ -z "$SETTINGS_FILE" ]; then
+                    echo "  ❌ No se encontró settings.js"
+                else
+                    if grep -q "httpNodeMiddleware" "$SETTINGS_FILE"; then
+                        echo "  ✅ El encoding UTF-8 ya está configurado"
+                    else
+                        echo "  🔧 Configurando encoding UTF-8..."
+                        
+                        # Añadir httpNodeMiddleware para UTF-8
+                        python3 << EOFUTF8
+import re
+
+with open('$SETTINGS_FILE', 'r') as f:
+    content = f.read()
+
+# Buscar module.exports = { y añadir httpNodeMiddleware después
+middleware_code = '''
+    httpNodeMiddleware: function(req,res,next) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        next();
+    },'''
+
+pattern = r'(module\.exports\s*=\s*\{)'
+replacement = r'\1' + middleware_code
+
+new_content = re.sub(pattern, replacement, content, count=1)
+
+if new_content != content:
+    with open('$SETTINGS_FILE', 'w') as f:
+        f.write(new_content)
+    print("OK")
+else:
+    print("NO_MATCH")
+EOFUTF8
+                        
+                        if grep -q "httpNodeMiddleware" "$SETTINGS_FILE"; then
+                            echo "  ✅ Encoding UTF-8 configurado"
+                            echo ""
+                            echo "  🔄 Reiniciando Node-RED..."
+                            sudo systemctl restart nodered
+                            sleep 3
+                            echo "  ✅ Node-RED reiniciado"
+                        else
+                            echo "  ⚠️  No se pudo configurar automáticamente"
+                            echo ""
+                            echo "  → Añade manualmente en settings.js:"
+                            echo '     httpNodeMiddleware: function(req,res,next) {'
+                            echo "         res.setHeader('Content-Type', 'text/html; charset=utf-8');"
+                            echo '         next();'
+                            echo '     },'
+                        fi
+                    fi
+                fi
+            fi
+            
+            if [ "$MODIFY" = "6" ]; then
+                # Ver/Editar settings.js
+                echo ""
+                
+                SETTINGS_FILE=""
+                for sf in /home/*/.node-red/settings.js; do
+                    if [ -f "$sf" ]; then
+                        SETTINGS_FILE="$sf"
+                        break
+                    fi
+                done
+                
+                if [ -z "$SETTINGS_FILE" ]; then
+                    echo "  ❌ No se encontró settings.js"
+                else
+                    echo "  📄 Archivo: $SETTINGS_FILE"
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Configuraciones activas (no comentadas):"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    
+                    # Mostrar líneas importantes no comentadas
+                    grep -E "^\s*(uiPort|httpStatic|httpNodeMiddleware|adminAuth|httpRoot|userDir|flowFile|credentialSecret)" "$SETTINGS_FILE" 2>/dev/null | while read line; do
+                        echo "  $line"
+                    done
+                    
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  1) Ver archivo completo"
+                    echo "  2) Editar con nano"
+                    echo "  0) Volver"
+                    echo ""
+                    read -p "  Opción [0-2]: " SETTINGS_OPT
+                    
+                    case $SETTINGS_OPT in
+                        1)
+                            echo ""
+                            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                            echo "  Contenido de settings.js"
+                            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                            echo ""
+                            cat -n "$SETTINGS_FILE" | head -100
+                            echo ""
+                            echo "  ... (mostrando primeras 100 líneas)"
+                            echo ""
+                            read -p "  Presiona ENTER para continuar..."
+                            ;;
+                        2)
+                            echo ""
+                            echo "  ⚠️  Cuidado al editar. Guarda con Ctrl+O, sal con Ctrl+X"
+                            echo ""
+                            read -p "  Presiona ENTER para abrir nano..."
+                            sudo nano "$SETTINGS_FILE"
+                            echo ""
+                            read -p "  ¿Reiniciar Node-RED para aplicar cambios? [S/n]: " RESTART_NR
+                            if [ "$RESTART_NR" != "n" ] && [ "$RESTART_NR" != "N" ]; then
+                                echo "  🔄 Reiniciando Node-RED..."
+                                sudo systemctl restart nodered
+                                sleep 3
+                                echo "  ✅ Node-RED reiniciado"
+                            fi
+                            ;;
+                    esac
                 fi
             fi
             
