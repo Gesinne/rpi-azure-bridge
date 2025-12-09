@@ -164,9 +164,41 @@ for NODERED_DIR in /home/*/.node-red; do
         if [ -d "$USER_HOME_DIR/Logo" ] && [ -f "$SETTINGS_FILE" ]; then
             if ! grep -q "httpStatic" "$SETTINGS_FILE"; then
                 echo "  ⚠️  Falta httpStatic en settings.js, configurando..."
-                sed -i "/module.exports\s*=\s*{/a\\    httpStatic: '$USER_HOME_DIR/Logo/'," "$SETTINGS_FILE"
-                echo "  ✅ httpStatic configurado en settings.js"
-                NEED_RESTART=true
+                
+                # Intentar varios patrones para insertar httpStatic
+                if grep -q "module.exports" "$SETTINGS_FILE"; then
+                    # Usar python para modificar de forma segura
+                    python3 << EOFPYTHON
+import re
+
+with open('$SETTINGS_FILE', 'r') as f:
+    content = f.read()
+
+# Buscar module.exports = { y añadir httpStatic después
+pattern = r'(module\.exports\s*=\s*\{)'
+replacement = r"\1\n    httpStatic: '$USER_HOME_DIR/Logo/',"
+
+new_content = re.sub(pattern, replacement, content, count=1)
+
+if new_content != content:
+    with open('$SETTINGS_FILE', 'w') as f:
+        f.write(new_content)
+    print("OK")
+else:
+    print("NO_MATCH")
+EOFPYTHON
+                    
+                    if grep -q "httpStatic" "$SETTINGS_FILE"; then
+                        echo "  ✅ httpStatic configurado en settings.js"
+                        NEED_RESTART=true
+                    else
+                        echo "  ⚠️  No se pudo configurar automáticamente"
+                        echo "  → Añade manualmente en settings.js:"
+                        echo "     httpStatic: '$USER_HOME_DIR/Logo/',"
+                    fi
+                else
+                    echo "  ⚠️  settings.js no tiene formato esperado"
+                fi
             fi
         fi
         
