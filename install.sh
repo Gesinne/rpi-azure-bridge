@@ -2682,24 +2682,47 @@ EOFLOGROTATE
             
             # Listar nodos node-red instalados con versiones
             if [ -d "$MODULES_DIR" ]; then
-                cd "$MODULES_DIR"
+                cd "$NODERED_DIR"
                 
-                # Buscar paquetes node-red
-                NODES_INFO=$(find . -maxdepth 2 -name "package.json" 2>/dev/null | while read pkg; do
-                    DIR=$(dirname "$pkg")
-                    NAME=$(python3 -c "import json; print(json.load(open('$pkg')).get('name', ''))" 2>/dev/null)
-                    VERSION=$(python3 -c "import json; print(json.load(open('$pkg')).get('version', '?'))" 2>/dev/null)
-                    if echo "$NAME" | grep -qE "^(node-red|@flowfuse|@node-red)"; then
-                        echo "$NAME|$VERSION"
-                    fi
-                done | sort)
+                # Usar npm ls para obtener los nodos instalados (solo dependencias directas)
+                echo "  Cargando lista de nodos..."
+                echo ""
+                
+                NODES_INFO=$(npm ls --depth=0 --json 2>/dev/null | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    deps = data.get('dependencies', {})
+    for name, info in sorted(deps.items()):
+        version = info.get('version', '?')
+        # Mostrar solo nodos de Node-RED (excluir dependencias internas)
+        if 'node-red' in name or name.startswith('@') or name in ['guaranteed-delivery', 'modbus-serial']:
+            print(f'{name}|{version}')
+except:
+    pass
+" 2>/dev/null)
                 
                 if [ -n "$NODES_INFO" ]; then
                     echo "$NODES_INFO" | while IFS='|' read NAME VERSION; do
                         printf "  %-45s %s\n" "$NAME" "v$VERSION"
                     done
                 else
-                    echo "  No se encontraron nodos node-red"
+                    # Fallback: buscar en package.json del directorio
+                    if [ -f "$NODERED_DIR/package.json" ]; then
+                        python3 -c "
+import json
+try:
+    with open('$NODERED_DIR/package.json') as f:
+        data = json.load(f)
+    deps = data.get('dependencies', {})
+    for name, version in sorted(deps.items()):
+        print(f'  {name:<45} {version}')
+except:
+    print('  No se encontraron nodos')
+" 2>/dev/null
+                    else
+                        echo "  No se encontraron nodos"
+                    fi
                 fi
                 
                 cd - > /dev/null
