@@ -573,7 +573,7 @@ except:
             echo ""
             echo "  1) Configuración equipo (serie, potencia, tramos)"
             echo "  2) Cola máxima guaranteed-delivery (maxQueue)"
-            echo "  3) Actualizar Node-RED"
+            echo "  3) Actualizar Core Node-RED"
             echo "  4) Instalar/Actualizar RPI Connect"
             echo "  5) Configurar encoding UTF-8 (acentos)"
             echo "  6) Ver/Editar settings.js de Node-RED"
