@@ -2768,14 +2768,61 @@ except:
                     echo ""
                     read -p "  Nombre del nodo a actualizar: " NODE_NAME
                     if [ -n "$NODE_NAME" ]; then
-                        echo ""
-                        echo "  🔄 Actualizando $NODE_NAME..."
                         cd "$NODERED_DIR"
+                        
+                        # Mostrar versión actual
+                        CURRENT_VER=$(npm ls "$NODE_NAME" --depth=0 2>/dev/null | grep "$NODE_NAME" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+                        echo ""
+                        echo "  📦 Versión actual: ${CURRENT_VER:-desconocida}"
+                        
+                        # Obtener versiones disponibles
+                        echo "  🔍 Buscando versiones disponibles..."
+                        VERSIONS=$(npm view "$NODE_NAME" versions --json 2>/dev/null | python3 -c "
+import json, sys
+try:
+    versions = json.load(sys.stdin)
+    if isinstance(versions, list):
+        # Mostrar últimas 10 versiones
+        for v in versions[-10:]:
+            print(v)
+    else:
+        print(versions)
+except:
+    pass
+" 2>/dev/null)
+                        
+                        if [ -n "$VERSIONS" ]; then
+                            echo ""
+                            echo "  Últimas versiones disponibles:"
+                            echo "$VERSIONS" | while read v; do
+                                if [ "$v" = "$CURRENT_VER" ]; then
+                                    echo "    - $v (actual)"
+                                else
+                                    echo "    - $v"
+                                fi
+                            done
+                            LATEST_VER=$(echo "$VERSIONS" | tail -1)
+                            echo ""
+                            read -p "  Versión a instalar [$LATEST_VER]: " TARGET_VER
+                            TARGET_VER="${TARGET_VER:-$LATEST_VER}"
+                        else
+                            echo "  ⚠️  No se pudieron obtener versiones"
+                            read -p "  Versión a instalar (o ENTER para última): " TARGET_VER
+                        fi
+                        
+                        echo ""
+                        if [ -n "$TARGET_VER" ]; then
+                            echo "  🔄 Instalando $NODE_NAME@$TARGET_VER..."
+                            INSTALL_PKG="$NODE_NAME@$TARGET_VER"
+                        else
+                            echo "  🔄 Actualizando $NODE_NAME a última versión..."
+                            INSTALL_PKG="$NODE_NAME@latest"
+                        fi
                         
                         sudo systemctl stop nodered
                         sleep 2
                         
-                        npm update "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
+                        npm install "$INSTALL_PKG" 2>&1 | while read line; do echo "  $line"; done
                         
                         sudo systemctl start nodered
                         sleep 3
