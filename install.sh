@@ -558,6 +558,14 @@ except:
                     echo "  🔤 Encoding UTF-8: ⚠️ No configurado (puede dar problemas con acentos)"
                 fi
             fi
+            
+            # Mostrar locale del sistema
+            CURRENT_LOCALE=$(cat /etc/default/locale 2>/dev/null | grep "^LANG=" | cut -d= -f2)
+            if echo "$CURRENT_LOCALE" | grep -q "UTF-8"; then
+                echo "  🌍 Locale sistema: ✅ $CURRENT_LOCALE"
+            else
+                echo "  🌍 Locale sistema: ⚠️ ${CURRENT_LOCALE:-no configurado} (debería ser UTF-8)"
+            fi
             echo ""
             
             # Preguntar si quiere modificar configuración
@@ -570,9 +578,10 @@ except:
             echo "  5) Configurar encoding UTF-8 (acentos)"
             echo "  6) Ver/Editar settings.js de Node-RED"
             echo "  7) Configurar contextStorage (persistir variables)"
+            echo "  8) Configurar locale español UTF-8 (sistema)"
             echo "  0) Nada, salir"
             echo ""
-            read -p "  Opción [0-7]: " MODIFY
+            read -p "  Opción [0-8]: " MODIFY
             
             if [ "$MODIFY" = "2" ]; then
                 # Modificar maxQueue en flows.json
@@ -1023,6 +1032,48 @@ EOFCONTEXT
                             echo '         file: { module: "localfilesystem" }'
                             echo '     },'
                         fi
+                    fi
+                fi
+            fi
+            
+            if [ "$MODIFY" = "8" ]; then
+                # Configurar locale español UTF-8
+                echo ""
+                
+                CURRENT_LOCALE=$(cat /etc/default/locale 2>/dev/null | grep "^LANG=" | cut -d= -f2)
+                
+                if echo "$CURRENT_LOCALE" | grep -q "es_ES.UTF-8"; then
+                    echo "  ✅ El locale ya está configurado como es_ES.UTF-8"
+                else
+                    echo "  🔧 Configurando locale español UTF-8..."
+                    echo ""
+                    
+                    # Generar locale si no existe
+                    if ! locale -a 2>/dev/null | grep -q "es_ES.utf8"; then
+                        echo "  → Generando locale es_ES.UTF-8..."
+                        sudo locale-gen es_ES.UTF-8 2>/dev/null || true
+                    fi
+                    
+                    # Configurar locale
+                    echo "  → Configurando como predeterminado..."
+                    sudo bash -c 'echo "LANG=es_ES.UTF-8
+LC_ALL=es_ES.UTF-8
+LANGUAGE=es_ES.UTF-8" > /etc/default/locale'
+                    
+                    echo ""
+                    echo "  ✅ Locale configurado como es_ES.UTF-8"
+                    echo ""
+                    echo "  ⚠️  Es necesario REINICIAR para aplicar los cambios"
+                    echo ""
+                    read -p "  ¿Reiniciar ahora? [S/n]: " DO_REBOOT
+                    if [ "$DO_REBOOT" != "n" ] && [ "$DO_REBOOT" != "N" ]; then
+                        echo ""
+                        echo "  🔄 Reiniciando en 3 segundos..."
+                        sleep 3
+                        sudo reboot
+                    else
+                        echo ""
+                        echo "  ℹ️  Recuerda reiniciar manualmente: sudo reboot"
                     fi
                 fi
             fi
