@@ -2685,11 +2685,22 @@ EOFLOGROTATE
                 cd "$NODERED_DIR"
                 
                 # Usar npm ls para obtener los nodos instalados (solo dependencias directas)
-                echo "  Cargando lista de nodos..."
+                echo "  Cargando lista de nodos y comprobando actualizaciones..."
                 echo ""
                 
-                NODES_INFO=$(npm ls --depth=0 --json 2>/dev/null | python3 -c "
+                # Obtener nodos instalados y comprobar actualizaciones con npm outdated
+                npm outdated --json 2>/dev/null > /tmp/npm_outdated_$$.json || echo "{}" > /tmp/npm_outdated_$$.json
+                
+                npm ls --depth=0 --json 2>/dev/null | python3 -c "
 import json, sys
+
+# Cargar nodos desactualizados
+try:
+    with open('/tmp/npm_outdated_$$.json') as f:
+        outdated = json.load(f)
+except:
+    outdated = {}
+
 try:
     data = json.load(sys.stdin)
     deps = data.get('dependencies', {})
@@ -2697,33 +2708,16 @@ try:
         version = info.get('version', '?')
         # Mostrar solo nodos de Node-RED (excluir dependencias internas)
         if 'node-red' in name or name.startswith('@') or name in ['guaranteed-delivery', 'modbus-serial']:
-            print(f'{name}|{version}')
-except:
+            if name in outdated:
+                latest = outdated[name].get('latest', '?')
+                print(f'  {name:<42} v{version:<10} → v{latest} ⬆️')
+            else:
+                print(f'  {name:<42} v{version:<10} ✅')
+except Exception as e:
     pass
-" 2>/dev/null)
-                
-                if [ -n "$NODES_INFO" ]; then
-                    echo "$NODES_INFO" | while IFS='|' read NAME VERSION; do
-                        printf "  %-45s %s\n" "$NAME" "v$VERSION"
-                    done
-                else
-                    # Fallback: buscar en package.json del directorio
-                    if [ -f "$NODERED_DIR/package.json" ]; then
-                        python3 -c "
-import json
-try:
-    with open('$NODERED_DIR/package.json') as f:
-        data = json.load(f)
-    deps = data.get('dependencies', {})
-    for name, version in sorted(deps.items()):
-        print(f'  {name:<45} {version}')
-except:
-    print('  No se encontraron nodos')
 " 2>/dev/null
-                    else
-                        echo "  No se encontraron nodos"
-                    fi
-                fi
+                
+                rm -f /tmp/npm_outdated_$$.json
                 
                 cd - > /dev/null
             else
