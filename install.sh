@@ -162,23 +162,27 @@ for NODERED_DIR in /home/*/.node-red; do
         
         # Si existe Logo pero no está configurado httpStatic
         if [ -d "$USER_HOME_DIR/Logo" ] && [ -f "$SETTINGS_FILE" ]; then
-            if ! grep -q "httpStatic" "$SETTINGS_FILE"; then
+            # Comprobar si httpStatic está activo (no comentado)
+            if ! grep -E "^\s*httpStatic:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
                 echo "  ⚠️  Falta httpStatic en settings.js, configurando..."
                 
-                # Intentar varios patrones para insertar httpStatic
-                if grep -q "module.exports" "$SETTINGS_FILE"; then
-                    # Usar python para modificar de forma segura
-                    python3 << EOFPYTHON
+                # Usar python para modificar de forma segura
+                python3 << EOFPYTHON
 import re
 
 with open('$SETTINGS_FILE', 'r') as f:
     content = f.read()
 
-# Buscar module.exports = { y añadir httpStatic después
-pattern = r'(module\.exports\s*=\s*\{)'
-replacement = r"\1\n    httpStatic: '$USER_HOME_DIR/Logo/',"
-
-new_content = re.sub(pattern, replacement, content, count=1)
+# Primero intentar descomentar y modificar httpStatic existente
+# Buscar //httpStatic: ... y reemplazar
+pattern_commented = r'//\s*httpStatic:\s*[\'"][^\'"]*[\'"]'
+if re.search(pattern_commented, content):
+    new_content = re.sub(pattern_commented, "httpStatic: '$USER_HOME_DIR/Logo/'", content, count=1)
+else:
+    # Si no existe, añadir después de module.exports = {
+    pattern = r'(module\.exports\s*=\s*\{)'
+    replacement = r"\1\n    httpStatic: '$USER_HOME_DIR/Logo/',"
+    new_content = re.sub(pattern, replacement, content, count=1)
 
 if new_content != content:
     with open('$SETTINGS_FILE', 'w') as f:
@@ -188,16 +192,13 @@ else:
     print("NO_MATCH")
 EOFPYTHON
                     
-                    if grep -q "httpStatic" "$SETTINGS_FILE"; then
-                        echo "  ✅ httpStatic configurado en settings.js"
-                        NEED_RESTART=true
-                    else
-                        echo "  ⚠️  No se pudo configurar automáticamente"
-                        echo "  → Añade manualmente en settings.js:"
-                        echo "     httpStatic: '$USER_HOME_DIR/Logo/',"
-                    fi
+                if grep -E "^\s*httpStatic:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
+                    echo "  ✅ httpStatic configurado en settings.js"
+                    NEED_RESTART=true
                 else
-                    echo "  ⚠️  settings.js no tiene formato esperado"
+                    echo "  ⚠️  No se pudo configurar automáticamente"
+                    echo "  → Añade manualmente en settings.js:"
+                    echo "     httpStatic: '$USER_HOME_DIR/Logo/',"
                 fi
             fi
         fi
@@ -875,10 +876,26 @@ EOFUTF8
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
                     
-                    # Mostrar líneas importantes no comentadas
-                    grep -E "^\s*(uiPort|httpStatic|httpNodeMiddleware|adminAuth|httpRoot|userDir|flowFile|credentialSecret)" "$SETTINGS_FILE" 2>/dev/null | while read line; do
-                        echo "  $line"
+                    # Mostrar líneas importantes (activas y comentadas)
+                    echo "  Activas:"
+                    grep -E "^\s*(uiPort|httpStatic|httpNodeMiddleware|adminAuth|httpRoot|userDir|flowFile|credentialSecret)" "$SETTINGS_FILE" 2>/dev/null | grep -v "^\s*//" | head -10 | while read line; do
+                        echo "    ✅ $line"
                     done
+                    
+                    # Mostrar si falta httpStatic o httpNodeMiddleware
+                    echo ""
+                    echo "  Estado de configuraciones importantes:"
+                    if grep -E "^\s*httpStatic:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
+                        echo "    ✅ httpStatic (Logo): Configurado"
+                    else
+                        echo "    ❌ httpStatic (Logo): NO configurado"
+                    fi
+                    
+                    if grep -q "httpNodeMiddleware" "$SETTINGS_FILE" && ! grep "httpNodeMiddleware" "$SETTINGS_FILE" | head -1 | grep -q "^\s*//"; then
+                        echo "    ✅ httpNodeMiddleware (UTF-8): Configurado"
+                    else
+                        echo "    ❌ httpNodeMiddleware (UTF-8): NO configurado - puede dar problemas con acentos"
+                    fi
                     
                     echo ""
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
