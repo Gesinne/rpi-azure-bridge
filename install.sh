@@ -323,6 +323,21 @@ try:
     print(f\"  🔧 Serie: {data.get('serie', '?')}\")
     print(f\"  ⚡ Potencia: {data.get('potencia', '?')} kW\")
     print(f\"  🔌 Imax: {data.get('Imax', '?')} A\")
+    # Mostrar tramos
+    t1 = data.get('tramo1', 0)
+    t2 = data.get('tramo2', 0)
+    t3 = data.get('tramo3', 0)
+    t4 = data.get('tramo4', 0)
+    print(f\"  📊 Tramos: T1={t1} T2={t2} T3={t3} T4={t4}\")
+    # Mostrar valor guardado
+    vg = data.get('valorguardado', None)
+    if vg is not None:
+        print(f\"  💾 Valor guardado: {vg}\")
+    # Mostrar cualquier otro campo adicional
+    campos_base = {'serie', 'potencia', 'Imax', 'tramo1', 'tramo2', 'tramo3', 'tramo4', 'valorguardado'}
+    otros = {k: v for k, v in data.items() if k not in campos_base}
+    for k, v in otros.items():
+        print(f\"  📌 {k}: {v}\")
 except:
     pass
 " 2>/dev/null
@@ -648,15 +663,54 @@ EOFMAXQUEUE
             fi
             
             if [ "$MODIFY" = "1" ]; then
-                # Si no existe el archivo, crearlo
+                # Si no existe el archivo, crearlo pidiendo los valores
                 if [ -z "$CONFIG_FILE" ] || [ ! -f "$CONFIG_FILE" ]; then
                     echo ""
                     echo "  ⚠️  No existe equipo_config.json, se creará uno nuevo"
+                    echo ""
+                    echo "  Por favor, introduce los datos del equipo:"
+                    echo ""
+                    
                     CONFIG_DIR="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-gesinne})/config"
                     CONFIG_FILE="$CONFIG_DIR/equipo_config.json"
                     mkdir -p "$CONFIG_DIR"
-                    echo '{"serie": "", "potencia": 0, "Imax": 0, "tramo1": 0, "tramo2": 0, "tramo3": 0, "tramo4": 0}' > "$CONFIG_FILE"
+                    
+                    read -p "  Serie: " NEW_SERIE
+                    read -p "  Potencia (kW): " NEW_POTENCIA
+                    read -p "  Imax (A): " NEW_IMAX
+                    read -p "  Tramo 1: " NEW_T1
+                    read -p "  Tramo 2: " NEW_T2
+                    read -p "  Tramo 3: " NEW_T3
+                    read -p "  Tramo 4: " NEW_T4
+                    read -p "  Valor guardado: " NEW_VG
+                    
+                    # Guardar configuración inicial
+                    python3 -c "
+import json
+data = {
+    'serie': '$NEW_SERIE',
+    'potencia': int('$NEW_POTENCIA') if '$NEW_POTENCIA' else 0,
+    'Imax': int('$NEW_IMAX') if '$NEW_IMAX' else 0,
+    'tramo1': int('$NEW_T1') if '$NEW_T1' else 0,
+    'tramo2': int('$NEW_T2') if '$NEW_T2' else 0,
+    'tramo3': int('$NEW_T3') if '$NEW_T3' else 0,
+    'tramo4': int('$NEW_T4') if '$NEW_T4' else 0,
+    'valorguardado': int('$NEW_VG') if '$NEW_VG' else 0
+}
+with open('$CONFIG_FILE', 'w') as f:
+    json.dump(data, f, indent=4)
+" 2>/dev/null
+                    
+                    echo ""
                     echo "  ✅ Archivo creado: $CONFIG_FILE"
+                    echo "  ✅ Configuración guardada"
+                    echo ""
+                    echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                    sudo systemctl restart nodered
+                    sleep 2
+                    echo "  ✅ Node-RED reiniciado"
+                    volver_menu
+                    continue
                 fi
                 
                 # Leer valores actuales
@@ -667,6 +721,7 @@ EOFMAXQUEUE
                 CURRENT_T2=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('tramo2', 0))" 2>/dev/null)
                 CURRENT_T3=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('tramo3', 0))" 2>/dev/null)
                 CURRENT_T4=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('tramo4', 0))" 2>/dev/null)
+                CURRENT_VG=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('valorguardado', 0))" 2>/dev/null)
                 
                 echo ""
                 read -p "  Serie [$CURRENT_SERIE]: " NEW_SERIE
@@ -676,6 +731,7 @@ EOFMAXQUEUE
                 read -p "  Tramo 2 [$CURRENT_T2]: " NEW_T2
                 read -p "  Tramo 3 [$CURRENT_T3]: " NEW_T3
                 read -p "  Tramo 4 [$CURRENT_T4]: " NEW_T4
+                read -p "  Valor guardado [$CURRENT_VG]: " NEW_VG
                 
                 # Usar valores actuales si no se introducen nuevos
                 NEW_SERIE="${NEW_SERIE:-$CURRENT_SERIE}"
@@ -685,6 +741,7 @@ EOFMAXQUEUE
                 NEW_T2="${NEW_T2:-$CURRENT_T2}"
                 NEW_T3="${NEW_T3:-$CURRENT_T3}"
                 NEW_T4="${NEW_T4:-$CURRENT_T4}"
+                NEW_VG="${NEW_VG:-$CURRENT_VG}"
                 
                 # Guardar nueva configuración
                 python3 -c "
@@ -696,7 +753,8 @@ data = {
     'tramo1': int('$NEW_T1') if '$NEW_T1' else 0,
     'tramo2': int('$NEW_T2') if '$NEW_T2' else 0,
     'tramo3': int('$NEW_T3') if '$NEW_T3' else 0,
-    'tramo4': int('$NEW_T4') if '$NEW_T4' else 0
+    'tramo4': int('$NEW_T4') if '$NEW_T4' else 0,
+    'valorguardado': int('$NEW_VG') if '$NEW_VG' else 0
 }
 with open('$CONFIG_FILE', 'w') as f:
     json.dump(data, f, indent=4)
