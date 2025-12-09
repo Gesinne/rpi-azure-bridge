@@ -55,7 +55,6 @@ fi
 set -e
 cd "$INSTALL_DIR"
 
-clear
 echo ""
 echo "  ╔══════════════════════════════════════════════╗"
 echo "  ║                                              ║"
