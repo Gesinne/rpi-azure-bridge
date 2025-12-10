@@ -509,28 +509,6 @@ except Exception as e:
             
             show_nodered_config
             echo ""
-            cd "$INSTALL_DIR" 2>/dev/null
-            if docker-compose ps 2>/dev/null | grep -q "Up"; then
-                echo "  [+] Bridge Docker: Corriendo"
-            else
-                echo "  [-] Bridge Docker: Parado"
-            fi
-            echo ""
-            echo "  [i] Healthcheck:"
-            curl -s http://localhost:8080/health 2>/dev/null | python3 -c "
-import sys, json
-try:
-    d = json.load(sys.stdin)
-    azure = '[+]' if d.get('azure_connected') else '[-]'
-    mqtt = '[+]' if d.get('mqtt_connected') else '[-]'
-    print(f'  {azure} Azure IoT Hub')
-    print(f'  {mqtt} MQTT Local')
-    print(f'  [#] Mensajes enviados: {d.get(\"messages_sent\", 0)}')
-    print(f'  [D] Buffer offline: {d.get(\"offline_buffer_size\", 0)}')
-except:
-    print('  [!]  No disponible')
-" 2>/dev/null
-            echo ""
             
             # Mostrar versiones de Node-RED y RPI Connect
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
