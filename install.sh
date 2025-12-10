@@ -1229,6 +1229,11 @@ except:
                             NEW_LON="-3.7038"
                             NEW_TZ="Europe/Madrid"
                             
+                            echo ""
+                            echo "  [~] Parando Node-RED..."
+                            sudo systemctl stop nodered
+                            sleep 2
+                            
                             python3 -c "
 import json
 with open('$FLOWS_FILE', 'r') as f:
@@ -1242,13 +1247,12 @@ with open('$FLOWS_FILE', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
                             
-                            echo ""
                             echo "  [OK] Chronos configurado automáticamente"
                             echo ""
-                            echo "  [~] Reiniciando Node-RED..."
-                            sudo systemctl restart nodered
+                            echo "  [~] Iniciando Node-RED..."
+                            sudo systemctl start nodered
                             sleep 3
-                            echo "  [OK] Node-RED reiniciado"
+                            echo "  [OK] Node-RED iniciado"
                             continue
                         fi
                     fi
@@ -1282,6 +1286,11 @@ with open('$FLOWS_FILE', 'w') as f:
                     NEW_LAT="${NEW_LAT:-$CURRENT_LAT}"
                     NEW_LON="${NEW_LON:-$CURRENT_LON}"
                     
+                    echo ""
+                    echo "  [~] Parando Node-RED..."
+                    sudo systemctl stop nodered
+                    sleep 2
+                    
                     python3 -c "
 import json
 with open('$FLOWS_FILE', 'r') as f:
@@ -1295,16 +1304,15 @@ with open('$FLOWS_FILE', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
                     
-                    echo ""
                     echo "  [OK] Chronos configurado:"
                     echo "    Latitud:  $NEW_LAT"
                     echo "    Longitud: $NEW_LON"
                     echo "    Zona:     $NEW_TZ"
                     echo ""
-                    echo "  [~] Reiniciando Node-RED..."
-                    sudo systemctl restart nodered
+                    echo "  [~] Iniciando Node-RED..."
+                    sudo systemctl start nodered
                     sleep 3
-                    echo "  [OK] Node-RED reiniciado"
+                    echo "  [OK] Node-RED iniciado"
                 else
                     echo "  [X] No se encontró flows.json"
                 fi
