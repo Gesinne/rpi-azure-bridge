@@ -1649,23 +1649,8 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                     fi
                 fi
                 
-                echo ""
-                echo "  [~] Reiniciando Node-RED..."
-                sudo systemctl restart nodered
-                sleep 5
-                echo "  [OK] Node-RED reiniciado"
-                
-                # Reiniciar kiosko si existe
-                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
-                    echo ""
-                    echo "  [~] Reiniciando modo kiosko..."
-                    sudo systemctl restart kiosk.service
-                    sleep 2
-                    echo "  [OK] Kiosko reiniciado"
-                fi
-                
                 # Configurar chronos-config con valores por defecto si está vacío o inválido
-                python3 -c "
+                CHRONOS_CONFIGURED=$(python3 -c "
 import json
 changed = False
 with open('$NODERED_DIR/flows.json', 'r') as f:
@@ -1699,7 +1684,26 @@ if changed:
     with open('$NODERED_DIR/flows.json', 'w') as f:
         json.dump(flows, f, indent=4)
     print('configured')
-" 2>/dev/null | grep -q "configured" && echo "  [T] Chronos: configurado con valores por defecto (Europe/Madrid)"
+" 2>/dev/null)
+                
+                if [ "$CHRONOS_CONFIGURED" = "configured" ]; then
+                    echo "  [T] Chronos: configurado con valores por defecto (Europe/Madrid)"
+                fi
+                
+                echo ""
+                echo "  [~] Reiniciando Node-RED..."
+                sudo systemctl restart nodered
+                sleep 5
+                echo "  [OK] Node-RED reiniciado"
+                
+                # Reiniciar kiosko si existe
+                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                    echo ""
+                    echo "  [~] Reiniciando modo kiosko..."
+                    sudo systemctl restart kiosk.service
+                    sleep 2
+                    echo "  [OK] Kiosko reiniciado"
+                fi
             else
                 echo "  [X] Error: El archivo no es JSON válido"
                 exit 1
