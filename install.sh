@@ -1428,7 +1428,7 @@ except:
             cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
             echo "  💾 Backup creado: $BACKUP_FILE"
             
-            # Guardar configuración MQTT y maxQueue actual antes de sobrescribir
+            # Guardar configuración MQTT, maxQueue y chronos actual antes de sobrescribir
             PRESERVED_CONFIG=$(python3 -c "
 import json
 try:
@@ -1444,6 +1444,13 @@ try:
             }
         if node.get('type') == 'guaranteed-delivery':
             config['maxQueue'] = node.get('maxQueue', 500000)
+        if node.get('type') == 'chronos-config':
+            config['chronos'] = {
+                'name': node.get('name', 'Por defecto'),
+                'latitude': node.get('latitude', ''),
+                'longitude': node.get('longitude', ''),
+                'timezone': node.get('timezone', 'Europe/Madrid')
+            }
     print(json.dumps(config))
 except:
     pass
@@ -1453,7 +1460,7 @@ except:
             if python3 -c "import json; json.load(open('$FLOW_FILE'))" 2>/dev/null; then
                 cp "$FLOW_FILE" "$NODERED_DIR/flows.json"
                 
-                # Restaurar configuración MQTT y maxQueue si existía
+                # Restaurar configuración MQTT, maxQueue y chronos si existía
                 if [ -n "$PRESERVED_CONFIG" ]; then
                     python3 -c "
 import json
@@ -1467,11 +1474,16 @@ for node in flows:
         node['usetls'] = config['mqtt']['usetls']
     if node.get('type') == 'guaranteed-delivery' and 'maxQueue' in config:
         node['maxQueue'] = config['maxQueue']
+    if node.get('type') == 'chronos-config' and 'chronos' in config:
+        node['name'] = config['chronos']['name']
+        node['latitude'] = config['chronos']['latitude']
+        node['longitude'] = config['chronos']['longitude']
+        node['timezone'] = config['chronos']['timezone']
 with open('$NODERED_DIR/flows.json', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
                     echo "  ✅ Flow instalado: $VERSION_NAME"
-                    echo "  🔗 Configuración preservada: MQTT + maxQueue=${PRESERVED_CONFIG}"
+                    echo "  🔗 Configuración preservada: MQTT + maxQueue + chronos"
                 else
                     echo "  ✅ Flow instalado: $VERSION_NAME"
                 fi
@@ -1510,6 +1522,78 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                     sudo systemctl restart kiosk.service
                     sleep 2
                     echo "  ✅ Kiosko reiniciado"
+                fi
+                
+                # Verificar si chronos-config necesita configuración
+                CHRONOS_EMPTY=$(python3 -c "
+import json
+try:
+    with open('$NODERED_DIR/flows.json', 'r') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'chronos-config':
+            tz = node.get('timezone', '')
+            lat = node.get('latitude', '')
+            if not tz or not lat:
+                print('yes')
+                break
+except:
+    pass
+" 2>/dev/null)
+                
+                if [ "$CHRONOS_EMPTY" = "yes" ]; then
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  ⚠️  Configurar Chronos (zona horaria)"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  El nodo chronos-config no está configurado."
+                    echo ""
+                    read -p "  ¿Configurar ahora? [S/n]: " CONFIGURE_CHRONOS
+                    
+                    if [ "$CONFIGURE_CHRONOS" != "n" ] && [ "$CONFIGURE_CHRONOS" != "N" ]; then
+                        echo ""
+                        read -p "  Latitud [40.4168]: " CHRONOS_LAT
+                        read -p "  Longitud [-3.7038]: " CHRONOS_LON
+                        echo ""
+                        echo "  Zonas horarias comunes:"
+                        echo "    1) Europe/Madrid"
+                        echo "    2) Europe/London"
+                        echo "    3) America/Mexico_City"
+                        echo "    4) Otra (escribir)"
+                        echo ""
+                        read -p "  Zona horaria [1]: " TZ_CHOICE
+                        
+                        case "$TZ_CHOICE" in
+                            2) CHRONOS_TZ="Europe/London" ;;
+                            3) CHRONOS_TZ="America/Mexico_City" ;;
+                            4) read -p "  Escribe zona horaria: " CHRONOS_TZ ;;
+                            *) CHRONOS_TZ="Europe/Madrid" ;;
+                        esac
+                        
+                        CHRONOS_LAT="${CHRONOS_LAT:-40.4168}"
+                        CHRONOS_LON="${CHRONOS_LON:--3.7038}"
+                        
+                        python3 -c "
+import json
+with open('$NODERED_DIR/flows.json', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'chronos-config':
+        node['latitude'] = '$CHRONOS_LAT'
+        node['longitude'] = '$CHRONOS_LON'
+        node['timezone'] = '$CHRONOS_TZ'
+with open('$NODERED_DIR/flows.json', 'w') as f:
+    json.dump(flows, f, indent=4)
+" 2>/dev/null
+                        
+                        echo "  ✅ Chronos configurado: $CHRONOS_TZ ($CHRONOS_LAT, $CHRONOS_LON)"
+                        echo ""
+                        echo "  🔄 Reiniciando Node-RED..."
+                        sudo systemctl restart nodered
+                        sleep 3
+                        echo "  ✅ Node-RED reiniciado"
+                    fi
                 fi
             else
                 echo "  ❌ Error: El archivo no es JSON válido"
