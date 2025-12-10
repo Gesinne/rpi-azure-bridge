@@ -299,6 +299,7 @@ while true; do
             break
             ;;
         4)
+            while true; do
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Estado actual"
@@ -620,9 +621,14 @@ except:
             echo "  7) Configurar contextStorage (persistir variables)"
             echo "  8) Configurar locale español UTF-8 (sistema)"
             echo "  9) Configurar Chronos (zona horaria)"
-            echo "  0) Nada, salir"
+            echo "  0) Volver al menú principal"
             echo ""
             read -p "  Opción [0-9]: " MODIFY
+            
+            # Salir al menú principal si se pulsa 0 o Enter
+            if [ -z "$MODIFY" ] || [ "$MODIFY" = "0" ]; then
+                break
+            fi
             
             if [ "$MODIFY" = "2" ]; then
                 # Modificar maxQueue en flows.json
@@ -1262,6 +1268,7 @@ with open('$FLOWS_FILE', 'w') as f:
                 fi
             fi
             
+            done
             volver_menu
             ;;
         2)
