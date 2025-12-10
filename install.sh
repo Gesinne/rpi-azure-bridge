@@ -1827,6 +1827,11 @@ if changed:
                     echo "  [T] Chronos: configurado con valores por defecto (Europe/Madrid)"
                 fi
                 
+                echo ""
+                echo "  [~] Parando Node-RED..."
+                sudo systemctl stop nodered
+                sleep 2
+                
                 # Crear credenciales para chronos si no existen o están vacías
                 if [ ! -f "$NODERED_DIR/flows_cred.json" ] || [ ! -s "$NODERED_DIR/flows_cred.json" ]; then
                     CHRONOS_CREDS=$(python3 -c "
@@ -1849,19 +1854,14 @@ for node in flows:
                         crear_chronos_credentials "$NODERED_DIR" "$CHRONOS_ID" "$CHRONOS_LAT" "$CHRONOS_LON"
                         echo "  [OK] Credenciales chronos creadas"
                     fi
+                else
+                    echo "  [i] Credenciales chronos: ya existen"
                 fi
                 
-                echo ""
-                echo "  [~] Parando Node-RED..."
-                sudo systemctl stop nodered
-                sleep 2
                 echo "  [~] Iniciando Node-RED..."
                 sudo systemctl start nodered
                 sleep 5
                 echo "  [OK] Node-RED reiniciado"
-                echo ""
-                echo "  [~] Aplicando cambios vía API..."
-                deploy_nodered "$NODERED_DIR/flows.json"
                 
                 # Reiniciar/iniciar kiosko si existe
                 if systemctl list-unit-files kiosk.service &>/dev/null; then
