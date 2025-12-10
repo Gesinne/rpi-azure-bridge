@@ -613,7 +613,7 @@ except:
             echo "  5) Configurar encoding UTF-8 (acentos)"
             echo "  6) Ver/Editar settings.js de Node-RED"
             echo "  7) Configurar contextStorage (persistir variables)"
-            echo "  8) Configurar locale español UTF-8 (sistema)"
+            echo "  8) Configurar locale UTF-8 (sistema)"
             echo "  9) Configurar Chronos (zona horaria)"
             echo "  0) Volver al menú principal"
             echo ""
@@ -1121,31 +1121,52 @@ EOFCONTEXT
             fi
             
             if [ "$MODIFY" = "8" ]; then
-                # Configurar locale español UTF-8
+                # Configurar locale UTF-8
+                echo ""
+                echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "  Configurar locale UTF-8 (sistema)"
+                echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 echo ""
                 
                 CURRENT_LOCALE=$(cat /etc/default/locale 2>/dev/null | grep "^LANG=" | cut -d= -f2)
+                echo "  Locale actual: ${CURRENT_LOCALE:-no configurado}"
+                echo ""
+                echo "  Selecciona locale:"
+                echo "    1) en_GB.UTF-8 (Inglés UK - recomendado)"
+                echo "    2) es_ES.UTF-8 (Español España)"
+                echo "    0) Cancelar"
+                echo ""
+                read -p "  Opción [1]: " LOCALE_CHOICE
                 
-                if echo "$CURRENT_LOCALE" | grep -q "es_ES.UTF-8"; then
-                    echo "  [OK] El locale ya está configurado como es_ES.UTF-8"
+                case "$LOCALE_CHOICE" in
+                    2) NEW_LOCALE="es_ES.UTF-8" ;;
+                    0) continue ;;
+                    *) NEW_LOCALE="en_GB.UTF-8" ;;
+                esac
+                
+                if [ "$CURRENT_LOCALE" = "$NEW_LOCALE" ]; then
+                    echo ""
+                    echo "  [OK] El locale ya está configurado como $NEW_LOCALE"
                 else
-                    echo "  [*] Configurando locale español UTF-8..."
+                    echo ""
+                    echo "  [*] Configurando locale $NEW_LOCALE..."
                     echo ""
                     
                     # Generar locale si no existe
-                    if ! locale -a 2>/dev/null | grep -q "es_ES.utf8"; then
-                        echo "  → Generando locale es_ES.UTF-8..."
-                        sudo locale-gen es_ES.UTF-8 2>/dev/null || true
+                    LOCALE_SHORT=$(echo "$NEW_LOCALE" | sed 's/UTF-8/utf8/' | tr '[:upper:]' '[:lower:]')
+                    if ! locale -a 2>/dev/null | grep -qi "${LOCALE_SHORT}"; then
+                        echo "  → Generando locale $NEW_LOCALE..."
+                        sudo locale-gen "$NEW_LOCALE" 2>/dev/null || true
                     fi
                     
                     # Configurar locale
                     echo "  → Configurando como predeterminado..."
-                    sudo bash -c 'echo "LANG=es_ES.UTF-8
-LC_ALL=es_ES.UTF-8
-LANGUAGE=es_ES.UTF-8" > /etc/default/locale'
+                    sudo bash -c "echo \"LANG=$NEW_LOCALE
+LC_ALL=$NEW_LOCALE
+LANGUAGE=$NEW_LOCALE\" > /etc/default/locale"
                     
                     echo ""
-                    echo "  [OK] Locale configurado como es_ES.UTF-8"
+                    echo "  [OK] Locale configurado como $NEW_LOCALE"
                     echo ""
                     echo "  [!]  Es necesario REINICIAR para aplicar los cambios"
                     echo ""
