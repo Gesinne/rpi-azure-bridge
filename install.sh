@@ -534,9 +534,6 @@ except:
     print('  ⚠️  No disponible')
 " 2>/dev/null
             echo ""
-            echo "  📋 Últimos logs:"
-            docker-compose logs --tail=5 2>/dev/null | grep -E "✅|❌|📤|⚠️|Conectado" | tail -5
-            echo ""
             
             # Mostrar versiones de Node-RED y RPI Connect
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
