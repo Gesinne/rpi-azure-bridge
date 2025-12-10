@@ -137,6 +137,39 @@ reiniciar_nodered() {
     fi
 }
 
+# Función para crear credenciales de chronos-config
+crear_chronos_credentials() {
+    NODERED_DIR="$1"
+    CHRONOS_ID="$2"
+    LAT="$3"
+    LON="$4"
+    CRED_SECRET="Gesinne20."
+    
+    cd "$NODERED_DIR"
+    node -e "
+const crypto = require('crypto');
+
+const credentials = {
+    '$CHRONOS_ID': {
+        latitude: '$LAT',
+        longitude: '$LON'
+    }
+};
+
+const key = crypto.createHash('sha256').update('$CRED_SECRET').digest();
+const iv = crypto.randomBytes(16);
+const cipher = crypto.createCipheriv('aes-256-ctr', key, iv);
+
+let encrypted = cipher.update(JSON.stringify(credentials), 'utf8', 'base64');
+encrypted += cipher.final('base64');
+
+const result = {};
+result['\$'] = iv.toString('hex') + encrypted;
+
+console.log(JSON.stringify(result, null, 4));
+" > flows_cred.json 2>/dev/null
+}
+
 # Función para hacer deploy vía API de Node-RED (fuerza recarga de flows)
 deploy_nodered() {
     FLOWS_FILE="$1"
@@ -1303,12 +1336,14 @@ with open('$FLOWS_FILE', 'w') as f:
                     sudo systemctl stop nodered
                     sleep 2
                     
-                    python3 -c "
+                    CHRONOS_ID=$(python3 -c "
 import json
 with open('$FLOWS_FILE', 'r') as f:
     flows = json.load(f)
+chronos_id = None
 for node in flows:
     if node.get('type') == 'chronos-config':
+        chronos_id = node.get('id')
         node['latitude'] = '$NEW_LAT'
         node['longitude'] = '$NEW_LON'
         node['timezone'] = '$NEW_TZ'
@@ -1317,20 +1352,27 @@ for node in flows:
         node['timezoneType'] = 'str'
 with open('$FLOWS_FILE', 'w') as f:
     json.dump(flows, f, indent=4)
-" 2>/dev/null
+if chronos_id:
+    print(chronos_id)
+" 2>/dev/null)
                     
                     echo "  [OK] Chronos configurado:"
                     echo "    Latitud:  $NEW_LAT"
                     echo "    Longitud: $NEW_LON"
                     echo "    Zona:     $NEW_TZ"
+                    
+                    # Crear credenciales para chronos
+                    if [ -n "$CHRONOS_ID" ]; then
+                        NODERED_DIR=$(dirname "$FLOWS_FILE")
+                        crear_chronos_credentials "$NODERED_DIR" "$CHRONOS_ID" "$NEW_LAT" "$NEW_LON"
+                        echo "  [OK] Credenciales chronos creadas"
+                    fi
+                    
                     echo ""
                     echo "  [~] Iniciando Node-RED..."
                     sudo systemctl start nodered
                     sleep 5
                     echo "  [OK] Node-RED iniciado"
-                    echo ""
-                    echo "  [~] Aplicando cambios vía API..."
-                    deploy_nodered "$FLOWS_FILE"
                     
                     # Reiniciar kiosko si existe
                     if systemctl list-unit-files kiosk.service &>/dev/null; then
@@ -1783,6 +1825,30 @@ if changed:
                 
                 if [ "$CHRONOS_CONFIGURED" = "configured" ]; then
                     echo "  [T] Chronos: configurado con valores por defecto (Europe/Madrid)"
+                fi
+                
+                # Crear credenciales para chronos si no existen o están vacías
+                if [ ! -f "$NODERED_DIR/flows_cred.json" ] || [ ! -s "$NODERED_DIR/flows_cred.json" ]; then
+                    CHRONOS_CREDS=$(python3 -c "
+import json
+with open('$NODERED_DIR/flows.json', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'chronos-config':
+        cid = node.get('id', '')
+        lat = node.get('latitude', '43.53099')
+        lon = node.get('longitude', '-5.71694')
+        print(f'{cid}|{lat}|{lon}')
+        break
+" 2>/dev/null)
+                    
+                    if [ -n "$CHRONOS_CREDS" ]; then
+                        CHRONOS_ID=$(echo "$CHRONOS_CREDS" | cut -d'|' -f1)
+                        CHRONOS_LAT=$(echo "$CHRONOS_CREDS" | cut -d'|' -f2)
+                        CHRONOS_LON=$(echo "$CHRONOS_CREDS" | cut -d'|' -f3)
+                        crear_chronos_credentials "$NODERED_DIR" "$CHRONOS_ID" "$CHRONOS_LAT" "$CHRONOS_LON"
+                        echo "  [OK] Credenciales chronos creadas"
+                    fi
                 fi
                 
                 echo ""
