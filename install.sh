@@ -1774,13 +1774,13 @@ if changed:
                 sleep 5
                 echo "  [OK] Node-RED reiniciado"
                 
-                # Reiniciar kiosko si existe
-                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                # Reiniciar/iniciar kiosko si existe
+                if systemctl list-unit-files kiosk.service &>/dev/null; then
                     echo ""
-                    echo "  [~] Reiniciando modo kiosko..."
+                    echo "  [~] Iniciando modo kiosko..."
                     sudo systemctl restart kiosk.service
                     sleep 2
-                    echo "  [OK] Kiosko reiniciado"
+                    echo "  [OK] Kiosko iniciado"
                 fi
             else
                 echo "  [X] Error: El archivo no es JSON válido"
