@@ -408,13 +408,10 @@ try:
         flows = json.load(f)
     for node in flows:
         if node.get('type') == 'chronos-config':
-            tz = node.get('timezone', '')
-            lat = node.get('latitude', '')
-            lon = node.get('longitude', '')
-            if tz and lat:
-                print(f'  🕐 Chronos: {tz} ({lat}, {lon})')
-            else:
-                print(f'  🕐 Chronos: ⚠️  No configurado')
+            tz = node.get('timezone', '') or 'Europe/Madrid'
+            lat = node.get('latitude', '') or '40.4168'
+            lon = node.get('longitude', '') or '-3.7038'
+            print(f'  🕐 Chronos: {tz} ({lat}, {lon})')
             break
 except:
     pass
@@ -1654,77 +1651,28 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                     echo "  ✅ Kiosko reiniciado"
                 fi
                 
-                # Verificar si chronos-config necesita configuración
-                CHRONOS_EMPTY=$(python3 -c "
+                # Configurar chronos-config con valores por defecto si está vacío
+                python3 -c "
 import json
-try:
-    with open('$NODERED_DIR/flows.json', 'r') as f:
-        flows = json.load(f)
-    for node in flows:
-        if node.get('type') == 'chronos-config':
-            tz = node.get('timezone', '')
-            lat = node.get('latitude', '')
-            if not tz or not lat:
-                print('yes')
-                break
-except:
-    pass
-" 2>/dev/null)
-                
-                if [ "$CHRONOS_EMPTY" = "yes" ]; then
-                    echo ""
-                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "  ⚠️  Configurar Chronos (zona horaria)"
-                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo ""
-                    echo "  El nodo chronos-config no está configurado."
-                    echo ""
-                    read -p "  ¿Configurar ahora? [S/n]: " CONFIGURE_CHRONOS
-                    
-                    if [ "$CONFIGURE_CHRONOS" != "n" ] && [ "$CONFIGURE_CHRONOS" != "N" ]; then
-                        echo ""
-                        read -p "  Latitud [40.4168]: " CHRONOS_LAT
-                        read -p "  Longitud [-3.7038]: " CHRONOS_LON
-                        echo ""
-                        echo "  Zonas horarias comunes:"
-                        echo "    1) Europe/Madrid"
-                        echo "    2) Europe/London"
-                        echo "    3) America/Mexico_City"
-                        echo "    4) Otra (escribir)"
-                        echo ""
-                        read -p "  Zona horaria [1]: " TZ_CHOICE
-                        
-                        case "$TZ_CHOICE" in
-                            2) CHRONOS_TZ="Europe/London" ;;
-                            3) CHRONOS_TZ="America/Mexico_City" ;;
-                            4) read -p "  Escribe zona horaria: " CHRONOS_TZ ;;
-                            *) CHRONOS_TZ="Europe/Madrid" ;;
-                        esac
-                        
-                        CHRONOS_LAT="${CHRONOS_LAT:-40.4168}"
-                        CHRONOS_LON="${CHRONOS_LON:--3.7038}"
-                        
-                        python3 -c "
-import json
+changed = False
 with open('$NODERED_DIR/flows.json', 'r') as f:
     flows = json.load(f)
 for node in flows:
     if node.get('type') == 'chronos-config':
-        node['latitude'] = '$CHRONOS_LAT'
-        node['longitude'] = '$CHRONOS_LON'
-        node['timezone'] = '$CHRONOS_TZ'
-with open('$NODERED_DIR/flows.json', 'w') as f:
-    json.dump(flows, f, indent=4)
-" 2>/dev/null
-                        
-                        echo "  ✅ Chronos configurado: $CHRONOS_TZ ($CHRONOS_LAT, $CHRONOS_LON)"
-                        echo ""
-                        echo "  🔄 Reiniciando Node-RED..."
-                        sudo systemctl restart nodered
-                        sleep 3
-                        echo "  ✅ Node-RED reiniciado"
-                    fi
-                fi
+        if not node.get('timezone'):
+            node['timezone'] = 'Europe/Madrid'
+            changed = True
+        if not node.get('latitude'):
+            node['latitude'] = '40.4168'
+            changed = True
+        if not node.get('longitude'):
+            node['longitude'] = '-3.7038'
+            changed = True
+if changed:
+    with open('$NODERED_DIR/flows.json', 'w') as f:
+        json.dump(flows, f, indent=4)
+    print('configured')
+" 2>/dev/null | grep -q "configured" && echo "  🕐 Chronos: configurado con valores por defecto (Europe/Madrid)"
             else
                 echo "  ❌ Error: El archivo no es JSON válido"
                 exit 1
