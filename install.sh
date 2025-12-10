@@ -1801,9 +1801,28 @@ try:
     print(f\"  Tramo 2:   {data.get('tramo2', '?')}\")
     print(f\"  Tramo 3:   {data.get('tramo3', '?')}\")
     print(f\"  Tramo 4:   {data.get('tramo4', '?')}\")
+    vg = data.get('valorguardado', 0)
+    print(f\"  Valor guardado: {vg}\")
 except Exception as e:
     print(f'  Error leyendo config: {e}')
 " 2>/dev/null
+                
+                # Mostrar chronos-config
+                python3 -c "
+import json, glob
+for f in glob.glob('/home/*/.node-red/flows.json'):
+    with open(f) as fl:
+        flows = json.load(fl)
+    for node in flows:
+        if node.get('type') == 'chronos-config':
+            lat = node.get('latitude', '?')
+            lon = node.get('longitude', '?')
+            tz = node.get('timezone', '?')
+            print(f'  Chronos:   {tz} ({lat}, {lon})')
+            break
+    break
+" 2>/dev/null
+                
                 echo ""
                 read -p "  ¿Modificar configuración? [s/N]: " MODIFY_CONFIG
                 
