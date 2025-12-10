@@ -619,9 +619,10 @@ except:
             echo "  6) Ver/Editar settings.js de Node-RED"
             echo "  7) Configurar contextStorage (persistir variables)"
             echo "  8) Configurar locale español UTF-8 (sistema)"
+            echo "  9) Configurar Chronos (zona horaria)"
             echo "  0) Nada, salir"
             echo ""
-            read -p "  Opción [0-8]: " MODIFY
+            read -p "  Opción [0-9]: " MODIFY
             
             if [ "$MODIFY" = "2" ]; then
                 # Modificar maxQueue en flows.json
@@ -1158,6 +1159,106 @@ LANGUAGE=es_ES.UTF-8" > /etc/default/locale'
                         echo ""
                         echo "  ℹ️  Recuerda reiniciar manualmente: sudo reboot"
                     fi
+                fi
+            fi
+            
+            if [ "$MODIFY" = "9" ]; then
+                # Configurar Chronos (zona horaria)
+                echo ""
+                echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "  Configurar Chronos (zona horaria)"
+                echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                
+                FLOWS_FILE=""
+                for f in /home/*/.node-red/flows.json; do
+                    if [ -f "$f" ]; then
+                        FLOWS_FILE="$f"
+                        break
+                    fi
+                done
+                
+                if [ -n "$FLOWS_FILE" ]; then
+                    # Obtener valores actuales
+                    CURRENT_CHRONOS=$(python3 -c "
+import json
+try:
+    with open('$FLOWS_FILE') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'chronos-config':
+            tz = node.get('timezone', '')
+            lat = node.get('latitude', '')
+            lon = node.get('longitude', '')
+            print(f'{lat}|{lon}|{tz}')
+            break
+except:
+    pass
+" 2>/dev/null)
+                    
+                    CURRENT_LAT=$(echo "$CURRENT_CHRONOS" | cut -d'|' -f1)
+                    CURRENT_LON=$(echo "$CURRENT_CHRONOS" | cut -d'|' -f2)
+                    CURRENT_TZ=$(echo "$CURRENT_CHRONOS" | cut -d'|' -f3)
+                    
+                    # Valores por defecto si están vacíos
+                    CURRENT_LAT="${CURRENT_LAT:-40.4168}"
+                    CURRENT_LON="${CURRENT_LON:--3.7038}"
+                    CURRENT_TZ="${CURRENT_TZ:-Europe/Madrid}"
+                    
+                    echo "  Configuración actual:"
+                    echo "    Latitud:  $CURRENT_LAT"
+                    echo "    Longitud: $CURRENT_LON"
+                    echo "    Zona:     $CURRENT_TZ"
+                    echo ""
+                    
+                    read -p "  Latitud [$CURRENT_LAT]: " NEW_LAT
+                    read -p "  Longitud [$CURRENT_LON]: " NEW_LON
+                    echo ""
+                    echo "  Zonas horarias comunes:"
+                    echo "    1) Europe/Madrid"
+                    echo "    2) Europe/London"
+                    echo "    3) Atlantic/Canary"
+                    echo "    4) America/Mexico_City"
+                    echo "    5) Otra (escribir)"
+                    echo ""
+                    read -p "  Zona horaria [1]: " TZ_CHOICE
+                    
+                    case "$TZ_CHOICE" in
+                        2) NEW_TZ="Europe/London" ;;
+                        3) NEW_TZ="Atlantic/Canary" ;;
+                        4) NEW_TZ="America/Mexico_City" ;;
+                        5) read -p "  Escribe zona horaria: " NEW_TZ ;;
+                        *) NEW_TZ="Europe/Madrid" ;;
+                    esac
+                    
+                    NEW_LAT="${NEW_LAT:-$CURRENT_LAT}"
+                    NEW_LON="${NEW_LON:-$CURRENT_LON}"
+                    
+                    python3 -c "
+import json
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'chronos-config':
+        node['latitude'] = '$NEW_LAT'
+        node['longitude'] = '$NEW_LON'
+        node['timezone'] = '$NEW_TZ'
+with open('$FLOWS_FILE', 'w') as f:
+    json.dump(flows, f, indent=4)
+" 2>/dev/null
+                    
+                    echo ""
+                    echo "  ✅ Chronos configurado:"
+                    echo "    Latitud:  $NEW_LAT"
+                    echo "    Longitud: $NEW_LON"
+                    echo "    Zona:     $NEW_TZ"
+                    echo ""
+                    echo "  🔄 Reiniciando Node-RED..."
+                    sudo systemctl restart nodered
+                    sleep 3
+                    echo "  ✅ Node-RED reiniciado"
+                else
+                    echo "  ❌ No se encontró flows.json"
                 fi
             fi
             
