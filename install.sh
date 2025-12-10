@@ -96,7 +96,7 @@ try:
         if node.get('type') == 'mqtt-broker':
             broker = node.get('broker', '?')
             port = node.get('port', '?')
-            tls = '🔒 SSL' if node.get('usetls') else '🔓 Sin SSL'
+            tls = '[SSL] SSL' if node.get('usetls') else '[noSSL] Sin SSL'
             print(f'{broker}:{port} {tls}')
             break
 except:
@@ -322,8 +322,8 @@ try:
     with open('$CONFIG_FILE') as f:
         data = json.load(f)
     print(f\"  [*] Serie: {data.get('serie', '?')}\")
-    print(f\"  ⚡ Potencia: {data.get('potencia', '?')} kW\")
-    print(f\"  🔌 Imax: {data.get('Imax', '?')} A\")
+    print(f\"  [W] Potencia: {data.get('potencia', '?')} kW\")
+    print(f\"  [I] Imax: {data.get('Imax', '?')} A\")
     # Mostrar tramos
     t1 = data.get('tramo1', 0)
     t2 = data.get('tramo2', 0)
