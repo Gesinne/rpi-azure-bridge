@@ -216,6 +216,63 @@ EOFPYTHON
     fi
 done
 
+# Verificar y reparar chronos-config si está vacío/inválido
+for NODERED_DIR in /home/*/.node-red; do
+    if [ -d "$NODERED_DIR" ] && [ -f "$NODERED_DIR/flows.json" ]; then
+        CHRONOS_NEEDS_FIX=$(python3 -c "
+import json
+try:
+    with open('$NODERED_DIR/flows.json', 'r') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'chronos-config':
+            lat = node.get('latitude', '')
+            lon = node.get('longitude', '')
+            tz = node.get('timezone', '')
+            latType = node.get('latitudeType', '')
+            lonType = node.get('longitudeType', '')
+            # Verificar si falta algún valor
+            if not lat or not lon or not tz or '/' not in str(tz):
+                print('fix')
+            elif latType != 'num' or lonType != 'num':
+                print('fix')
+            break
+except:
+    pass
+" 2>/dev/null)
+        
+        if [ "$CHRONOS_NEEDS_FIX" = "fix" ]; then
+            echo ""
+            echo "  [!] Chronos-config incompleto, reparando..."
+            sudo systemctl stop nodered 2>/dev/null
+            sleep 1
+            
+            python3 -c "
+import json
+with open('$NODERED_DIR/flows.json', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'chronos-config':
+        node['latitude'] = '43.53099'
+        node['longitude'] = '-5.71694'
+        node['timezone'] = 'Europe/Madrid'
+        node['latitudeType'] = 'num'
+        node['longitudeType'] = 'num'
+        node['timezoneType'] = 'str'
+with open('$NODERED_DIR/flows.json', 'w') as f:
+    json.dump(flows, f, indent=4)
+" 2>/dev/null
+            
+            sudo systemctl start nodered 2>/dev/null
+            sleep 2
+            echo "  [OK] Chronos-config reparado (Gijon: 43.53099, -5.71694)"
+            echo ""
+            read -p "  Presiona ENTER para continuar..."
+        fi
+        break
+    fi
+done
+
 # Bucle del menú principal
 while true; do
     clear
