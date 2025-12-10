@@ -121,6 +121,22 @@ volver_menu() {
     fi
 }
 
+# Función para reiniciar Node-RED y kiosko
+reiniciar_nodered() {
+    echo "  [~] Reiniciando Node-RED..."
+    sudo systemctl restart nodered 2>/dev/null
+    sleep 3
+    echo "  [OK] Node-RED reiniciado"
+    
+    # Iniciar kiosko si existe el servicio
+    if systemctl list-unit-files kiosk.service &>/dev/null; then
+        echo "  [~] Reiniciando kiosko..."
+        sudo systemctl restart kiosk.service 2>/dev/null
+        sleep 2
+        echo "  [OK] Kiosko reiniciado"
+    fi
+}
+
 # Verificar y reparar Logo + httpStatic si falta
 for NODERED_DIR in /home/*/.node-red; do
     if [ -d "$NODERED_DIR" ]; then
@@ -205,10 +221,7 @@ EOFPYTHON
         
         # Reiniciar Node-RED si hubo cambios
         if [ "$NEED_RESTART" = true ]; then
-            echo "  [~] Reiniciando Node-RED..."
-            sudo systemctl restart nodered 2>/dev/null
-            sleep 2
-            echo "  [OK] Node-RED reiniciado"
+            reiniciar_nodered
             echo ""
             read -p "  Presiona ENTER para continuar..."
         fi
@@ -658,10 +671,7 @@ EOFMAXQUEUE
                     echo ""
                     echo "  [OK] maxQueue actualizado a $NEW_MAXQUEUE"
                     echo ""
-                    echo "  [~] Reiniciando Node-RED para aplicar cambios..."
-                    sudo systemctl restart nodered
-                    sleep 2
-                    echo "  [OK] Node-RED reiniciado"
+                    reiniciar_nodered
                 fi
                 volver_menu
                 continue
@@ -710,10 +720,7 @@ with open('$CONFIG_FILE', 'w') as f:
                     echo "  [OK] Archivo creado: $CONFIG_FILE"
                     echo "  [OK] Configuración guardada"
                     echo ""
-                    echo "  [~] Reiniciando Node-RED para aplicar cambios..."
-                    sudo systemctl restart nodered
-                    sleep 2
-                    echo "  [OK] Node-RED reiniciado"
+                    reiniciar_nodered
                     volver_menu
                     continue
                 fi
@@ -768,19 +775,7 @@ with open('$CONFIG_FILE', 'w') as f:
                 echo ""
                 echo "  [OK] Configuración guardada"
                 echo ""
-                echo "  [~] Reiniciando Node-RED para aplicar cambios..."
-                sudo systemctl restart nodered
-                sleep 2
-                echo "  [OK] Node-RED reiniciado"
-                
-                # Reiniciar kiosko si existe
-                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
-                    echo ""
-                    echo "  [~] Reiniciando modo kiosko..."
-                    sudo systemctl restart kiosk.service
-                    sleep 2
-                    echo "  [OK] Kiosko reiniciado"
-                fi
+                reiniciar_nodered
             fi
             
             if [ "$MODIFY" = "3" ]; then
@@ -910,10 +905,7 @@ EOFUTF8
                         if grep -q "httpNodeMiddleware" "$SETTINGS_FILE"; then
                             echo "  [OK] Encoding UTF-8 configurado"
                             echo ""
-                            echo "  [~] Reiniciando Node-RED..."
-                            sudo systemctl restart nodered
-                            sleep 3
-                            echo "  [OK] Node-RED reiniciado"
+                            reiniciar_nodered
                         else
                             echo "  [!]  No se pudo configurar automáticamente"
                             echo ""
@@ -1007,10 +999,7 @@ EOFUTF8
                             echo ""
                             read -p "  ¿Reiniciar Node-RED para aplicar cambios? [S/n]: " RESTART_NR
                             if [ "$RESTART_NR" != "n" ] && [ "$RESTART_NR" != "N" ]; then
-                                echo "  [~] Reiniciando Node-RED..."
-                                sudo systemctl restart nodered
-                                sleep 3
-                                echo "  [OK] Node-RED reiniciado"
+                                reiniciar_nodered
                             fi
                             ;;
                     esac
@@ -1079,10 +1068,7 @@ EOFCONTEXT
                         if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
                             echo "  [OK] contextStorage configurado"
                             echo ""
-                            echo "  [~] Reiniciando Node-RED..."
-                            sudo systemctl restart nodered
-                            sleep 3
-                            echo "  [OK] Node-RED reiniciado"
+                            reiniciar_nodered
                             echo ""
                             echo "  [i]  Ahora las variables de contexto se guardan en disco"
                             echo "     y persisten después de reiniciar Node-RED"
@@ -1882,19 +1868,7 @@ with open('$CONFIG_FILE', 'w') as f:
                     echo ""
                     echo "  [OK] Configuración guardada"
                     echo ""
-                    echo "  [~] Reiniciando Node-RED para aplicar cambios..."
-                    sudo systemctl restart nodered
-                    sleep 2
-                    echo "  [OK] Node-RED reiniciado"
-                    
-                    # Reiniciar kiosko si existe
-                    if systemctl is-active --quiet kiosk.service 2>/dev/null; then
-                        echo ""
-                        echo "  [~] Reiniciando modo kiosko..."
-                        sudo systemctl restart kiosk.service
-                        sleep 2
-                        echo "  [OK] Kiosko reiniciado"
-                    fi
+                    reiniciar_nodered
                 fi
             else
                 echo "  [!]  No se encontró equipo_config.json"
@@ -1985,10 +1959,7 @@ EOFQUEUE
                 echo ""
                 echo "  [OK] maxQueue actualizado a $NEW_QUEUE"
                 echo ""
-                echo "  [~] Reiniciando Node-RED..."
-                sudo systemctl restart nodered
-                sleep 2
-                echo "  [OK] Node-RED reiniciado"
+                reiniciar_nodered
             fi
             
             volver_menu
@@ -2178,19 +2149,7 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                 echo "  [OK] Flow restaurado"
             fi
             echo ""
-            echo "  [~] Reiniciando Node-RED..."
-            sudo systemctl restart nodered
-            sleep 5
-            echo "  [OK] Node-RED reiniciado"
-            
-            # Reiniciar kiosko si existe
-            if systemctl is-active --quiet kiosk.service 2>/dev/null; then
-                echo ""
-                echo "  [~] Reiniciando modo kiosko..."
-                sudo systemctl restart kiosk.service
-                sleep 2
-                echo "  [OK] Kiosko reiniciado"
-            fi
+            reiniciar_nodered
             
             volver_menu
             ;;
@@ -3743,10 +3702,7 @@ with open(cred_file, 'w') as f:
     # Reiniciar Node-RED si hubo cambios
     if [ "$RESTART_NODERED" = "1" ]; then
         echo ""
-        echo "  [!]  Reiniciando Node-RED..."
-        systemctl restart nodered 2>/dev/null || node-red-restart 2>/dev/null || true
-        sleep 2
-        echo "  [OK] Node-RED reiniciado"
+        reiniciar_nodered
     fi
 fi
 
