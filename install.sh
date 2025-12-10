@@ -1316,9 +1316,22 @@ with open('$FLOWS_FILE', 'w') as f:
             
             # Función para clonar/actualizar repo
             clone_repo() {
+                # Preservar credenciales antes de borrar
+                local saved_creds=""
+                if [ -f "$CREDS_FILE" ]; then
+                    saved_creds=$(cat "$CREDS_FILE")
+                fi
+                
                 rm -rf "$CACHE_DIR"
                 sudo mkdir -p "$CACHE_DIR" 2>/dev/null
                 sudo chown $(whoami) "$CACHE_DIR" 2>/dev/null
+                
+                # Restaurar credenciales
+                if [ -n "$saved_creds" ]; then
+                    echo "$saved_creds" | sudo tee "$CREDS_FILE" > /dev/null
+                    sudo chmod 600 "$CREDS_FILE"
+                fi
+                
                 git clone -q --depth 1 "$NODERED_REPO" "$CACHE_DIR" 2>/dev/null
             }
             
