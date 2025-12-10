@@ -289,16 +289,15 @@ while true; do
     echo ""
     echo "  1) Modo de conexión (Azure IoT / Servidor Remoto)"
     echo "  2) Actualizar Flow Node-RED"
-    echo "  3) Restaurar Flow anterior (backup)"
-    echo "  4) Ver/Modificar configuración equipo"
-    echo "  5) Ver los 96 registros de la placa"
-    echo "  6) Descargar parámetros (enviar por EMAIL)"
-    echo "  7) Revisar espacio y logs"
-    echo "  8) Gestionar paleta Node-RED"
-    echo "  9) Verificar parametrización placas"
+    echo "  3) Ver/Modificar configuración equipo"
+    echo "  4) Ver los 96 registros de la placa"
+    echo "  5) Descargar parámetros (enviar por EMAIL)"
+    echo "  6) Revisar espacio y logs"
+    echo "  7) Gestionar paleta Node-RED"
+    echo "  8) Verificar parametrización placas"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-9]: " OPTION
+    read -p "  Opción [0-8]: " OPTION
 
     case $OPTION in
         0)
@@ -336,7 +335,7 @@ while true; do
             # Salir del bucle para ejecutar el código de Azure
             break
             ;;
-        4)
+        3)
             while true; do
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -2021,196 +2020,7 @@ EOFQUEUE
             
             volver_menu
             ;;
-        3)
-            echo ""
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Restaurar Flow anterior"
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            
-            # Buscar backups
-            NODERED_DIR=""
-            for d in /home/*/.node-red; do
-                if [ -d "$d" ]; then
-                    NODERED_DIR="$d"
-                    break
-                fi
-            done
-            
-            if [ -z "$NODERED_DIR" ]; then
-                echo "  [X] No se encontró directorio Node-RED"
-                exit 1
-            fi
-            
-            BACKUPS=$(ls -t "$NODERED_DIR"/flows.json.backup.* 2>/dev/null)
-            
-            if [ -z "$BACKUPS" ]; then
-                echo "  [X] No hay backups disponibles"
-                exit 1
-            fi
-            
-            echo "  Backups disponibles (más reciente primero):"
-            echo ""
-            
-            i=1
-            declare -a BACKUP_ARRAY
-            for b in $BACKUPS; do
-                BACKUP_NAME=$(basename "$b")
-                # Extraer fecha y versión del nombre
-                # Formato: flows.json.backup.YYYYMMDDHHMMSS o flows.json.backup.YYYYMMDDHHMMSS.version
-                BACKUP_DATE=$(echo "$BACKUP_NAME" | sed 's/flows.json.backup.//' | cut -d'.' -f1)
-                BACKUP_VERSION=$(echo "$BACKUP_NAME" | sed 's/flows.json.backup.//' | cut -d'.' -f2-)
-                FORMATTED_DATE=$(echo "$BACKUP_DATE" | sed 's/\([0-9]\{4\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)\([0-9]\{2\}\)/\1-\2-\3 \4:\5:\6/')
-                BACKUP_SIZE=$(du -h "$b" | cut -f1)
-                # Detectar tipo de dashboard del backup (por nombre o contenido)
-                if echo "$BACKUP_NAME" | grep -q "dbrd2"; then
-                    BACKUP_TYPE="[FlowFuse]"
-                elif grep -q '"type": "ui-' "$b" 2>/dev/null || grep -q '"type":"ui-' "$b" 2>/dev/null; then
-                    BACKUP_TYPE="[FlowFuse]"
-                elif grep -q '"type": "ui_' "$b" 2>/dev/null || grep -q '"type":"ui_' "$b" 2>/dev/null; then
-                    BACKUP_TYPE="[Clásico]"
-                else
-                    BACKUP_TYPE=""
-                fi
-                # Mostrar versión si existe
-                if [ -n "$BACKUP_VERSION" ] && [ "$BACKUP_VERSION" != "$BACKUP_DATE" ]; then
-                    echo "  $i) $FORMATTED_DATE - $BACKUP_VERSION $BACKUP_TYPE ($BACKUP_SIZE)"
-                else
-                    echo "  $i) $FORMATTED_DATE $BACKUP_TYPE ($BACKUP_SIZE)"
-                fi
-                BACKUP_ARRAY[$i]="$b"
-                i=$((i+1))
-                # Mostrar máximo 10
-                if [ $i -gt 10 ]; then
-                    break
-                fi
-            done
-            
-            echo ""
-            echo "  0) 🗑️  Borrar todos los backups"
-            echo ""
-            read -p "  Selecciona backup [0-$((i-1))]: " BACKUP_CHOICE
-            
-            # Opción borrar backups
-            if [ "$BACKUP_CHOICE" = "0" ]; then
-                echo ""
-                read -p "  [!]  ¿Seguro que quieres borrar TODOS los backups? [s/N]: " CONFIRM_DELETE
-                if [ "$CONFIRM_DELETE" = "s" ] || [ "$CONFIRM_DELETE" = "S" ]; then
-                    rm -f "$NODERED_DIR"/flows.json.backup.*
-                    echo "  [OK] Backups borrados"
-                else
-                    echo "  [X] Cancelado"
-                fi
-                volver_menu
-                continue
-            fi
-            
-            SELECTED_BACKUP="${BACKUP_ARRAY[$BACKUP_CHOICE]}"
-            
-            if [ -z "$SELECTED_BACKUP" ] || [ ! -f "$SELECTED_BACKUP" ]; then
-                echo "  [X] Opción no válida"
-                exit 1
-            fi
-            
-            echo ""
-            echo "  [v] Restaurando backup..."
-            
-            # Detectar si el backup necesita FlowFuse o Clásico
-            # FlowFuse usa nodos tipo "ui-button", "ui-chart" (con guión)
-            # Clásico usa nodos tipo "ui_button", "ui_chart" (con guión bajo)
-            NEEDS_FLOWFUSE="no"
-            if grep -q '"type":\s*"ui-' "$SELECTED_BACKUP" 2>/dev/null; then
-                NEEDS_FLOWFUSE="yes"
-            fi
-            
-            # Verificar dashboards instalados
-            NODERED_MODULES="$NODERED_DIR/node_modules"
-            HAS_FLOWFUSE=$([ -d "$NODERED_MODULES/@flowfuse/node-red-dashboard" ] && echo "yes" || echo "no")
-            HAS_CLASSIC=$([ -d "$NODERED_MODULES/node-red-dashboard" ] && echo "yes" || echo "no")
-            
-            # Resolver conflictos de dashboard
-            cd "$NODERED_DIR"
-            if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
-                if [ "$HAS_FLOWFUSE" = "no" ]; then
-                    echo "  [!]  Este backup requiere FlowFuse Dashboard"
-                    echo "  Instalando..."
-                    npm uninstall node-red-dashboard 2>/dev/null || true
-                    npm install @flowfuse/node-red-dashboard --save
-                    echo "  [OK] FlowFuse Dashboard instalado"
-                elif [ "$HAS_CLASSIC" = "yes" ]; then
-                    echo "  [!]  Limpiando conflicto de dashboards..."
-                    npm uninstall node-red-dashboard 2>/dev/null || true
-                    echo "  [OK] Conflicto resuelto"
-                fi
-            else
-                if [ "$HAS_CLASSIC" = "no" ]; then
-                    echo "  [!]  Este backup requiere Dashboard Clásico"
-                    echo "  Instalando..."
-                    npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
-                    npm install node-red-dashboard --save
-                    echo "  [OK] Dashboard Clásico instalado"
-                elif [ "$HAS_FLOWFUSE" = "yes" ]; then
-                    echo "  [!]  Limpiando conflicto de dashboards..."
-                    npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
-                    echo "  [OK] Conflicto resuelto"
-                fi
-            fi
-            
-            # Guardar configuración MQTT y maxQueue actual antes de restaurar
-            PRESERVED_CONFIG=$(python3 -c "
-import json
-try:
-    with open('$NODERED_DIR/flows.json', 'r') as f:
-        flows = json.load(f)
-    config = {}
-    for node in flows:
-        if node.get('type') == 'mqtt-broker':
-            config['mqtt'] = {
-                'broker': node.get('broker', 'localhost'),
-                'port': node.get('port', '1883'),
-                'usetls': node.get('usetls', False)
-            }
-        if node.get('type') == 'guaranteed-delivery':
-            config['maxQueue'] = node.get('maxQueue', 500000)
-    print(json.dumps(config))
-except:
-    pass
-" 2>/dev/null)
-            
-            # Hacer backup del actual antes de restaurar
-            cp "$NODERED_DIR/flows.json" "$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S)"
-            
-            # Restaurar
-            cp "$SELECTED_BACKUP" "$NODERED_DIR/flows.json"
-            
-            # Restaurar configuración MQTT y maxQueue si existía
-            if [ -n "$PRESERVED_CONFIG" ]; then
-                python3 -c "
-import json
-config = json.loads('$PRESERVED_CONFIG')
-with open('$NODERED_DIR/flows.json', 'r') as f:
-    flows = json.load(f)
-for node in flows:
-    if node.get('type') == 'mqtt-broker' and 'mqtt' in config:
-        node['broker'] = config['mqtt']['broker']
-        node['port'] = config['mqtt']['port']
-        node['usetls'] = config['mqtt']['usetls']
-    if node.get('type') == 'guaranteed-delivery' and 'maxQueue' in config:
-        node['maxQueue'] = config['maxQueue']
-with open('$NODERED_DIR/flows.json', 'w') as f:
-    json.dump(flows, f, indent=4)
-" 2>/dev/null
-                echo "  [OK] Flow restaurado"
-                echo "  [>] Configuración preservada: MQTT + maxQueue"
-            else
-                echo "  [OK] Flow restaurado"
-            fi
-            echo ""
-            reiniciar_nodered
-            
-            volver_menu
-            ;;
-        5)
+        4)
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Ver los 96 registros de la placa"
@@ -2797,7 +2607,7 @@ EOFTXT
             
             volver_menu
             ;;
-        6)
+        5)
             # Leer registros y enviar por email
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -3130,7 +2940,7 @@ EOFEMAIL
             echo "  [OK] Listo"
             volver_menu
             ;;
-        7)
+        6)
             # Revisar espacio y logs
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -3340,7 +3150,7 @@ EOFLOGROTATE
             
             volver_menu
             ;;
-        8)
+        7)
             # Gestionar paleta Node-RED
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -3567,7 +3377,7 @@ except:
             
             volver_menu
             ;;
-        9)
+        8)
             # Verificar parametrización de placas
             VERIF_SCRIPT="/tmp/gesinne-verificar.sh"
             curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/firmware.sh" -o "$VERIF_SCRIPT" 2>/dev/null
