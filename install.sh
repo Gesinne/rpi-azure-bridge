@@ -76,7 +76,7 @@ fi
 GIT_CREDS_FILE="/opt/nodered-flows-cache/.git_credentials"
 if [ ! -f "$GIT_CREDS_FILE" ]; then
     mkdir -p /opt/nodered-flows-cache 2>/dev/null
-    _GT=$(echo "Z2hwX0ZGTURJS1gxSTBLZ0RpdjZVWmZaZWdpWjh4bEE1UDBqYVJVRQ==" | base64 -d)
+    _GT=$(echo "Z2hwX0h1SnlnVEVwMVhWMmM3NWU4dmRrODVEdlhFNzNmOTBXNVV2aw==" | base64 -d)
     echo 'GIT_USER="Gesinne"' > "$GIT_CREDS_FILE"
     echo "GIT_TOKEN=\"$_GT\"" >> "$GIT_CREDS_FILE"
     chmod 600 "$GIT_CREDS_FILE"
