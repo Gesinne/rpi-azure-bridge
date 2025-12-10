@@ -258,10 +258,9 @@ while true; do
     echo "  6) Descargar parámetros (enviar por EMAIL)"
     echo "  7) Revisar espacio y logs"
     echo "  8) Gestionar paleta Node-RED"
-    echo "  9) Actualizar firmware placas [NO TOCAR-PRUEBAS]"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-9]: " OPTION
+    read -p "  Opción [0-8]: " OPTION
 
     case $OPTION in
         0)
@@ -3439,25 +3438,6 @@ except:
                     echo "  [X] Cancelado"
                     ;;
             esac
-            
-            volver_menu
-            ;;
-        9)
-            # Actualizar firmware placas
-            echo ""
-            echo "  [~] Iniciando actualizador de firmware..."
-            echo ""
-            
-            # Descargar script de firmware si no existe o actualizar
-            FIRMWARE_SCRIPT="/tmp/gesinne-firmware.sh"
-            curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/firmware.sh" -o "$FIRMWARE_SCRIPT" 2>/dev/null
-            
-            if [ -f "$FIRMWARE_SCRIPT" ]; then
-                chmod +x "$FIRMWARE_SCRIPT"
-                bash "$FIRMWARE_SCRIPT"
-            else
-                echo "  [X] Error descargando script de firmware"
-            fi
             
             volver_menu
             ;;
