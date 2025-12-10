@@ -410,8 +410,8 @@ try:
     for node in flows:
         if node.get('type') == 'chronos-config':
             tz = node.get('timezone', '') or 'Europe/Madrid'
-            lat = node.get('latitude', '') or '40.4168'
-            lon = node.get('longitude', '') or '-3.7038'
+            lat = node.get('latitude', '') or '43.53099'
+            lon = node.get('longitude', '') or '-5.71694'
             print(f'  [T] Chronos: {tz} ({lat}, {lon})')
             break
 except:
@@ -1210,23 +1210,23 @@ except:
                     fi
                     
                     # Valores por defecto si están vacíos
-                    CURRENT_LAT="${CURRENT_LAT:-40.4168}"
-                    CURRENT_LON="${CURRENT_LON:--3.7038}"
+                    CURRENT_LAT="${CURRENT_LAT:-43.53099}"
+                    CURRENT_LON="${CURRENT_LON:--5.71694}"
                     CURRENT_TZ="${CURRENT_TZ:-Europe/Madrid}"
                     
                     if [ "$CHRONOS_INVALID" = "yes" ]; then
                         echo "  [!] Chronos NO configurado o inválido"
                         echo ""
                         echo "  ¿Configurar automáticamente con valores por defecto?"
-                        echo "    Latitud:  40.4168 (Madrid)"
-                        echo "    Longitud: -3.7038 (Madrid)"
+                        echo "    Latitud:  43.53099 (Gijon)"
+                        echo "    Longitud: -5.71694 (Gijon)"
                         echo "    Zona:     Europe/Madrid"
                         echo ""
                         read -p "  ¿Aplicar configuración automática? [S/n]: " AUTO_CONFIG
                         
                         if [ "$AUTO_CONFIG" != "n" ] && [ "$AUTO_CONFIG" != "N" ]; then
-                            NEW_LAT="40.4168"
-                            NEW_LON="-3.7038"
+                            NEW_LAT="43.53099"
+                            NEW_LON="-5.71694"
                             NEW_TZ="Europe/Madrid"
                             
                             echo ""
@@ -1243,6 +1243,9 @@ for node in flows:
         node['latitude'] = '$NEW_LAT'
         node['longitude'] = '$NEW_LON'
         node['timezone'] = '$NEW_TZ'
+        node['latitudeType'] = 'num'
+        node['longitudeType'] = 'num'
+        node['timezoneType'] = 'str'
 with open('$FLOWS_FILE', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
@@ -1300,6 +1303,9 @@ for node in flows:
         node['latitude'] = '$NEW_LAT'
         node['longitude'] = '$NEW_LON'
         node['timezone'] = '$NEW_TZ'
+        node['latitudeType'] = 'num'
+        node['longitudeType'] = 'num'
+        node['timezoneType'] = 'str'
 with open('$FLOWS_FILE', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
@@ -1717,6 +1723,7 @@ for node in flows:
         tz = node.get('timezone', '')
         if not tz or '/' not in str(tz):
             node['timezone'] = 'Europe/Madrid'
+            node['timezoneType'] = 'str'
             changed = True
         # Validar latitude (debe ser número válido)
         lat = node.get('latitude', '')
@@ -1725,7 +1732,8 @@ for node in flows:
             if not lat:
                 raise ValueError()
         except:
-            node['latitude'] = '40.4168'
+            node['latitude'] = '43.53099'
+            node['latitudeType'] = 'num'
             changed = True
         # Validar longitude (debe ser número válido)
         lon = node.get('longitude', '')
@@ -1734,7 +1742,18 @@ for node in flows:
             if not lon:
                 raise ValueError()
         except:
-            node['longitude'] = '-3.7038'
+            node['longitude'] = '-5.71694'
+            node['longitudeType'] = 'num'
+            changed = True
+        # Asegurar que los tipos estén siempre correctos
+        if node.get('latitudeType') != 'num':
+            node['latitudeType'] = 'num'
+            changed = True
+        if node.get('longitudeType') != 'num':
+            node['longitudeType'] = 'num'
+            changed = True
+        if node.get('timezoneType') != 'str':
+            node['timezoneType'] = 'str'
             changed = True
 if changed:
     with open('$NODERED_DIR/flows.json', 'w') as f:
