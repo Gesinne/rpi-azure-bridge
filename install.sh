@@ -137,6 +137,30 @@ reiniciar_nodered() {
     fi
 }
 
+# Función para hacer deploy vía API de Node-RED (fuerza recarga de flows)
+deploy_nodered() {
+    FLOWS_FILE="$1"
+    NR_USER="gesinne"
+    NR_PASS="Gesinne20."
+    
+    # Obtener token
+    TOKEN=$(curl -s -X POST http://localhost:1880/auth/token \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d "client_id=node-red-admin&grant_type=password&scope=*&username=$NR_USER&password=$NR_PASS" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+    
+    if [ -n "$TOKEN" ]; then
+        # Hacer deploy
+        curl -s -X POST http://localhost:1880/flows \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Node-RED-Deployment-Type: full" \
+          -d @"$FLOWS_FILE" >/dev/null 2>&1
+        echo "  [OK] Deploy realizado"
+    else
+        echo "  [!] No se pudo hacer deploy automático"
+    fi
+}
+
 # Verificar y reparar Logo + httpStatic si falta
 for NODERED_DIR in /home/*/.node-red; do
     if [ -d "$NODERED_DIR" ]; then
@@ -1303,8 +1327,19 @@ with open('$FLOWS_FILE', 'w') as f:
                     echo ""
                     echo "  [~] Iniciando Node-RED..."
                     sudo systemctl start nodered
-                    sleep 3
+                    sleep 5
                     echo "  [OK] Node-RED iniciado"
+                    echo ""
+                    echo "  [~] Aplicando cambios vía API..."
+                    deploy_nodered "$FLOWS_FILE"
+                    
+                    # Reiniciar kiosko si existe
+                    if systemctl list-unit-files kiosk.service &>/dev/null; then
+                        echo "  [~] Reiniciando kiosko..."
+                        sudo systemctl restart kiosk.service 2>/dev/null
+                        sleep 2
+                        echo "  [OK] Kiosko reiniciado"
+                    fi
                 else
                     echo "  [X] No se encontró flows.json"
                 fi
@@ -1759,6 +1794,9 @@ if changed:
                 sudo systemctl start nodered
                 sleep 5
                 echo "  [OK] Node-RED reiniciado"
+                echo ""
+                echo "  [~] Aplicando cambios vía API..."
+                deploy_nodered "$NODERED_DIR/flows.json"
                 
                 # Reiniciar/iniciar kiosko si existe
                 if systemctl list-unit-files kiosk.service &>/dev/null; then
