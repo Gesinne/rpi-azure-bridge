@@ -258,7 +258,7 @@ while true; do
     echo "  6) Descargar parámetros (enviar por EMAIL)"
     echo "  7) Revisar espacio y logs"
     echo "  8) Gestionar paleta Node-RED"
-    echo "  9) Actualizar firmware placas"
+    echo "  9) Actualizar firmware placas [NO TOCAR-PRUEBAS]"
     echo "  0) Salir"
     echo ""
     read -p "  Opción [0-9]: " OPTION
