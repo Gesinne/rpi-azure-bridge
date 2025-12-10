@@ -1831,8 +1831,11 @@ if changed:
                 fi
                 
                 echo ""
-                echo "  [~] Reiniciando Node-RED..."
-                sudo systemctl restart nodered
+                echo "  [~] Parando Node-RED..."
+                sudo systemctl stop nodered
+                sleep 2
+                echo "  [~] Iniciando Node-RED..."
+                sudo systemctl start nodered
                 sleep 5
                 echo "  [OK] Node-RED reiniciado"
                 
