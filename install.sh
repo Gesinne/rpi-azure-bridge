@@ -1664,7 +1664,7 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                     echo "  [OK] Kiosko reiniciado"
                 fi
                 
-                # Configurar chronos-config con valores por defecto si está vacío
+                # Configurar chronos-config con valores por defecto si está vacío o inválido
                 python3 -c "
 import json
 changed = False
@@ -1672,13 +1672,27 @@ with open('$NODERED_DIR/flows.json', 'r') as f:
     flows = json.load(f)
 for node in flows:
     if node.get('type') == 'chronos-config':
-        if not node.get('timezone'):
+        # Validar timezone (debe ser string no vacío con /)
+        tz = node.get('timezone', '')
+        if not tz or '/' not in str(tz):
             node['timezone'] = 'Europe/Madrid'
             changed = True
-        if not node.get('latitude'):
+        # Validar latitude (debe ser número válido)
+        lat = node.get('latitude', '')
+        try:
+            float(lat) if lat else None
+            if not lat:
+                raise ValueError()
+        except:
             node['latitude'] = '40.4168'
             changed = True
-        if not node.get('longitude'):
+        # Validar longitude (debe ser número válido)
+        lon = node.get('longitude', '')
+        try:
+            float(lon) if lon else None
+            if not lon:
+                raise ValueError()
+        except:
             node['longitude'] = '-3.7038'
             changed = True
 if changed:
