@@ -66,7 +66,7 @@ PARAMS_CHECK = {
     63: ("angulo_tension_cargas_altas", 179, 179, None),
     64: ("angulo_tension_cargas_bajas", 179, 179, None),
     5:  ("frecuencia", 4900, 5100, None),
-    57: ("temperatura_admisible", 0, 550, None),
+    57: ("temperatura_admisible", 0, 600, None),
     47: ("dead_time", 3, 22, None),
     48: ("direccion_modbus", None, None, [1, 2, 3]),
     66: ("sensibilidad_transitorios", 0, 4, None),
