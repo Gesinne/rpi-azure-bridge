@@ -32,7 +32,7 @@ chmod +x "$TEMP_SCRIPT"
 exec sudo bash "$TEMP_SCRIPT" "$@"
 EOFCMD
     chmod +x /usr/local/bin/Actualizar
-    echo "  ✅ Comando 'Actualizar' instalado"
+    echo "  [OK] Comando 'Actualizar' instalado"
 fi
 
 # Auto-detectar si necesita clonar o actualizar el repo
@@ -42,7 +42,7 @@ INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
 # Si no se ha actualizado aún (argumento --updated), actualizar y re-ejecutar desde el repo
 if [ "$1" != "--updated" ]; then
     echo ""
-    echo "  🔄 Obteniendo última versión..."
+    echo "  [~] Obteniendo última versión..."
     
     # Borrar y clonar siempre
     rm -rf "$INSTALL_DIR" 2>/dev/null || true
@@ -65,7 +65,7 @@ echo ""
 
 # Verificar que se ejecuta como root
 if [ "$EUID" -ne 0 ]; then
-    echo "  ❌ ERROR: Ejecutar con sudo"
+    echo "  [X] ERROR: Ejecutar con sudo"
     echo ""
     echo "  Usa: curl -sSL https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh | sudo bash"
     echo ""
@@ -102,9 +102,9 @@ try:
 except:
     print('No detectado')
 " 2>/dev/null)
-        echo "  📡 Node-RED MQTT: $BROKER_INFO"
+        echo "  [M] Node-RED MQTT: $BROKER_INFO"
     else
-        echo "  📡 Node-RED: No detectado"
+        echo "  [M] Node-RED: No detectado"
     fi
 }
 
@@ -115,7 +115,7 @@ volver_menu() {
     read -p "  Pulsa ENTER para volver al menú (0 para salir): " VOLVER
     if [ "$VOLVER" = "0" ]; then
         echo ""
-        echo "  👋 ¡Hasta luego!"
+        echo "  [B] ¡Hasta luego!"
         echo ""
         exit 0
     fi
@@ -132,7 +132,7 @@ for NODERED_DIR in /home/*/.node-red; do
         # Si no existe carpeta Logo, intentar descargarla del repo
         if [ ! -d "$USER_HOME_DIR/Logo" ]; then
             echo ""
-            echo "  ⚠️  Falta carpeta Logo, descargando..."
+            echo "  [!]  Falta carpeta Logo, descargando..."
             
             # Cargar credenciales si existen
             REPO_URL="https://github.com/Gesinne/nodered-flows.git"
@@ -149,13 +149,13 @@ for NODERED_DIR in /home/*/.node-red; do
                 if [ -d "$TEMP_LOGO/Logo" ]; then
                     cp -r "$TEMP_LOGO/Logo" "$USER_HOME_DIR/"
                     chown -R $(basename "$USER_HOME_DIR"):$(basename "$USER_HOME_DIR") "$USER_HOME_DIR/Logo" 2>/dev/null
-                    echo "  ✅ Carpeta Logo instalada en $USER_HOME_DIR/Logo"
+                    echo "  [OK] Carpeta Logo instalada en $USER_HOME_DIR/Logo"
                     NEED_RESTART=true
                 else
-                    echo "  ❌ No se encontró carpeta Logo en el repo"
+                    echo "  [X] No se encontró carpeta Logo en el repo"
                 fi
             else
-                echo "  ❌ No se pudo descargar (¿credenciales?)"
+                echo "  [X] No se pudo descargar (¿credenciales?)"
             fi
             rm -rf "$TEMP_LOGO" 2>/dev/null
         fi
@@ -164,7 +164,7 @@ for NODERED_DIR in /home/*/.node-red; do
         if [ -d "$USER_HOME_DIR/Logo" ] && [ -f "$SETTINGS_FILE" ]; then
             # Comprobar si httpStatic está activo (no comentado)
             if ! grep -E "^\s*httpStatic:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                echo "  ⚠️  Falta httpStatic en settings.js, configurando..."
+                echo "  [!]  Falta httpStatic en settings.js, configurando..."
                 
                 # Usar python para modificar de forma segura
                 python3 << EOFPYTHON
@@ -193,10 +193,10 @@ else:
 EOFPYTHON
                     
                 if grep -E "^\s*httpStatic:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                    echo "  ✅ httpStatic configurado en settings.js"
+                    echo "  [OK] httpStatic configurado en settings.js"
                     NEED_RESTART=true
                 else
-                    echo "  ⚠️  No se pudo configurar automáticamente"
+                    echo "  [!]  No se pudo configurar automáticamente"
                     echo "  → Añade manualmente en settings.js:"
                     echo "     httpStatic: '$USER_HOME_DIR/Logo/',"
                 fi
@@ -205,10 +205,10 @@ EOFPYTHON
         
         # Reiniciar Node-RED si hubo cambios
         if [ "$NEED_RESTART" = true ]; then
-            echo "  🔄 Reiniciando Node-RED..."
+            echo "  [~] Reiniciando Node-RED..."
             sudo systemctl restart nodered 2>/dev/null
             sleep 2
-            echo "  ✅ Node-RED reiniciado"
+            echo "  [OK] Node-RED reiniciado"
             echo ""
             read -p "  Presiona ENTER para continuar..."
         fi
@@ -221,15 +221,15 @@ while true; do
     clear
     echo ""
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  🔧 Gesinne RPI Azure Bridge - Instalador"
+    echo "  [*] Gesinne RPI Azure Bridge - Instalador"
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     
     # Mostrar estado
     if [ -f "$OVERRIDE_FILE" ]; then
-        echo "  ✅ Bridge Azure IoT instalado"
+        echo "  [OK] Bridge Azure IoT instalado"
     else
-        echo "  ⚠️  Bridge no configurado"
+        echo "  [!]  Bridge no configurado"
     fi
     show_nodered_config
 
@@ -239,11 +239,11 @@ while true; do
         KIOSK_URL=$(grep -oP 'http://[^ ]+' "$KIOSK_SCRIPT" 2>/dev/null | head -1)
         if [ -n "$KIOSK_URL" ]; then
             if echo "$KIOSK_URL" | grep -q "/dashboard"; then
-                echo "  🖥️  Kiosko: $KIOSK_URL (FlowFuse)"
+                echo "  [S]  Kiosko: $KIOSK_URL (FlowFuse)"
             elif echo "$KIOSK_URL" | grep -q "/ui"; then
-                echo "  🖥️  Kiosko: $KIOSK_URL (Clásico)"
+                echo "  [S]  Kiosko: $KIOSK_URL (Clásico)"
             else
-                echo "  🖥️  Kiosko: $KIOSK_URL"
+                echo "  [S]  Kiosko: $KIOSK_URL"
             fi
         fi
     fi
@@ -265,7 +265,7 @@ while true; do
     case $OPTION in
         0)
             echo ""
-            echo "  👋 ¡Hasta luego!"
+            echo "  [B] ¡Hasta luego!"
             echo ""
             exit 0
             ;;
@@ -291,7 +291,7 @@ while true; do
                 0) continue ;;
                 1) CONNECTION_MODE="1" ;;
                 2) CONNECTION_MODE="2" ;;
-                *) echo "  ❌ Opción no válida"; continue ;;
+                *) echo "  [X] Opción no válida"; continue ;;
             esac
             
             # La configuración de Azure se ejecuta después del case
@@ -321,7 +321,7 @@ import json
 try:
     with open('$CONFIG_FILE') as f:
         data = json.load(f)
-    print(f\"  🔧 Serie: {data.get('serie', '?')}\")
+    print(f\"  [*] Serie: {data.get('serie', '?')}\")
     print(f\"  ⚡ Potencia: {data.get('potencia', '?')} kW\")
     print(f\"  🔌 Imax: {data.get('Imax', '?')} A\")
     # Mostrar tramos
@@ -329,11 +329,11 @@ try:
     t2 = data.get('tramo2', 0)
     t3 = data.get('tramo3', 0)
     t4 = data.get('tramo4', 0)
-    print(f\"  📊 Tramos: T1={t1} T2={t2} T3={t3} T4={t4}\")
+    print(f\"  [#] Tramos: T1={t1} T2={t2} T3={t3} T4={t4}\")
     # Mostrar valor guardado
     vg = data.get('valorguardado', None)
     if vg is not None:
-        print(f\"  💾 Valor guardado: {vg}\")
+        print(f\"  [D] Valor guardado: {vg}\")
     # Mostrar cualquier otro campo adicional
     campos_base = {'serie', 'potencia', 'Imax', 'tramo1', 'tramo2', 'tramo3', 'tramo4', 'valorguardado'}
     otros = {k: v for k, v in data.items() if k not in campos_base}
@@ -361,7 +361,7 @@ try:
         if name in ['Editar lo necesario', 'Establecer valores globales', 'No tocar'] or 'Version' in func:
             match = re.search(r'([0-9]{4}_[0-9]{2}_[0-9]{2}_[a-zA-Z0-9]+)', func)
             if match:
-                print(f'  📋 Versión Flow: {match.group(1)}')
+                print(f'  [i] Versión Flow: {match.group(1)}')
                 version_found = True
                 break
     
@@ -371,7 +371,7 @@ try:
             content = file.read()
         match = re.search(r'([0-9]{4}_[0-9]{2}_[0-9]{2}_[a-zA-Z0-9]+)', content)
         if match:
-            print(f'  📋 Versión Flow: {match.group(1)}')
+            print(f'  [i] Versión Flow: {match.group(1)}')
 except Exception as e:
     pass
 " 2>/dev/null
@@ -390,7 +390,7 @@ try:
     fw1 = data.get('firmwareL1', '?')
     fw2 = data.get('firmwareL2', '?')
     fw3 = data.get('firmwareL3', '?')
-    print(f'  📦 Firmware: L1={fw1} L2={fw2} L3={fw3}')
+    print(f'  [P] Firmware: L1={fw1} L2={fw2} L3={fw3}')
 except:
     pass
 " 2>/dev/null
@@ -411,7 +411,7 @@ try:
             tz = node.get('timezone', '') or 'Europe/Madrid'
             lat = node.get('latitude', '') or '40.4168'
             lon = node.get('longitude', '') or '-3.7038'
-            print(f'  🕐 Chronos: {tz} ({lat}, {lon})')
+            print(f'  [T] Chronos: {tz} ({lat}, {lon})')
             break
 except:
     pass
@@ -447,7 +447,7 @@ try:
     for node in flows:
         if node.get('type') == 'guaranteed-delivery':
             maxq = node.get('maxQueue', '?')
-            print(f'  📨 Cola máxima: {maxq} (RAM: {mem_gb:.1f} GB → recomendado: {recommended})')
+            print(f'  [E] Cola máxima: {maxq} (RAM: {mem_gb:.1f} GB → recomendado: {recommended})')
             break
 except:
     pass
@@ -505,30 +505,30 @@ except Exception as e:
             USADO=$(echo $DISK_INFO | cut -d' ' -f2)
             LIBRE=$(echo $DISK_INFO | cut -d' ' -f3)
             PORCENTAJE=$(echo $DISK_INFO | cut -d' ' -f4)
-            echo "  💾 Disco: ${USADO}/${TOTAL} usado (${LIBRE} libre) ${PORCENTAJE}"
+            echo "  [D] Disco: ${USADO}/${TOTAL} usado (${LIBRE} libre) ${PORCENTAJE}"
             
             show_nodered_config
             echo ""
             cd "$INSTALL_DIR" 2>/dev/null
             if docker-compose ps 2>/dev/null | grep -q "Up"; then
-                echo "  🟢 Bridge Docker: Corriendo"
+                echo "  [+] Bridge Docker: Corriendo"
             else
-                echo "  🔴 Bridge Docker: Parado"
+                echo "  [-] Bridge Docker: Parado"
             fi
             echo ""
-            echo "  📋 Healthcheck:"
+            echo "  [i] Healthcheck:"
             curl -s http://localhost:8080/health 2>/dev/null | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
-    azure = '🟢' if d.get('azure_connected') else '🔴'
-    mqtt = '🟢' if d.get('mqtt_connected') else '🔴'
+    azure = '[+]' if d.get('azure_connected') else '[-]'
+    mqtt = '[+]' if d.get('mqtt_connected') else '[-]'
     print(f'  {azure} Azure IoT Hub')
     print(f'  {mqtt} MQTT Local')
-    print(f'  📊 Mensajes enviados: {d.get(\"messages_sent\", 0)}')
-    print(f'  💾 Buffer offline: {d.get(\"offline_buffer_size\", 0)}')
+    print(f'  [#] Mensajes enviados: {d.get(\"messages_sent\", 0)}')
+    print(f'  [D] Buffer offline: {d.get(\"offline_buffer_size\", 0)}')
 except:
-    print('  ⚠️  No disponible')
+    print('  [!]  No disponible')
 " 2>/dev/null
             echo ""
             
@@ -542,17 +542,17 @@ except:
             NODERED_VERSION=$(node-red --version 2>/dev/null | head -1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' || echo "No instalado")
             NODERED_LATEST=$(curl -s https://registry.npmjs.org/node-red/latest 2>/dev/null | grep -oE '"version":"[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
             if [ "$NODERED_VERSION" = "v$NODERED_LATEST" ]; then
-                echo "  🔴 Node-RED: $NODERED_VERSION ✅"
+                echo "  [-] Node-RED: $NODERED_VERSION [OK]"
             elif [ "$NODERED_LATEST" != "?" ]; then
-                echo "  🔴 Node-RED: $NODERED_VERSION → v$NODERED_LATEST disponible ⬆️"
+                echo "  [-] Node-RED: $NODERED_VERSION → v$NODERED_LATEST disponible [^]"
             else
-                echo "  🔴 Node-RED: $NODERED_VERSION"
+                echo "  [-] Node-RED: $NODERED_VERSION"
             fi
             
             # Versión Node.js
             NODE_VERSION=$(node --version 2>/dev/null || echo "No instalado")
             # Solo mostrar versión instalada, sin complicar con LTS
-            echo "  🟢 Node.js: $NODE_VERSION ✅"
+            echo "  [+] Node.js: $NODE_VERSION [OK]"
             
             # Versión RPI Connect
             if command -v rpi-connect &> /dev/null; then
@@ -562,18 +562,18 @@ except:
                 RPICONNECT_LATEST=$(apt-cache policy rpi-connect 2>/dev/null | grep Candidate | awk '{print $2}' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
                 
                 if [ "$RPICONNECT_STATUS" = "active" ]; then
-                    STATUS_ICON="🟢 activo"
+                    STATUS_ICON="[+] activo"
                 else
-                    STATUS_ICON="🔴 inactivo"
+                    STATUS_ICON="[-] inactivo"
                 fi
                 
                 if [ "$RPICONNECT_VERSION" = "$RPICONNECT_LATEST" ] || [ "$RPICONNECT_LATEST" = "?" ]; then
-                    echo "  🔗 RPI Connect: v$RPICONNECT_VERSION ($STATUS_ICON) ✅"
+                    echo "  [>] RPI Connect: v$RPICONNECT_VERSION ($STATUS_ICON) [OK]"
                 else
-                    echo "  🔗 RPI Connect: v$RPICONNECT_VERSION → v$RPICONNECT_LATEST disponible ⬆️ ($STATUS_ICON)"
+                    echo "  [>] RPI Connect: v$RPICONNECT_VERSION → v$RPICONNECT_LATEST disponible [^] ($STATUS_ICON)"
                 fi
             else
-                echo "  🔗 RPI Connect: No instalado"
+                echo "  [>] RPI Connect: No instalado"
             fi
             echo ""
             
@@ -588,18 +588,18 @@ except:
             
             if [ -n "$SETTINGS_FILE" ]; then
                 if grep -q "httpNodeMiddleware" "$SETTINGS_FILE"; then
-                    echo "  🔤 Encoding UTF-8: ✅ Configurado"
+                    echo "  [A] Encoding UTF-8: [OK] Configurado"
                 else
-                    echo "  🔤 Encoding UTF-8: ⚠️ No configurado (puede dar problemas con acentos)"
+                    echo "  [A] Encoding UTF-8: [!] No configurado (puede dar problemas con acentos)"
                 fi
             fi
             
             # Mostrar locale del sistema
             CURRENT_LOCALE=$(cat /etc/default/locale 2>/dev/null | grep "^LANG=" | cut -d= -f2)
             if echo "$CURRENT_LOCALE" | grep -q "UTF-8"; then
-                echo "  🌍 Locale sistema: ✅ $CURRENT_LOCALE"
+                echo "  [G] Locale sistema: [OK] $CURRENT_LOCALE"
             else
-                echo "  🌍 Locale sistema: ⚠️ ${CURRENT_LOCALE:-no configurado} (debería ser UTF-8)"
+                echo "  [G] Locale sistema: [!] ${CURRENT_LOCALE:-no configurado} (debería ser UTF-8)"
             fi
             echo ""
             
@@ -677,12 +677,12 @@ print("OK")
 EOFMAXQUEUE
                     
                     echo ""
-                    echo "  ✅ maxQueue actualizado a $NEW_MAXQUEUE"
+                    echo "  [OK] maxQueue actualizado a $NEW_MAXQUEUE"
                     echo ""
-                    echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                    echo "  [~] Reiniciando Node-RED para aplicar cambios..."
                     sudo systemctl restart nodered
                     sleep 2
-                    echo "  ✅ Node-RED reiniciado"
+                    echo "  [OK] Node-RED reiniciado"
                 fi
                 volver_menu
                 continue
@@ -692,7 +692,7 @@ EOFMAXQUEUE
                 # Si no existe el archivo, crearlo pidiendo los valores
                 if [ -z "$CONFIG_FILE" ] || [ ! -f "$CONFIG_FILE" ]; then
                     echo ""
-                    echo "  ⚠️  No existe equipo_config.json, se creará uno nuevo"
+                    echo "  [!]  No existe equipo_config.json, se creará uno nuevo"
                     echo ""
                     echo "  Por favor, introduce los datos del equipo:"
                     echo ""
@@ -728,13 +728,13 @@ with open('$CONFIG_FILE', 'w') as f:
 " 2>/dev/null
                     
                     echo ""
-                    echo "  ✅ Archivo creado: $CONFIG_FILE"
-                    echo "  ✅ Configuración guardada"
+                    echo "  [OK] Archivo creado: $CONFIG_FILE"
+                    echo "  [OK] Configuración guardada"
                     echo ""
-                    echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                    echo "  [~] Reiniciando Node-RED para aplicar cambios..."
                     sudo systemctl restart nodered
                     sleep 2
-                    echo "  ✅ Node-RED reiniciado"
+                    echo "  [OK] Node-RED reiniciado"
                     volver_menu
                     continue
                 fi
@@ -787,29 +787,29 @@ with open('$CONFIG_FILE', 'w') as f:
 " 2>/dev/null
                 
                 echo ""
-                echo "  ✅ Configuración guardada"
+                echo "  [OK] Configuración guardada"
                 echo ""
-                echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                echo "  [~] Reiniciando Node-RED para aplicar cambios..."
                 sudo systemctl restart nodered
                 sleep 2
-                echo "  ✅ Node-RED reiniciado"
+                echo "  [OK] Node-RED reiniciado"
                 
                 # Reiniciar kiosko si existe
                 if systemctl is-active --quiet kiosk.service 2>/dev/null; then
                     echo ""
-                    echo "  🔄 Reiniciando modo kiosko..."
+                    echo "  [~] Reiniciando modo kiosko..."
                     sudo systemctl restart kiosk.service
                     sleep 2
-                    echo "  ✅ Kiosko reiniciado"
+                    echo "  [OK] Kiosko reiniciado"
                 fi
             fi
             
             if [ "$MODIFY" = "3" ]; then
                 # Actualizar Node-RED
                 echo ""
-                echo "  🔄 Actualizando Node-RED..."
+                echo "  [~] Actualizando Node-RED..."
                 echo ""
-                echo "  ⚠️  Esto puede tardar varios minutos"
+                echo "  [!]  Esto puede tardar varios minutos"
                 echo ""
                 
                 # Parar Node-RED
@@ -821,14 +821,14 @@ with open('$CONFIG_FILE', 'w') as f:
                 
                 # Reiniciar Node-RED
                 echo ""
-                echo "  🔄 Reiniciando Node-RED..."
+                echo "  [~] Reiniciando Node-RED..."
                 sudo systemctl start nodered
                 sleep 3
                 
                 # Mostrar nueva versión
                 NEW_VERSION=$(node-red --version 2>/dev/null || echo "?")
                 echo ""
-                echo "  ✅ Node-RED actualizado a: $NEW_VERSION"
+                echo "  [OK] Node-RED actualizado a: $NEW_VERSION"
             fi
             
             if [ "$MODIFY" = "4" ]; then
@@ -836,11 +836,11 @@ with open('$CONFIG_FILE', 'w') as f:
                 echo ""
                 
                 if command -v rpi-connect &> /dev/null; then
-                    echo "  🔄 Actualizando RPI Connect..."
+                    echo "  [~] Actualizando RPI Connect..."
                     sudo apt-get update
                     sudo apt-get install -y rpi-connect
                 else
-                    echo "  📦 Instalando RPI Connect..."
+                    echo "  [P] Instalando RPI Connect..."
                     echo ""
                     echo "  → Añadiendo repositorio..."
                     
@@ -857,27 +857,27 @@ with open('$CONFIG_FILE', 'w') as f:
                 # Mostrar versión y estado
                 echo ""
                 RPICONNECT_VERSION=$(rpi-connect --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
-                echo "  ✅ RPI Connect: v$RPICONNECT_VERSION"
+                echo "  [OK] RPI Connect: v$RPICONNECT_VERSION"
                 
                 # Comprobar si está vinculado
                 RPICONNECT_STATUS=$(rpi-connect status 2>&1)
                 if echo "$RPICONNECT_STATUS" | grep -qi "not signed in\|no está\|sin vincular"; then
                     echo ""
-                    echo "  ⚠️  RPI Connect no está vinculado"
+                    echo "  [!]  RPI Connect no está vinculado"
                     echo ""
                     read -p "  ¿Vincular ahora? [S/n]: " DO_SIGNIN
                     if [ "$DO_SIGNIN" != "n" ] && [ "$DO_SIGNIN" != "N" ]; then
                         echo ""
-                        echo "  🔗 Iniciando vinculación..."
+                        echo "  [>] Iniciando vinculación..."
                         echo "  → Se abrirá un enlace. Cópialo en tu navegador para vincular."
                         echo ""
                         rpi-connect signin
                         echo ""
-                        echo "  ✅ Proceso de vinculación iniciado"
+                        echo "  [OK] Proceso de vinculación iniciado"
                         echo "     Accede desde: https://connect.raspberrypi.com"
                     fi
                 else
-                    echo "  🟢 RPI Connect ya está vinculado"
+                    echo "  [+] RPI Connect ya está vinculado"
                 fi
             fi
             
@@ -894,12 +894,12 @@ with open('$CONFIG_FILE', 'w') as f:
                 done
                 
                 if [ -z "$SETTINGS_FILE" ]; then
-                    echo "  ❌ No se encontró settings.js"
+                    echo "  [X] No se encontró settings.js"
                 else
                     if grep -q "httpNodeMiddleware" "$SETTINGS_FILE"; then
-                        echo "  ✅ El encoding UTF-8 ya está configurado"
+                        echo "  [OK] El encoding UTF-8 ya está configurado"
                     else
-                        echo "  🔧 Configurando encoding UTF-8..."
+                        echo "  [*] Configurando encoding UTF-8..."
                         
                         # Añadir httpNodeMiddleware para UTF-8
                         python3 << EOFUTF8
@@ -929,14 +929,14 @@ else:
 EOFUTF8
                         
                         if grep -q "httpNodeMiddleware" "$SETTINGS_FILE"; then
-                            echo "  ✅ Encoding UTF-8 configurado"
+                            echo "  [OK] Encoding UTF-8 configurado"
                             echo ""
-                            echo "  🔄 Reiniciando Node-RED..."
+                            echo "  [~] Reiniciando Node-RED..."
                             sudo systemctl restart nodered
                             sleep 3
-                            echo "  ✅ Node-RED reiniciado"
+                            echo "  [OK] Node-RED reiniciado"
                         else
-                            echo "  ⚠️  No se pudo configurar automáticamente"
+                            echo "  [!]  No se pudo configurar automáticamente"
                             echo ""
                             echo "  → Añade manualmente en settings.js:"
                             echo '     httpNodeMiddleware: function(req,res,next) {'
@@ -961,7 +961,7 @@ EOFUTF8
                 done
                 
                 if [ -z "$SETTINGS_FILE" ]; then
-                    echo "  ❌ No se encontró settings.js"
+                    echo "  [X] No se encontró settings.js"
                 else
                     echo "  📄 Archivo: $SETTINGS_FILE"
                     echo ""
@@ -973,28 +973,28 @@ EOFUTF8
                     # Mostrar líneas importantes (activas y comentadas)
                     echo "  Activas:"
                     grep -E "^\s*(uiPort|httpStatic|httpNodeMiddleware|adminAuth|httpRoot|userDir|flowFile|credentialSecret)" "$SETTINGS_FILE" 2>/dev/null | grep -v "^\s*//" | head -10 | while read line; do
-                        echo "    ✅ $line"
+                        echo "    [OK] $line"
                     done
                     
                     # Mostrar si falta httpStatic o httpNodeMiddleware
                     echo ""
                     echo "  Estado de configuraciones importantes:"
                     if grep -E "^\s*httpStatic:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                        echo "    ✅ httpStatic (Logo): Configurado"
+                        echo "    [OK] httpStatic (Logo): Configurado"
                     else
-                        echo "    ❌ httpStatic (Logo): NO configurado"
+                        echo "    [X] httpStatic (Logo): NO configurado"
                     fi
                     
                     if grep -q "httpNodeMiddleware" "$SETTINGS_FILE" && ! grep "httpNodeMiddleware" "$SETTINGS_FILE" | head -1 | grep -q "^\s*//"; then
-                        echo "    ✅ httpNodeMiddleware (UTF-8): Configurado"
+                        echo "    [OK] httpNodeMiddleware (UTF-8): Configurado"
                     else
-                        echo "    ❌ httpNodeMiddleware (UTF-8): NO configurado - puede dar problemas con acentos"
+                        echo "    [X] httpNodeMiddleware (UTF-8): NO configurado - puede dar problemas con acentos"
                     fi
                     
                     if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                        echo "    ✅ contextStorage: Configurado (variables persisten)"
+                        echo "    [OK] contextStorage: Configurado (variables persisten)"
                     else
-                        echo "    ❌ contextStorage: NO configurado - variables se pierden al reiniciar"
+                        echo "    [X] contextStorage: NO configurado - variables se pierden al reiniciar"
                     fi
                     
                     echo ""
@@ -1021,17 +1021,17 @@ EOFUTF8
                             ;;
                         2)
                             echo ""
-                            echo "  ⚠️  Cuidado al editar. Guarda con Ctrl+O, sal con Ctrl+X"
+                            echo "  [!]  Cuidado al editar. Guarda con Ctrl+O, sal con Ctrl+X"
                             echo ""
                             read -p "  Presiona ENTER para abrir nano..."
                             sudo nano "$SETTINGS_FILE"
                             echo ""
                             read -p "  ¿Reiniciar Node-RED para aplicar cambios? [S/n]: " RESTART_NR
                             if [ "$RESTART_NR" != "n" ] && [ "$RESTART_NR" != "N" ]; then
-                                echo "  🔄 Reiniciando Node-RED..."
+                                echo "  [~] Reiniciando Node-RED..."
                                 sudo systemctl restart nodered
                                 sleep 3
-                                echo "  ✅ Node-RED reiniciado"
+                                echo "  [OK] Node-RED reiniciado"
                             fi
                             ;;
                     esac
@@ -1051,12 +1051,12 @@ EOFUTF8
                 done
                 
                 if [ -z "$SETTINGS_FILE" ]; then
-                    echo "  ❌ No se encontró settings.js"
+                    echo "  [X] No se encontró settings.js"
                 else
                     if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                        echo "  ✅ contextStorage ya está configurado"
+                        echo "  [OK] contextStorage ya está configurado"
                     else
-                        echo "  🔧 Configurando contextStorage..."
+                        echo "  [*] Configurando contextStorage..."
                         
                         # Añadir contextStorage
                         python3 << EOFCONTEXT
@@ -1098,17 +1098,17 @@ else:
 EOFCONTEXT
                         
                         if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                            echo "  ✅ contextStorage configurado"
+                            echo "  [OK] contextStorage configurado"
                             echo ""
-                            echo "  🔄 Reiniciando Node-RED..."
+                            echo "  [~] Reiniciando Node-RED..."
                             sudo systemctl restart nodered
                             sleep 3
-                            echo "  ✅ Node-RED reiniciado"
+                            echo "  [OK] Node-RED reiniciado"
                             echo ""
-                            echo "  ℹ️  Ahora las variables de contexto se guardan en disco"
+                            echo "  [i]  Ahora las variables de contexto se guardan en disco"
                             echo "     y persisten después de reiniciar Node-RED"
                         else
-                            echo "  ⚠️  No se pudo configurar automáticamente"
+                            echo "  [!]  No se pudo configurar automáticamente"
                             echo ""
                             echo "  → Añade manualmente en settings.js:"
                             echo '     contextStorage: {'
@@ -1127,9 +1127,9 @@ EOFCONTEXT
                 CURRENT_LOCALE=$(cat /etc/default/locale 2>/dev/null | grep "^LANG=" | cut -d= -f2)
                 
                 if echo "$CURRENT_LOCALE" | grep -q "es_ES.UTF-8"; then
-                    echo "  ✅ El locale ya está configurado como es_ES.UTF-8"
+                    echo "  [OK] El locale ya está configurado como es_ES.UTF-8"
                 else
-                    echo "  🔧 Configurando locale español UTF-8..."
+                    echo "  [*] Configurando locale español UTF-8..."
                     echo ""
                     
                     # Generar locale si no existe
@@ -1145,19 +1145,19 @@ LC_ALL=es_ES.UTF-8
 LANGUAGE=es_ES.UTF-8" > /etc/default/locale'
                     
                     echo ""
-                    echo "  ✅ Locale configurado como es_ES.UTF-8"
+                    echo "  [OK] Locale configurado como es_ES.UTF-8"
                     echo ""
-                    echo "  ⚠️  Es necesario REINICIAR para aplicar los cambios"
+                    echo "  [!]  Es necesario REINICIAR para aplicar los cambios"
                     echo ""
                     read -p "  ¿Reiniciar ahora? [S/n]: " DO_REBOOT
                     if [ "$DO_REBOOT" != "n" ] && [ "$DO_REBOOT" != "N" ]; then
                         echo ""
-                        echo "  🔄 Reiniciando en 3 segundos..."
+                        echo "  [~] Reiniciando en 3 segundos..."
                         sleep 3
                         sudo reboot
                     else
                         echo ""
-                        echo "  ℹ️  Recuerda reiniciar manualmente: sudo reboot"
+                        echo "  [i]  Recuerda reiniciar manualmente: sudo reboot"
                     fi
                 fi
             fi
@@ -1248,17 +1248,17 @@ with open('$FLOWS_FILE', 'w') as f:
 " 2>/dev/null
                     
                     echo ""
-                    echo "  ✅ Chronos configurado:"
+                    echo "  [OK] Chronos configurado:"
                     echo "    Latitud:  $NEW_LAT"
                     echo "    Longitud: $NEW_LON"
                     echo "    Zona:     $NEW_TZ"
                     echo ""
-                    echo "  🔄 Reiniciando Node-RED..."
+                    echo "  [~] Reiniciando Node-RED..."
                     sudo systemctl restart nodered
                     sleep 3
-                    echo "  ✅ Node-RED reiniciado"
+                    echo "  [OK] Node-RED reiniciado"
                 else
-                    echo "  ❌ No se encontró flows.json"
+                    echo "  [X] No se encontró flows.json"
                 fi
             fi
             
@@ -1278,7 +1278,7 @@ with open('$FLOWS_FILE', 'w') as f:
             # Verificar si hay credenciales guardadas
             if [ -f "$CREDS_FILE" ]; then
                 source "$CREDS_FILE"
-                echo "  🔐 Usando credenciales guardadas (usuario: $GIT_USER)"
+                echo "  [K] Usando credenciales guardadas (usuario: $GIT_USER)"
                 echo ""
                 read -p "  ¿Usar estas credenciales? [S/n]: " USE_SAVED
                 if [ "$USE_SAVED" = "n" ] || [ "$USE_SAVED" = "N" ]; then
@@ -1289,14 +1289,14 @@ with open('$FLOWS_FILE', 'w') as f:
             
             # Solicitar credenciales si no hay guardadas
             if [ -z "$GIT_USER" ] || [ -z "$GIT_TOKEN" ]; then
-                echo "  🔐 Credenciales de GitHub (repo privado)"
+                echo "  [K] Credenciales de GitHub (repo privado)"
                 echo ""
                 read -p "  Usuario GitHub: " GIT_USER
                 read -s -p "  Token/Contraseña: " GIT_TOKEN
                 echo ""
                 
                 if [ -z "$GIT_USER" ] || [ -z "$GIT_TOKEN" ]; then
-                    echo "  ❌ Usuario y token son requeridos"
+                    echo "  [X] Usuario y token son requeridos"
                     exit 1
                 fi
                 
@@ -1305,14 +1305,14 @@ with open('$FLOWS_FILE', 'w') as f:
                 echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
                 echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
                 sudo chmod 600 "$CREDS_FILE"
-                echo "  💾 Credenciales guardadas"
+                echo "  [D] Credenciales guardadas"
             fi
             
             NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
             
             # Usar caché o clonar
             echo ""
-            echo "  📥 Obteniendo versiones disponibles..."
+            echo "  [v] Obteniendo versiones disponibles..."
             
             # Función para clonar/actualizar repo
             clone_repo() {
@@ -1327,20 +1327,20 @@ with open('$FLOWS_FILE', 'w') as f:
                 cd "$CACHE_DIR"
                 git remote set-url origin "$NODERED_REPO" 2>/dev/null
                 if ! git pull -q 2>/dev/null; then
-                    echo "  ⚠️  Error actualizando, re-clonando..."
+                    echo "  [!]  Error actualizando, re-clonando..."
                     if ! clone_repo; then
-                        echo "  ❌ Credenciales inválidas. Borrando y pidiendo nuevas..."
+                        echo "  [X] Credenciales inválidas. Borrando y pidiendo nuevas..."
                         sudo rm -f "$CREDS_FILE"
                         rm -rf "$CACHE_DIR"
                         echo ""
-                        echo "  🔐 Introduce nuevas credenciales de GitHub"
+                        echo "  [K] Introduce nuevas credenciales de GitHub"
                         echo ""
                         read -p "  Usuario GitHub: " GIT_USER
                         read -s -p "  Token/Contraseña: " GIT_TOKEN
                         echo ""
                         NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
                         if ! clone_repo; then
-                            echo "  ❌ Error: credenciales incorrectas"
+                            echo "  [X] Error: credenciales incorrectas"
                             exit 1
                         fi
                         # Guardar nuevas credenciales
@@ -1348,23 +1348,23 @@ with open('$FLOWS_FILE', 'w') as f:
                         echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
                         echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
                         sudo chmod 600 "$CREDS_FILE"
-                        echo "  💾 Nuevas credenciales guardadas"
+                        echo "  [D] Nuevas credenciales guardadas"
                     fi
                 fi
             else
                 # Primera vez, clonar
                 if ! clone_repo; then
-                    echo "  ❌ Credenciales inválidas. Pidiendo nuevas..."
+                    echo "  [X] Credenciales inválidas. Pidiendo nuevas..."
                     sudo rm -f "$CREDS_FILE"
                     echo ""
-                    echo "  🔐 Introduce nuevas credenciales de GitHub"
+                    echo "  [K] Introduce nuevas credenciales de GitHub"
                     echo ""
                     read -p "  Usuario GitHub: " GIT_USER
                     read -s -p "  Token/Contraseña: " GIT_TOKEN
                     echo ""
                     NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
                     if ! clone_repo; then
-                        echo "  ❌ Error: credenciales incorrectas"
+                        echo "  [X] Error: credenciales incorrectas"
                         exit 1
                     fi
                     # Guardar nuevas credenciales
@@ -1372,7 +1372,7 @@ with open('$FLOWS_FILE', 'w') as f:
                     echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
                     echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
                     sudo chmod 600 "$CREDS_FILE"
-                    echo "  💾 Nuevas credenciales guardadas"
+                    echo "  [D] Nuevas credenciales guardadas"
                 fi
             fi
             
@@ -1413,11 +1413,11 @@ except:
             HAS_CLASSIC=$([ -d "$NODERED_MODULES/node-red-dashboard" ] && echo "yes" || echo "no")
             
             if [ "$HAS_FLOWFUSE" = "yes" ]; then
-                echo "  📊 Dashboard actual: FlowFuse (dbrd2)"
+                echo "  [#] Dashboard actual: FlowFuse (dbrd2)"
             elif [ "$HAS_CLASSIC" = "yes" ]; then
-                echo "  📊 Dashboard actual: Clásico"
+                echo "  [#] Dashboard actual: Clásico"
             else
-                echo "  📊 Dashboard actual: Ninguno detectado"
+                echo "  [#] Dashboard actual: Ninguno detectado"
             fi
             
             # Listar TODOS los archivos .json
@@ -1428,14 +1428,14 @@ except:
             fi
             
             if [ -z "$VERSIONS" ]; then
-                echo "  ❌ No se encontraron archivos .json en el repositorio"
+                echo "  [X] No se encontraron archivos .json en el repositorio"
                 rm -rf "$TEMP_DIR"
                 exit 1
             fi
             
             echo ""
             if [ -n "$CURRENT_VERSION" ]; then
-                echo "  📋 Versión actual instalada: $CURRENT_VERSION"
+                echo "  [i] Versión actual instalada: $CURRENT_VERSION"
             fi
             echo ""
             echo "  Últimas 5 versiones disponibles:"
@@ -1463,7 +1463,7 @@ except:
             done
             
             if [ $i -eq 1 ]; then
-                echo "  ❌ No hay versiones disponibles"
+                echo "  [X] No hay versiones disponibles"
                 rm -rf "$TEMP_DIR"
                 volver_menu
                 continue
@@ -1481,7 +1481,7 @@ except:
             fi
             
             if [ -z "$FLOW_FILE" ]; then
-                echo "  ❌ Opción no válida"
+                echo "  [X] Opción no válida"
                 rm -rf "$TEMP_DIR"
                 exit 1
             fi
@@ -1492,9 +1492,9 @@ except:
             NEEDS_FLOWFUSE="no"
             if grep -q '"type":\s*"ui-' "$FLOW_FILE" 2>/dev/null; then
                 NEEDS_FLOWFUSE="yes"
-                echo "  📊 Flow detectado: FlowFuse Dashboard"
+                echo "  [#] Flow detectado: FlowFuse Dashboard"
             else
-                echo "  📊 Flow detectado: Dashboard Clásico"
+                echo "  [#] Flow detectado: Dashboard Clásico"
             fi
             
             # Verificar si necesita cambiar el dashboard
@@ -1502,7 +1502,7 @@ except:
             
             # Siempre limpiar ambos dashboards para evitar conflictos
             echo ""
-            echo "  🧹 Limpiando dashboards anteriores..."
+            echo "  [C] Limpiando dashboards anteriores..."
             npm uninstall node-red-dashboard 2>/dev/null || true
             npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
             npm uninstall @flowfuse/node-red-dashboard-2-ui-led 2>/dev/null || true
@@ -1510,50 +1510,50 @@ except:
             KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo $SUDO_USER)/kiosk.sh"
             
             if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
-                echo "  📦 Instalando FlowFuse Dashboard (puede tardar)..."
+                echo "  [P] Instalando FlowFuse Dashboard (puede tardar)..."
                 npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
                 if [ $? -eq 0 ]; then
-                    echo "  ✅ FlowFuse Dashboard instalado"
+                    echo "  [OK] FlowFuse Dashboard instalado"
                 else
-                    echo "  ❌ Error instalando FlowFuse Dashboard"
+                    echo "  [X] Error instalando FlowFuse Dashboard"
                     exit 1
                 fi
                 # Cambiar URL del kiosko a /dashboard
                 if [ -f "$KIOSK_SCRIPT" ]; then
                     sed -i 's|http://localhost:1880/ui|http://localhost:1880/dashboard|g' "$KIOSK_SCRIPT"
-                    echo "  🖥️  Kiosko actualizado a /dashboard"
+                    echo "  [S]  Kiosko actualizado a /dashboard"
                 fi
             else
-                echo "  📦 Instalando Dashboard Clásico (puede tardar)..."
+                echo "  [P] Instalando Dashboard Clásico (puede tardar)..."
                 npm install node-red-dashboard --save
                 if [ $? -eq 0 ]; then
-                    echo "  ✅ Dashboard Clásico instalado"
+                    echo "  [OK] Dashboard Clásico instalado"
                 else
-                    echo "  ❌ Error instalando Dashboard Clásico"
+                    echo "  [X] Error instalando Dashboard Clásico"
                     exit 1
                 fi
                 # Cambiar URL del kiosko a /ui
                 if [ -f "$KIOSK_SCRIPT" ]; then
                     sed -i 's|http://localhost:1880/dashboard|http://localhost:1880/ui|g' "$KIOSK_SCRIPT"
-                    echo "  🖥️  Kiosko actualizado a /ui"
+                    echo "  [S]  Kiosko actualizado a /ui"
                 fi
             fi
             
             echo ""
-            echo "  📥 Instalando $VERSION_NAME..."
+            echo "  [v] Instalando $VERSION_NAME..."
             
             # Buscar directorio Node-RED
             NODERED_DIR="$NODERED_HOME"
             
             if [ -z "$NODERED_DIR" ]; then
-                echo "  ❌ No se encontró directorio Node-RED"
+                echo "  [X] No se encontró directorio Node-RED"
                 exit 1
             fi
             
             # Backup del flow actual con nombre de versión
             BACKUP_FILE="$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S).${VERSION_NAME%.json}"
             cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
-            echo "  💾 Backup creado: $BACKUP_FILE"
+            echo "  [D] Backup creado: $BACKUP_FILE"
             
             # Guardar configuración MQTT, maxQueue y chronos actual antes de sobrescribir
             PRESERVED_CONFIG=$(python3 -c "
@@ -1609,19 +1609,19 @@ for node in flows:
 with open('$NODERED_DIR/flows.json', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
-                    echo "  ✅ Flow instalado: $VERSION_NAME"
-                    echo "  🔗 Configuración preservada: MQTT + maxQueue + chronos"
+                    echo "  [OK] Flow instalado: $VERSION_NAME"
+                    echo "  [>] Configuración preservada: MQTT + maxQueue + chronos"
                 else
-                    echo "  ✅ Flow instalado: $VERSION_NAME"
+                    echo "  [OK] Flow instalado: $VERSION_NAME"
                 fi
                 
                 # Copiar carpeta Logo si existe en el repo
                 USER_HOME_DIR=$(dirname "$NODERED_DIR")
                 if [ -d "$TEMP_DIR/Logo" ]; then
-                    echo "  📁 Copiando carpeta Logo..."
+                    echo "  [F] Copiando carpeta Logo..."
                     cp -r "$TEMP_DIR/Logo" "$USER_HOME_DIR/"
                     chown -R $(basename "$USER_HOME_DIR"):$(basename "$USER_HOME_DIR") "$USER_HOME_DIR/Logo" 2>/dev/null
-                    echo "  ✅ Carpeta Logo copiada a $USER_HOME_DIR/Logo"
+                    echo "  [OK] Carpeta Logo copiada a $USER_HOME_DIR/Logo"
                     
                     # Configurar httpStatic en settings.js
                     SETTINGS_FILE="$NODERED_DIR/settings.js"
@@ -1629,26 +1629,26 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                         if ! grep -q "httpStatic:" "$SETTINGS_FILE"; then
                             # Añadir httpStatic después de la línea que contiene "module.exports"
                             sed -i "/module.exports\s*=\s*{/a\\    httpStatic: '$USER_HOME_DIR/Logo/'," "$SETTINGS_FILE"
-                            echo "  ✅ httpStatic configurado en settings.js"
+                            echo "  [OK] httpStatic configurado en settings.js"
                         else
-                            echo "  ℹ️  httpStatic ya está configurado"
+                            echo "  [i]  httpStatic ya está configurado"
                         fi
                     fi
                 fi
                 
                 echo ""
-                echo "  🔄 Reiniciando Node-RED..."
+                echo "  [~] Reiniciando Node-RED..."
                 sudo systemctl restart nodered
                 sleep 5
-                echo "  ✅ Node-RED reiniciado"
+                echo "  [OK] Node-RED reiniciado"
                 
                 # Reiniciar kiosko si existe
                 if systemctl is-active --quiet kiosk.service 2>/dev/null; then
                     echo ""
-                    echo "  🔄 Reiniciando modo kiosko..."
+                    echo "  [~] Reiniciando modo kiosko..."
                     sudo systemctl restart kiosk.service
                     sleep 2
-                    echo "  ✅ Kiosko reiniciado"
+                    echo "  [OK] Kiosko reiniciado"
                 fi
                 
                 # Configurar chronos-config con valores por defecto si está vacío
@@ -1672,9 +1672,9 @@ if changed:
     with open('$NODERED_DIR/flows.json', 'w') as f:
         json.dump(flows, f, indent=4)
     print('configured')
-" 2>/dev/null | grep -q "configured" && echo "  🕐 Chronos: configurado con valores por defecto (Europe/Madrid)"
+" 2>/dev/null | grep -q "configured" && echo "  [T] Chronos: configurado con valores por defecto (Europe/Madrid)"
             else
-                echo "  ❌ Error: El archivo no es JSON válido"
+                echo "  [X] Error: El archivo no es JSON válido"
                 exit 1
             fi
             
@@ -1771,24 +1771,24 @@ with open('$CONFIG_FILE', 'w') as f:
 " 2>/dev/null
                     
                     echo ""
-                    echo "  ✅ Configuración guardada"
+                    echo "  [OK] Configuración guardada"
                     echo ""
-                    echo "  🔄 Reiniciando Node-RED para aplicar cambios..."
+                    echo "  [~] Reiniciando Node-RED para aplicar cambios..."
                     sudo systemctl restart nodered
                     sleep 2
-                    echo "  ✅ Node-RED reiniciado"
+                    echo "  [OK] Node-RED reiniciado"
                     
                     # Reiniciar kiosko si existe
                     if systemctl is-active --quiet kiosk.service 2>/dev/null; then
                         echo ""
-                        echo "  🔄 Reiniciando modo kiosko..."
+                        echo "  [~] Reiniciando modo kiosko..."
                         sudo systemctl restart kiosk.service
                         sleep 2
-                        echo "  ✅ Kiosko reiniciado"
+                        echo "  [OK] Kiosko reiniciado"
                     fi
                 fi
             else
-                echo "  ⚠️  No se encontró equipo_config.json"
+                echo "  [!]  No se encontró equipo_config.json"
                 echo "  Crea el archivo en: /home/gesinne/config/equipo_config.json"
             fi
             
@@ -1874,12 +1874,12 @@ with open('$FLOWS_FILE', 'w') as f:
 EOFQUEUE
                 
                 echo ""
-                echo "  ✅ maxQueue actualizado a $NEW_QUEUE"
+                echo "  [OK] maxQueue actualizado a $NEW_QUEUE"
                 echo ""
-                echo "  🔄 Reiniciando Node-RED..."
+                echo "  [~] Reiniciando Node-RED..."
                 sudo systemctl restart nodered
                 sleep 2
-                echo "  ✅ Node-RED reiniciado"
+                echo "  [OK] Node-RED reiniciado"
             fi
             
             volver_menu
@@ -1901,14 +1901,14 @@ EOFQUEUE
             done
             
             if [ -z "$NODERED_DIR" ]; then
-                echo "  ❌ No se encontró directorio Node-RED"
+                echo "  [X] No se encontró directorio Node-RED"
                 exit 1
             fi
             
             BACKUPS=$(ls -t "$NODERED_DIR"/flows.json.backup.* 2>/dev/null)
             
             if [ -z "$BACKUPS" ]; then
-                echo "  ❌ No hay backups disponibles"
+                echo "  [X] No hay backups disponibles"
                 exit 1
             fi
             
@@ -1957,12 +1957,12 @@ EOFQUEUE
             # Opción borrar backups
             if [ "$BACKUP_CHOICE" = "0" ]; then
                 echo ""
-                read -p "  ⚠️  ¿Seguro que quieres borrar TODOS los backups? [s/N]: " CONFIRM_DELETE
+                read -p "  [!]  ¿Seguro que quieres borrar TODOS los backups? [s/N]: " CONFIRM_DELETE
                 if [ "$CONFIRM_DELETE" = "s" ] || [ "$CONFIRM_DELETE" = "S" ]; then
                     rm -f "$NODERED_DIR"/flows.json.backup.*
-                    echo "  ✅ Backups borrados"
+                    echo "  [OK] Backups borrados"
                 else
-                    echo "  ❌ Cancelado"
+                    echo "  [X] Cancelado"
                 fi
                 volver_menu
                 continue
@@ -1971,12 +1971,12 @@ EOFQUEUE
             SELECTED_BACKUP="${BACKUP_ARRAY[$BACKUP_CHOICE]}"
             
             if [ -z "$SELECTED_BACKUP" ] || [ ! -f "$SELECTED_BACKUP" ]; then
-                echo "  ❌ Opción no válida"
+                echo "  [X] Opción no válida"
                 exit 1
             fi
             
             echo ""
-            echo "  📥 Restaurando backup..."
+            echo "  [v] Restaurando backup..."
             
             # Detectar si el backup necesita FlowFuse o Clásico
             # FlowFuse usa nodos tipo "ui-button", "ui-chart" (con guión)
@@ -1995,27 +1995,27 @@ EOFQUEUE
             cd "$NODERED_DIR"
             if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
                 if [ "$HAS_FLOWFUSE" = "no" ]; then
-                    echo "  ⚠️  Este backup requiere FlowFuse Dashboard"
+                    echo "  [!]  Este backup requiere FlowFuse Dashboard"
                     echo "  Instalando..."
                     npm uninstall node-red-dashboard 2>/dev/null || true
                     npm install @flowfuse/node-red-dashboard --save
-                    echo "  ✅ FlowFuse Dashboard instalado"
+                    echo "  [OK] FlowFuse Dashboard instalado"
                 elif [ "$HAS_CLASSIC" = "yes" ]; then
-                    echo "  ⚠️  Limpiando conflicto de dashboards..."
+                    echo "  [!]  Limpiando conflicto de dashboards..."
                     npm uninstall node-red-dashboard 2>/dev/null || true
-                    echo "  ✅ Conflicto resuelto"
+                    echo "  [OK] Conflicto resuelto"
                 fi
             else
                 if [ "$HAS_CLASSIC" = "no" ]; then
-                    echo "  ⚠️  Este backup requiere Dashboard Clásico"
+                    echo "  [!]  Este backup requiere Dashboard Clásico"
                     echo "  Instalando..."
                     npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
                     npm install node-red-dashboard --save
-                    echo "  ✅ Dashboard Clásico instalado"
+                    echo "  [OK] Dashboard Clásico instalado"
                 elif [ "$HAS_FLOWFUSE" = "yes" ]; then
-                    echo "  ⚠️  Limpiando conflicto de dashboards..."
+                    echo "  [!]  Limpiando conflicto de dashboards..."
                     npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
-                    echo "  ✅ Conflicto resuelto"
+                    echo "  [OK] Conflicto resuelto"
                 fi
             fi
             
@@ -2063,24 +2063,24 @@ for node in flows:
 with open('$NODERED_DIR/flows.json', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
-                echo "  ✅ Flow restaurado"
-                echo "  🔗 Configuración preservada: MQTT + maxQueue"
+                echo "  [OK] Flow restaurado"
+                echo "  [>] Configuración preservada: MQTT + maxQueue"
             else
-                echo "  ✅ Flow restaurado"
+                echo "  [OK] Flow restaurado"
             fi
             echo ""
-            echo "  🔄 Reiniciando Node-RED..."
+            echo "  [~] Reiniciando Node-RED..."
             sudo systemctl restart nodered
             sleep 5
-            echo "  ✅ Node-RED reiniciado"
+            echo "  [OK] Node-RED reiniciado"
             
             # Reiniciar kiosko si existe
             if systemctl is-active --quiet kiosk.service 2>/dev/null; then
                 echo ""
-                echo "  🔄 Reiniciando modo kiosko..."
+                echo "  [~] Reiniciando modo kiosko..."
                 sudo systemctl restart kiosk.service
                 sleep 2
-                echo "  ✅ Kiosko reiniciado"
+                echo "  [OK] Kiosko reiniciado"
             fi
             
             volver_menu
@@ -2107,7 +2107,7 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
                 2) UNIT_IDS="2"; FASES="L2"; MODO_COLUMNAS="no" ;;
                 3) UNIT_IDS="3"; FASES="L3"; MODO_COLUMNAS="no" ;;
                 4) UNIT_IDS="1 2 3"; FASES="L1 L2 L3"; MODO_COLUMNAS="yes" ;;
-                *) echo "  ❌ Opción no válida"; continue ;;
+                *) echo "  [X] Opción no válida"; continue ;;
             esac
             
             # Siempre detectar el máximo de registros
@@ -2115,7 +2115,7 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
             DETECT_MAX="yes"
             
             echo ""
-            echo "  ⚠️  Parando Node-RED temporalmente..."
+            echo "  [!]  Parando Node-RED temporalmente..."
             
             # Parar Node-RED
             sudo systemctl stop nodered 2>/dev/null
@@ -2124,12 +2124,12 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
             docker stop gesinne-rpi >/dev/null 2>&1 || true
             
             sleep 2
-            echo "  ✅ Servicios parados"
+            echo "  [OK] Servicios parados"
             echo ""
             
             # Si es modo columnas, leer las 3 placas y mostrar en tabla
             if [ "$MODO_COLUMNAS" = "yes" ]; then
-                echo "  📡 Leyendo las 3 tarjetas..."
+                echo "  [M] Leyendo las 3 tarjetas..."
                 echo ""
                 
                 python3 << 'EOFCOL'
@@ -2140,7 +2140,7 @@ except ImportError:
     try:
         from pymodbus.client.sync import ModbusSerialClient
     except ImportError:
-        print("  ❌ pymodbus no instalado")
+        print("  [X] pymodbus no instalado")
         sys.exit(1)
 
 client = ModbusSerialClient(
@@ -2153,7 +2153,7 @@ client = ModbusSerialClient(
 )
 
 if not client.connect():
-    print("  ❌ No se pudo conectar al puerto serie")
+    print("  [X] No se pudo conectar al puerto serie")
     sys.exit(1)
 
 import time
@@ -2162,7 +2162,7 @@ import time
 data_all = {}
 for unit_id in [1, 2, 3]:
     fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
-    print(f"  📡 Leyendo tarjeta {fase}...", end=" ", flush=True)
+    print(f"  [M] Leyendo tarjeta {fase}...", end=" ", flush=True)
     
     data = []
     max_retries = 3
@@ -2178,14 +2178,14 @@ for unit_id in [1, 2, 3]:
             data.extend(result.registers)
         
         if success and len(data) >= 96:
-            print("✅")
+            print("[OK]")
             break
         else:
             if retry < max_retries - 1:
-                print(f"⚠️ reintentando ({retry+2}/{max_retries})...", end=" ", flush=True)
+                print(f"[!] reintentando ({retry+2}/{max_retries})...", end=" ", flush=True)
                 time.sleep(1)
             else:
-                print("❌ sin respuesta")
+                print("[X] sin respuesta")
     
     data_all[unit_id] = data if len(data) >= 96 else None
 
@@ -2197,9 +2197,9 @@ placas_fail = [u for u in [1, 2, 3] if data_all[u] is None]
 
 if placas_fail:
     print("")
-    print(f"  ⚠️  No se pudo leer: {', '.join(['L'+str(u) for u in placas_fail])}")
+    print(f"  [!]  No se pudo leer: {', '.join(['L'+str(u) for u in placas_fail])}")
     if not placas_ok:
-        print("  ❌ No hay datos para mostrar")
+        print("  [X] No hay datos para mostrar")
         sys.exit(1)
 
 # Rellenar placas sin datos con None para mostrar "---"
@@ -2251,7 +2251,7 @@ def print_section(title, start, end):
             
             # Solo marcar diferencia si hay al menos 2 valores válidos
             vals = [v for v in [v1, v2, v3] if v is not None]
-            diff = "⚠️ DIFF" if len(vals) >= 2 and len(set(vals)) > 1 else ""
+            diff = "[!] DIFF" if len(vals) >= 2 and len(set(vals)) > 1 else ""
             
             print(f"  {i:<4} {regs[i]:<14} {s1} {s2} {s3}   {diff}")
 
@@ -2266,13 +2266,13 @@ EOFCOL
                 
                 # Reiniciar servicios
                 echo ""
-                echo "  🔄 Reiniciando servicios..."
+                echo "  [~] Reiniciando servicios..."
                 sudo systemctl start nodered
                 docker start gesinne-rpi 2>/dev/null || true
                 if systemctl is-active --quiet kiosk.service 2>/dev/null; then
                     sudo systemctl restart kiosk.service
                 fi
-                echo "  ✅ Listo"
+                echo "  [OK] Listo"
                 
                 volver_menu
                 continue
@@ -2287,7 +2287,7 @@ EOFCOL
                 3) FASE="L3" ;;
             esac
             
-            echo "  📡 Leyendo registros de Tarjeta $FASE (Unit ID: $UNIT_ID)..."
+            echo "  [M] Leyendo registros de Tarjeta $FASE (Unit ID: $UNIT_ID)..."
             echo ""
             
             python3 << EOF
@@ -2298,7 +2298,7 @@ except ImportError:
     try:
         from pymodbus.client.sync import ModbusSerialClient
     except ImportError:
-        print("  ❌ pymodbus no instalado. Instala con: pip3 install pymodbus")
+        print("  [X] pymodbus no instalado. Instala con: pip3 install pymodbus")
         sys.exit(1)
 
 client = ModbusSerialClient(
@@ -2311,7 +2311,7 @@ client = ModbusSerialClient(
 )
 
 if not client.connect():
-    print("  ❌ No se pudo conectar al puerto serie /dev/ttyAMA0")
+    print("  [X] No se pudo conectar al puerto serie /dev/ttyAMA0")
     sys.exit(1)
 
 try:
@@ -2335,7 +2335,7 @@ try:
                 break
             max_reg = test_count
         
-        print(f"  ✅ Máximo detectado: {max_reg} registros")
+        print(f"  [OK] Máximo detectado: {max_reg} registros")
         print("")
         num_regs = max_reg
     
@@ -2346,12 +2346,12 @@ try:
         count = min(40, num_regs - start)
         result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
         if result.isError():
-            print(f"  ⚠️  Error en registros {start}-{start+count-1}")
+            print(f"  [!]  Error en registros {start}-{start+count-1}")
             break
         data.extend(result.registers)
     
     if data:
-        print(f"  📋 Registros Tarjeta $FASE (0-{len(data)-1}):")
+        print(f"  [i] Registros Tarjeta $FASE (0-{len(data)-1}):")
         print("")
         print("  " + ",".join(str(val) for val in data))
         print("")
@@ -2501,10 +2501,10 @@ try:
         
         print("")
     else:
-        print("  ❌ No se pudieron leer registros")
+        print("  [X] No se pudieron leer registros")
     
 except Exception as e:
-    print(f"  ❌ Error: {e}")
+    print(f"  [X] Error: {e}")
 finally:
     client.close()
 EOF
@@ -2514,7 +2514,7 @@ EOF
             # Guardar automáticamente en archivo
             ARCHIVO="/home/$(logname 2>/dev/null || echo 'pi')/parametros_configuracion.txt"
             echo ""
-            echo "  💾 Guardando en: $ARCHIVO"
+            echo "  [D] Guardando en: $ARCHIVO"
             
             # Crear archivo con formato bonito
             echo "================================================================================" > "$ARCHIVO"
@@ -2650,10 +2650,10 @@ EOFTXT
             
             echo "" >> "$ARCHIVO"
             echo "================================================================================" >> "$ARCHIVO"
-            echo "  ✅ Archivo guardado: $ARCHIVO"
+            echo "  [OK] Archivo guardado: $ARCHIVO"
             
             echo ""
-            echo "  🔄 Reiniciando servicios..."
+            echo "  [~] Reiniciando servicios..."
             sudo systemctl start nodered
             sleep 1
             
@@ -2668,7 +2668,7 @@ EOFTXT
                 sudo systemctl restart kiosk.service
             fi
             
-            echo "  ✅ Listo"
+            echo "  [OK] Listo"
             
             volver_menu
             ;;
@@ -2693,13 +2693,13 @@ EOFTXT
                 2) TARJETAS_EMAIL="2" ;;
                 3) TARJETAS_EMAIL="3" ;;
                 4) TARJETAS_EMAIL="1 2 3" ;;
-                *) echo "  ❌ Opción no válida"; exit 1 ;;
+                *) echo "  [X] Opción no válida"; exit 1 ;;
             esac
             
             echo ""
             echo "  📧 Preparando envío de email..."
             echo ""
-            echo "  ⚠️  Parando Node-RED temporalmente..."
+            echo "  [!]  Parando Node-RED temporalmente..."
             
             # Parar Node-RED
             sudo systemctl stop nodered 2>/dev/null
@@ -2708,7 +2708,7 @@ EOFTXT
             docker stop gesinne-rpi >/dev/null 2>&1 || true
             
             sleep 2
-            echo "  ✅ Servicios parados"
+            echo "  [OK] Servicios parados"
             echo ""
             
             # Obtener número de serie
@@ -2860,7 +2860,7 @@ while len(placas_leidas) < 3 and intento < max_intentos:
     fases_pendientes = [u for u in [1, 2, 3] if u not in placas_leidas]
     
     if intento > 1:
-        print(f"  🔄 Reintento {intento}/{max_intentos} - Fases pendientes: {', '.join([f'L{u}' for u in fases_pendientes])}")
+        print(f"  [~] Reintento {intento}/{max_intentos} - Fases pendientes: {', '.join([f'L{u}' for u in fases_pendientes])}")
         time.sleep(1)
     
     client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
@@ -2878,7 +2878,7 @@ while len(placas_leidas) < 3 and intento < max_intentos:
             
             if len(data) > 48:
                 placas_leidas[unit_id] = data
-                print(f"  ✅ L{unit_id} leída correctamente")
+                print(f"  [OK] L{unit_id} leída correctamente")
         
         client.close()
 
@@ -2886,12 +2886,12 @@ while len(placas_leidas) < 3 and intento < max_intentos:
 if len(placas_leidas) < 3:
     fases_ok = [f"L{k}" for k in sorted(placas_leidas.keys())]
     fases_fail = [f"L{k}" for k in [1,2,3] if k not in placas_leidas]
-    print(f"⚠️  Solo se pudieron leer {len(placas_leidas)} fases: {', '.join(fases_ok)}")
-    print(f"❌ Fases sin respuesta después de {max_intentos} intentos: {', '.join(fases_fail)}")
-    print("❌ No se envía email hasta tener las 3 fases")
+    print(f"[!]  Solo se pudieron leer {len(placas_leidas)} fases: {', '.join(fases_ok)}")
+    print(f"[X] Fases sin respuesta después de {max_intentos} intentos: {', '.join(fases_fail)}")
+    print("[X] No se envía email hasta tener las 3 fases")
     sys.exit(1)
 
-print(f"  ✅ Las 3 fases leídas correctamente")
+print(f"  [OK] Las 3 fases leídas correctamente")
 
 # Obtener números de serie de cada placa
 sn_l1 = placas_leidas[1][41]
@@ -2943,7 +2943,7 @@ def add_section(title, start, end):
             v1 = placas_leidas[1][i] if i < len(placas_leidas[1]) else 0
             v2 = placas_leidas[2][i] if i < len(placas_leidas[2]) else 0
             v3 = placas_leidas[3][i] if i < len(placas_leidas[3]) else 0
-            diff = "⚠️ DIFF" if not (v1 == v2 == v3) else ""
+            diff = "[!] DIFF" if not (v1 == v2 == v3) else ""
             contenido.append(f"{i:<4} {REGS_CORTOS[i]:<16} {v1:>8} {v2:>8} {v3:>8}   {diff}")
 
 add_section("TIEMPO REAL", 0, 22)
@@ -2960,7 +2960,7 @@ print(texto)
 
 # Enviar email
 msg = MIMEMultipart('alternative')
-msg['Subject'] = f"📋 Configuración Modbus - Equipo {NUMERO_SERIE} - Placas: {sn_l1}/{sn_l2}/{sn_l3} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+msg['Subject'] = f"[i] Configuración Modbus - Equipo {NUMERO_SERIE} - Placas: {sn_l1}/{sn_l2}/{sn_l3} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 msg['From'] = SMTP_FROM
 msg['To'] = SMTP_TO
 
@@ -2976,7 +2976,7 @@ pre {{ background-color: #f4f4f4; padding: 15px; border-radius: 5px; font-family
 </style></head>
 <body>
 <div class="header">
-<h2>📋 Configuración Modbus - Equipo {NUMERO_SERIE}</h2>
+<h2>[i] Configuración Modbus - Equipo {NUMERO_SERIE}</h2>
 <p>Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
 </div>
 <pre>{texto}</pre>
@@ -2992,17 +2992,17 @@ try:
     server.login(SMTP_USER, SMTP_PASSWORD)
     server.sendmail(SMTP_FROM, SMTP_TO.split(','), msg.as_string())
     server.quit()
-    print(f"\n✅ Email enviado a: {SMTP_TO}")
+    print(f"\n[OK] Email enviado a: {SMTP_TO}")
 except Exception as e:
-    print(f"\n❌ Error enviando email: {e}")
+    print(f"\n[X] Error enviando email: {e}")
 EOFEMAIL
             
             echo ""
-            echo "  🔄 Reiniciando servicios..."
+            echo "  [~] Reiniciando servicios..."
             sudo systemctl start nodered
             docker start gesinne-rpi >/dev/null 2>&1 || true
             
-            echo "  ✅ Listo"
+            echo "  [OK] Listo"
             volver_menu
             ;;
         7)
@@ -3014,13 +3014,13 @@ EOFEMAIL
             echo ""
             
             # Espacio en disco
-            echo "  📊 ESPACIO EN DISCO"
+            echo "  [#] ESPACIO EN DISCO"
             echo "  ─────────────────────────────────────────────"
             df -h / | awk 'NR==1 {print "  " $0} NR==2 {print "  " $0}'
             echo ""
             
             # Uso por directorio
-            echo "  📁 USO POR DIRECTORIO (top 10)"
+            echo "  [F] USO POR DIRECTORIO (top 10)"
             echo "  ─────────────────────────────────────────────"
             du -sh /var/log /var/cache /tmp /home/*/.node-red /var/lib/docker 2>/dev/null | sort -rh | head -10 | while read line; do
                 echo "  $line"
@@ -3068,14 +3068,14 @@ EOFEMAIL
             case $CLEAN_OPT in
                 1)
                     echo ""
-                    echo "  🧹 Limpiando journal systemd..."
+                    echo "  [C] Limpiando journal systemd..."
                     sudo journalctl --vacuum-time=3d
                     sudo journalctl --vacuum-size=100M
-                    echo "  ✅ Journal limpiado"
+                    echo "  [OK] Journal limpiado"
                     ;;
                 2)
                     echo ""
-                    echo "  🧹 Limpiando logs en /var/log..."
+                    echo "  [C] Limpiando logs en /var/log..."
                     # Rotar logs
                     sudo logrotate -f /etc/logrotate.conf 2>/dev/null || true
                     # Borrar logs antiguos (.gz, .1, .2, etc)
@@ -3089,24 +3089,24 @@ EOFEMAIL
                     sudo truncate -s 0 /var/log/messages 2>/dev/null || true
                     sudo truncate -s 0 /var/log/daemon.log 2>/dev/null || true
                     sudo truncate -s 0 /var/log/kern.log 2>/dev/null || true
-                    echo "  ✅ Logs limpiados"
+                    echo "  [OK] Logs limpiados"
                     ;;
                 3)
                     echo ""
-                    echo "  🧹 Limpiando caché apt..."
+                    echo "  [C] Limpiando caché apt..."
                     sudo apt-get clean
                     sudo apt-get autoremove -y
-                    echo "  ✅ Caché apt limpiada"
+                    echo "  [OK] Caché apt limpiada"
                     ;;
                 4)
                     echo ""
-                    echo "  🧹 Limpiando Docker..."
-                    docker system prune -af 2>/dev/null || echo "  ⚠️ Docker no disponible"
-                    echo "  ✅ Docker limpiado"
+                    echo "  [C] Limpiando Docker..."
+                    docker system prune -af 2>/dev/null || echo "  [!] Docker no disponible"
+                    echo "  [OK] Docker limpiado"
                     ;;
                 5)
                     echo ""
-                    echo "  🧹 Limpiando TODO..."
+                    echo "  [C] Limpiando TODO..."
                     echo ""
                     echo "  → Journal systemd..."
                     sudo journalctl --vacuum-time=3d
@@ -3129,9 +3129,9 @@ EOFEMAIL
                     sudo apt-get autoremove -y
                     echo ""
                     echo "  → Docker..."
-                    docker system prune -af 2>/dev/null || echo "  ⚠️ Docker no disponible"
+                    docker system prune -af 2>/dev/null || echo "  [!] Docker no disponible"
                     echo ""
-                    echo "  ✅ Limpieza completa"
+                    echo "  [OK] Limpieza completa"
                     ;;
                 6)
                     echo ""
@@ -3194,21 +3194,21 @@ EOFLOGROTATE
                     sudo truncate -s 0 /var/log/daemon.log 2>/dev/null || true
                     
                     echo ""
-                    echo "  ✅ Logs reducidos permanentemente:"
+                    echo "  [OK] Logs reducidos permanentemente:"
                     echo "     • Journal limitado a 50MB"
                     echo "     • Rotación diaria, máximo 2 archivos"
                     echo "     • Logs debug/info desactivados"
                     echo "     • Kernel en modo silencioso"
                     ;;
                 *)
-                    echo "  ❌ Cancelado"
+                    echo "  [X] Cancelado"
                     ;;
             esac
             
             # Mostrar espacio después de limpiar
             if [ "$CLEAN_OPT" != "0" ] && [ -n "$CLEAN_OPT" ]; then
                 echo ""
-                echo "  📊 ESPACIO DESPUÉS DE LIMPIAR"
+                echo "  [#] ESPACIO DESPUÉS DE LIMPIAR"
                 echo "  ─────────────────────────────────────────────"
                 df -h / | awk 'NR==1 {print "  " $0} NR==2 {print "  " $0}'
             fi
@@ -3233,14 +3233,14 @@ EOFLOGROTATE
             done
             
             if [ -z "$NODERED_DIR" ]; then
-                echo "  ❌ No se encontró directorio .node-red"
+                echo "  [X] No se encontró directorio .node-red"
                 volver_menu
                 continue
             fi
             
             MODULES_DIR="$NODERED_DIR/node_modules"
             
-            echo "  📦 NODOS INSTALADOS"
+            echo "  [P] NODOS INSTALADOS"
             echo "  ─────────────────────────────────────────────"
             echo ""
             
@@ -3274,9 +3274,9 @@ try:
         if 'node-red' in name or name.startswith('@') or name in ['guaranteed-delivery', 'modbus-serial']:
             if name in outdated:
                 latest = outdated[name].get('latest', '?')
-                print(f'  {name:<42} v{version:<10} → v{latest} ⬆️')
+                print(f'  {name:<42} v{version:<10} → v{latest} [^]')
             else:
-                print(f'  {name:<42} v{version:<10} ✅')
+                print(f'  {name:<42} v{version:<10} [OK]')
 except Exception as e:
     pass
 " 2>/dev/null
@@ -3285,7 +3285,7 @@ except Exception as e:
                 
                 cd - > /dev/null
             else
-                echo "  ❌ No existe directorio node_modules"
+                echo "  [X] No existe directorio node_modules"
             fi
             
             echo ""
@@ -3304,12 +3304,12 @@ except Exception as e:
             case $PALETTE_OPT in
                 1)
                     echo ""
-                    echo "  🔄 Actualizando todos los nodos..."
+                    echo "  [~] Actualizando todos los nodos..."
                     echo ""
                     cd "$NODERED_DIR"
                     
                     # Parar Node-RED
-                    echo "  ⚠️  Parando Node-RED..."
+                    echo "  [!]  Parando Node-RED..."
                     sudo systemctl stop nodered
                     sleep 2
                     
@@ -3317,10 +3317,10 @@ except Exception as e:
                     npm update 2>&1 | while read line; do echo "  $line"; done
                     
                     echo ""
-                    echo "  🔄 Reiniciando Node-RED..."
+                    echo "  [~] Reiniciando Node-RED..."
                     sudo systemctl start nodered
                     sleep 3
-                    echo "  ✅ Nodos actualizados"
+                    echo "  [OK] Nodos actualizados"
                     ;;
                 2)
                     echo ""
@@ -3331,7 +3331,7 @@ except Exception as e:
                         # Mostrar versión actual
                         CURRENT_VER=$(npm ls "$NODE_NAME" --depth=0 2>/dev/null | grep "$NODE_NAME" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
                         echo ""
-                        echo "  📦 Versión actual: ${CURRENT_VER:-desconocida}"
+                        echo "  [P] Versión actual: ${CURRENT_VER:-desconocida}"
                         
                         # Obtener versiones disponibles
                         echo "  🔍 Buscando versiones disponibles..."
@@ -3364,16 +3364,16 @@ except:
                             read -p "  Versión a instalar [$LATEST_VER]: " TARGET_VER
                             TARGET_VER="${TARGET_VER:-$LATEST_VER}"
                         else
-                            echo "  ⚠️  No se pudieron obtener versiones"
+                            echo "  [!]  No se pudieron obtener versiones"
                             read -p "  Versión a instalar (o ENTER para última): " TARGET_VER
                         fi
                         
                         echo ""
                         if [ -n "$TARGET_VER" ]; then
-                            echo "  🔄 Instalando $NODE_NAME@$TARGET_VER..."
+                            echo "  [~] Instalando $NODE_NAME@$TARGET_VER..."
                             INSTALL_PKG="$NODE_NAME@$TARGET_VER"
                         else
-                            echo "  🔄 Actualizando $NODE_NAME a última versión..."
+                            echo "  [~] Actualizando $NODE_NAME a última versión..."
                             INSTALL_PKG="$NODE_NAME@latest"
                         fi
                         
@@ -3384,7 +3384,7 @@ except:
                         
                         sudo systemctl start nodered
                         sleep 3
-                        echo "  ✅ $NODE_NAME actualizado"
+                        echo "  [OK] $NODE_NAME actualizado"
                     fi
                     ;;
                 3)
@@ -3398,7 +3398,7 @@ except:
                     read -p "  Nombre del nodo a instalar: " NODE_NAME
                     if [ -n "$NODE_NAME" ]; then
                         echo ""
-                        echo "  📦 Instalando $NODE_NAME..."
+                        echo "  [P] Instalando $NODE_NAME..."
                         cd "$NODERED_DIR"
                         
                         sudo systemctl stop nodered
@@ -3408,7 +3408,7 @@ except:
                         
                         sudo systemctl start nodered
                         sleep 3
-                        echo "  ✅ $NODE_NAME instalado"
+                        echo "  [OK] $NODE_NAME instalado"
                     fi
                     ;;
                 4)
@@ -3416,7 +3416,7 @@ except:
                     read -p "  Nombre del nodo a desinstalar: " NODE_NAME
                     if [ -n "$NODE_NAME" ]; then
                         echo ""
-                        read -p "  ⚠️  ¿Seguro que quieres desinstalar $NODE_NAME? [s/N]: " CONFIRM
+                        read -p "  [!]  ¿Seguro que quieres desinstalar $NODE_NAME? [s/N]: " CONFIRM
                         if [ "$CONFIRM" = "s" ] || [ "$CONFIRM" = "S" ]; then
                             echo ""
                             echo "  🗑️  Desinstalando $NODE_NAME..."
@@ -3429,14 +3429,14 @@ except:
                             
                             sudo systemctl start nodered
                             sleep 3
-                            echo "  ✅ $NODE_NAME desinstalado"
+                            echo "  [OK] $NODE_NAME desinstalado"
                         else
-                            echo "  ❌ Cancelado"
+                            echo "  [X] Cancelado"
                         fi
                     fi
                     ;;
                 *)
-                    echo "  ❌ Cancelado"
+                    echo "  [X] Cancelado"
                     ;;
             esac
             
@@ -3462,20 +3462,20 @@ if [ "$CONNECTION_MODE" = "1" ]; then
 
     if [ -z "$AZURE_CONNECTION_STRING" ]; then
         echo ""
-        echo "  ❌ No has introducido nada. Abortando."
+        echo "  [X] No has introducido nada. Abortando."
         exit 1
     fi
 
     # Validar formato básico
     if [[ ! "$AZURE_CONNECTION_STRING" =~ HostName=.*DeviceId=.*SharedAccessKey= ]]; then
         echo ""
-        echo "  ❌ Formato incorrecto. Debe contener:"
+        echo "  [X] Formato incorrecto. Debe contener:"
         echo "     HostName=xxx;DeviceId=xxx;SharedAccessKey=xxx"
         exit 1
     fi
 
     echo ""
-    echo "  ✅ Connection String válida"
+    echo "  [OK] Connection String válida"
 fi
 
 # Buscar archivo de flows de Node-RED
@@ -3490,7 +3490,7 @@ done
 
 if [ -z "$FLOWS_FILE" ]; then
     echo ""
-    echo "  ⚠️  Node-RED no detectado (no se encontró flows.json)"
+    echo "  [!]  Node-RED no detectado (no se encontró flows.json)"
     echo "     Configura manualmente el broker MQTT"
 else
     # Obtener configuración actual
@@ -3508,9 +3508,9 @@ except:
 " 2>/dev/null)
 
     echo ""
-    echo "  📡 Node-RED detectado"
-    echo "  📁 Archivo: $FLOWS_FILE"
-    echo "  🔗 Broker actual: $BROKER_HOST"
+    echo "  [M] Node-RED detectado"
+    echo "  [F] Archivo: $FLOWS_FILE"
+    echo "  [>] Broker actual: $BROKER_HOST"
     echo ""
 
     # Hacer backup antes de cualquier cambio
@@ -3531,10 +3531,10 @@ for node in flows:
 with open('$FLOWS_FILE', 'w') as f:
     json.dump(flows, f, indent=4)
 " 2>/dev/null
-            echo "  ✅ Broker cambiado a localhost:1883 (sin SSL)"
+            echo "  [OK] Broker cambiado a localhost:1883 (sin SSL)"
             RESTART_NODERED=1
         else
-            echo "  ✅ Broker ya configurado en localhost"
+            echo "  [OK] Broker ya configurado en localhost"
         fi
         USE_AZURE=1
     else
@@ -3564,7 +3564,7 @@ with open('$FLOWS_FILE', 'w') as f:
         
         if [ -z "$MQTT_USER" ] || [ -z "$MQTT_PASS" ]; then
             echo ""
-            echo "  ❌ Usuario y contraseña son obligatorios"
+            echo "  [X] Usuario y contraseña son obligatorios"
             exit 1
         fi
         
@@ -3610,9 +3610,9 @@ with open(cred_file, 'w') as f:
         fi
 
         echo ""
-        echo "  ✅ Broker: $MQTT_SERVER:$MQTT_PORT (SSL: $MQTT_SSL)"
-        echo "  ✅ Usuario: $MQTT_USER"
-        echo "  ✅ Credenciales guardadas"
+        echo "  [OK] Broker: $MQTT_SERVER:$MQTT_PORT (SSL: $MQTT_SSL)"
+        echo "  [OK] Usuario: $MQTT_USER"
+        echo "  [OK] Credenciales guardadas"
         RESTART_NODERED=1
         USE_AZURE=0
     fi
@@ -3620,10 +3620,10 @@ with open(cred_file, 'w') as f:
     # Reiniciar Node-RED si hubo cambios
     if [ "$RESTART_NODERED" = "1" ]; then
         echo ""
-        echo "  ⚠️  Reiniciando Node-RED..."
+        echo "  [!]  Reiniciando Node-RED..."
         systemctl restart nodered 2>/dev/null || node-red-restart 2>/dev/null || true
         sleep 2
-        echo "  ✅ Node-RED reiniciado"
+        echo "  [OK] Node-RED reiniciado"
     fi
 fi
 
@@ -3632,7 +3632,7 @@ if [ "$CONNECTION_MODE" = "2" ]; then
     echo ""
     echo "  ╔══════════════════════════════════════════════╗"
     echo "  ║                                              ║"
-    echo "  ║   ✅ CONFIGURACIÓN COMPLETADA                ║"
+    echo "  ║   [OK] CONFIGURACIÓN COMPLETADA                ║"
     echo "  ║                                              ║"
     echo "  ╚══════════════════════════════════════════════╝"
     echo ""
@@ -3655,15 +3655,15 @@ if ! command -v docker &> /dev/null; then
     apt-get install -y -qq docker.io docker-compose > /dev/null 2>&1
     systemctl start docker
     systemctl enable docker
-    echo "  ✅ Docker instalado"
+    echo "  [OK] Docker instalado"
 else
-    echo "  ✅ Docker ya instalado"
+    echo "  [OK] Docker ya instalado"
 fi
 
 # Instalar docker-compose si no existe
 if ! command -v docker-compose &> /dev/null; then
     apt-get install -y -qq docker-compose > /dev/null 2>&1
-    echo "  ✅ Docker Compose instalado"
+    echo "  [OK] Docker Compose instalado"
 fi
 
 echo ""
@@ -3677,14 +3677,14 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     git stash -q 2>/dev/null || true
     git fetch -q origin main
     git reset --hard origin/main -q
-    echo "  ✅ Software actualizado"
+    echo "  [OK] Software actualizado"
 elif [ -d "$INSTALL_DIR" ]; then
     rm -rf "$INSTALL_DIR"
     git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
-    echo "  ✅ Software descargado"
+    echo "  [OK] Software descargado"
 else
     git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
-    echo "  ✅ Software descargado"
+    echo "  [OK] Software descargado"
 fi
 
 cd "$INSTALL_DIR"
@@ -3713,22 +3713,22 @@ echo "  Iniciando servicio (puede tardar 1-2 minutos)..."
 if docker-compose up -d --build 2>&1 | tail -5; then
     sleep 3
     if docker-compose ps | grep -q "Up"; then
-        echo "  ✅ Servicio iniciado"
+        echo "  [OK] Servicio iniciado"
     else
-        echo "  ❌ Error: El contenedor no arrancó"
+        echo "  [X] Error: El contenedor no arrancó"
         echo ""
         docker-compose logs --tail=20
         exit 1
     fi
 else
-    echo "  ❌ Error al construir el contenedor"
+    echo "  [X] Error al construir el contenedor"
     exit 1
 fi
 
 echo ""
 echo "  ╔══════════════════════════════════════════════╗"
 echo "  ║                                              ║"
-echo "  ║   ✅ INSTALACIÓN COMPLETADA                  ║"
+echo "  ║   [OK] INSTALACIÓN COMPLETADA                  ║"
 echo "  ║                                              ║"
 echo "  ╚══════════════════════════════════════════════╝"
 echo ""
@@ -3741,7 +3741,7 @@ echo "  ━━━━━━━━━━━━━━━━━━━━━━━━
 echo ""
 
 sleep 5
-docker-compose logs --tail=15 2>/dev/null | grep -E "✅|❌|📤|⚠️" | head -10
+docker-compose logs --tail=15 2>/dev/null | grep -E "[OK]|[X]|📤|[!]" | head -10
 
 echo ""
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
