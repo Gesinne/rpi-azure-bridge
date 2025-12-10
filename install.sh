@@ -1200,10 +1200,58 @@ except:
                     CURRENT_LON=$(echo "$CURRENT_CHRONOS" | cut -d'|' -f2)
                     CURRENT_TZ=$(echo "$CURRENT_CHRONOS" | cut -d'|' -f3)
                     
+                    # Detectar si está vacío/inválido
+                    CHRONOS_INVALID="no"
+                    if [ -z "$CURRENT_LAT" ] || [ -z "$CURRENT_LON" ] || [ -z "$CURRENT_TZ" ]; then
+                        CHRONOS_INVALID="yes"
+                    fi
+                    if ! echo "$CURRENT_TZ" | grep -q "/"; then
+                        CHRONOS_INVALID="yes"
+                    fi
+                    
                     # Valores por defecto si están vacíos
                     CURRENT_LAT="${CURRENT_LAT:-40.4168}"
                     CURRENT_LON="${CURRENT_LON:--3.7038}"
                     CURRENT_TZ="${CURRENT_TZ:-Europe/Madrid}"
+                    
+                    if [ "$CHRONOS_INVALID" = "yes" ]; then
+                        echo "  [!] Chronos NO configurado o inválido"
+                        echo ""
+                        echo "  ¿Configurar automáticamente con valores por defecto?"
+                        echo "    Latitud:  40.4168 (Madrid)"
+                        echo "    Longitud: -3.7038 (Madrid)"
+                        echo "    Zona:     Europe/Madrid"
+                        echo ""
+                        read -p "  ¿Aplicar configuración automática? [S/n]: " AUTO_CONFIG
+                        
+                        if [ "$AUTO_CONFIG" != "n" ] && [ "$AUTO_CONFIG" != "N" ]; then
+                            NEW_LAT="40.4168"
+                            NEW_LON="-3.7038"
+                            NEW_TZ="Europe/Madrid"
+                            
+                            python3 -c "
+import json
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+for node in flows:
+    if node.get('type') == 'chronos-config':
+        node['latitude'] = '$NEW_LAT'
+        node['longitude'] = '$NEW_LON'
+        node['timezone'] = '$NEW_TZ'
+with open('$FLOWS_FILE', 'w') as f:
+    json.dump(flows, f, indent=4)
+" 2>/dev/null
+                            
+                            echo ""
+                            echo "  [OK] Chronos configurado automáticamente"
+                            echo ""
+                            echo "  [~] Reiniciando Node-RED..."
+                            sudo systemctl restart nodered
+                            sleep 3
+                            echo "  [OK] Node-RED reiniciado"
+                            continue
+                        fi
+                    fi
                     
                     echo "  Configuración actual:"
                     echo "    Latitud:  $CURRENT_LAT"
