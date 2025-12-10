@@ -258,9 +258,10 @@ while true; do
     echo "  6) Descargar parámetros (enviar por EMAIL)"
     echo "  7) Revisar espacio y logs"
     echo "  8) Gestionar paleta Node-RED"
+    echo "  9) Verificar parametrización placas"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-8]: " OPTION
+    read -p "  Opción [0-9]: " OPTION
 
     case $OPTION in
         0)
@@ -3438,6 +3439,20 @@ except:
                     echo "  [X] Cancelado"
                     ;;
             esac
+            
+            volver_menu
+            ;;
+        9)
+            # Verificar parametrización de placas
+            VERIF_SCRIPT="/tmp/gesinne-verificar.sh"
+            curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/firmware.sh" -o "$VERIF_SCRIPT" 2>/dev/null
+            
+            if [ -f "$VERIF_SCRIPT" ]; then
+                chmod +x "$VERIF_SCRIPT"
+                bash "$VERIF_SCRIPT" verificar
+            else
+                echo "  [X] Error descargando script de verificacion"
+            fi
             
             volver_menu
             ;;

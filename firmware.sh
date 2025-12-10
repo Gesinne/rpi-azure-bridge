@@ -1,29 +1,11 @@
 #!/bin/bash
 # ============================================
-# Gesinne - Actualizador de Firmware Placas
+# Gesinne - Verificacion de Parametros Placas
 # ============================================
-
-# Colores y formato
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
 
 # Configuración serie
 SERIAL_PORT="/dev/ttyAMA0"
 BAUDRATE=115200
-DELAY_MS=150
-
-# Directorio temporal para firmwares
-FW_DIR="/tmp/gesinne-firmware"
-CACHE_DIR="/opt/nodered-flows-cache"
-CREDS_FILE="/opt/nodered-flows-cache/.git_credentials"
-
-echo ""
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  [*] Gesinne - Actualizador de Firmware"
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
 
 # Verificar root
 if [ "$EUID" -ne 0 ]; then
@@ -31,16 +13,171 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Verificar puerto serie
-if [ ! -e "$SERIAL_PORT" ]; then
-    echo "  [X] ERROR: Puerto serie $SERIAL_PORT no encontrado"
-    exit 1
-fi
+# Función para verificar parametrización
+verificar_parametrizacion() {
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Verificar parametrizacion de placas"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  [!]  Parando Node-RED temporalmente..."
+    
+    # Parar Node-RED
+    sudo systemctl stop nodered 2>/dev/null
+    docker stop gesinne-rpi >/dev/null 2>&1 || true
+    sleep 2
+    echo "  [OK] Servicios parados"
+    echo ""
+    echo "  [M] Leyendo las 3 tarjetas..."
+    echo ""
+    
+    python3 << 'EOFVERIF'
+import sys
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
 
-# Verificar pyserial
-if ! python3 -c "import serial" 2>/dev/null; then
-    echo "  [!] Instalando pyserial..."
-    pip3 install pyserial -q
+import time
+
+client = ModbusSerialClient(
+    port='/dev/ttyAMA0',
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+# Definir parametros a verificar con sus registros y rangos correctos
+# Formato: registro: (nombre, valor_min, valor_max, valores_exactos)
+# Si valores_exactos no es None, se usa en lugar de min/max
+PARAMS_CHECK = {
+    55: ("estado_inicial", None, None, [0, 2]),
+    56: ("tension_consigna", 1760, 2640, None),
+    63: ("angulo_tension_cargas_altas", 179, 179, None),
+    64: ("angulo_tension_cargas_bajas", 179, 179, None),
+    5:  ("frecuencia", 4900, 5100, None),
+    57: ("temperatura_admisible", 0, 550, None),
+    47: ("dead_time", 3, 22, None),
+    48: ("direccion_modbus", None, None, [1, 2, 3]),
+    66: ("sensibilidad_transitorios", 0, 4, None),
+    61: ("velocidad_modbus", 0, 2, None),
+    46: ("topologia", 0, 4, None),
+    60: ("tipo_alimentacion", None, None, [0, 1]),
+    62: ("empaquetado_transistores", None, None, [0, 1]),
+    44: ("tension_primario_trafo", 0, 3600, None),
+}
+
+# Leer las 3 placas
+data_all = {}
+for unit_id in [1, 2, 3]:
+    fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
+    print(f"  [M] Leyendo tarjeta {fase}...", end=" ", flush=True)
+    
+    data = []
+    max_retries = 3
+    for retry in range(max_retries):
+        data = []
+        success = True
+        for start in range(0, 96, 40):
+            count = min(40, 96 - start)
+            result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+            if result.isError():
+                success = False
+                break
+            data.extend(result.registers)
+        
+        if success and len(data) >= 70:
+            print("[OK]")
+            break
+        else:
+            if retry < max_retries - 1:
+                print(f"[!] reintentando ({retry+2}/{max_retries})...", end=" ", flush=True)
+                time.sleep(1)
+            else:
+                print("[X] sin respuesta")
+    
+    data_all[unit_id] = data if len(data) >= 70 else None
+
+client.close()
+
+# Verificar parametros
+print("")
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("  RESULTADO DE VERIFICACION")
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("")
+
+total_problemas = 0
+for unit_id in [1, 2, 3]:
+    fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
+    data = data_all[unit_id]
+    
+    if data is None:
+        print(f"  [{fase}] [X] No se pudo leer la placa")
+        print("")
+        continue
+    
+    problemas = []
+    for reg, (nombre, val_min, val_max, valores_exactos) in PARAMS_CHECK.items():
+        if reg >= len(data):
+            continue
+        
+        valor = data[reg]
+        
+        # Verificar si el valor es correcto
+        es_correcto = False
+        if valores_exactos is not None:
+            es_correcto = valor in valores_exactos
+            rango_str = f"debe ser {valores_exactos}"
+        else:
+            es_correcto = val_min <= valor <= val_max
+            if val_min == val_max:
+                rango_str = f"debe ser {val_min}"
+            else:
+                rango_str = f"debe ser {val_min}-{val_max}"
+        
+        if not es_correcto:
+            problemas.append(f"{nombre}={valor} ({rango_str})")
+    
+    if problemas:
+        print(f"  [{fase}] [!] DESPARAMETRIZADA - {len(problemas)} problema(s):")
+        for p in problemas:
+            print(f"       - {p}")
+        total_problemas += len(problemas)
+    else:
+        print(f"  [{fase}] [OK] Parametros correctos")
+    print("")
+
+# Resumen
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+if total_problemas == 0:
+    print("  [OK] TODAS LAS PLACAS CORRECTAMENTE PARAMETRIZADAS")
+else:
+    print(f"  [!] {total_problemas} PARAMETRO(S) INCORRECTO(S) DETECTADO(S)")
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+EOFVERIF
+    
+    echo ""
+    echo "  [~] Reiniciando Node-RED..."
+    sudo systemctl start nodered
+    sleep 3
+    echo "  [OK] Node-RED reiniciado"
+}
+
+# Si se llama con argumento "verificar", ejecutar directamente
+if [ "$1" = "verificar" ]; then
+    verificar_parametrizacion
+    exit 0
 fi
 
 # Función para enviar comando y leer respuesta
