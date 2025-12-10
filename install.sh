@@ -264,8 +264,16 @@ with open('$NODERED_DIR/flows.json', 'w') as f:
 " 2>/dev/null
             
             sudo systemctl start nodered 2>/dev/null
-            sleep 2
+            sleep 3
             echo "  [OK] Chronos-config reparado (Gijon: 43.53099, -5.71694)"
+            
+            # Reiniciar kiosko si existe
+            if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                echo "  [~] Reiniciando modo kiosko..."
+                sudo systemctl restart kiosk.service
+                sleep 2
+                echo "  [OK] Kiosko reiniciado"
+            fi
             echo ""
             read -p "  Presiona ENTER para continuar..."
         fi
