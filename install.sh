@@ -144,9 +144,10 @@ crear_chronos_credentials() {
     LAT="$3"
     LON="$4"
     CRED_SECRET="Gesinne20."
+    USER_DIR=$(basename $(dirname "$NODERED_DIR"))
     
     cd "$NODERED_DIR"
-    node -e "
+    sudo node -e "
 const crypto = require('crypto');
 const fs = require('fs');
 
@@ -187,6 +188,9 @@ result['\$'] = iv.toString('hex') + encrypted;
 
 fs.writeFileSync('flows_cred.json', JSON.stringify(result, null, 4));
 " 2>/dev/null
+    
+    # Corregir propietario del archivo
+    sudo chown gesinne:gesinne "$NODERED_DIR/flows_cred.json" 2>/dev/null
 }
 
 # Función para hacer deploy vía API de Node-RED (fuerza recarga de flows)
