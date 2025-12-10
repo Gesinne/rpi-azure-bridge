@@ -137,7 +137,7 @@ reiniciar_nodered() {
     fi
 }
 
-# Función para crear credenciales de chronos-config
+# Función para añadir credenciales de chronos-config (sin borrar las existentes)
 crear_chronos_credentials() {
     NODERED_DIR="$1"
     CHRONOS_ID="$2"
@@ -148,26 +148,45 @@ crear_chronos_credentials() {
     cd "$NODERED_DIR"
     node -e "
 const crypto = require('crypto');
-
-const credentials = {
-    '$CHRONOS_ID': {
-        latitude: '$LAT',
-        longitude: '$LON'
-    }
-};
+const fs = require('fs');
 
 const key = crypto.createHash('sha256').update('$CRED_SECRET').digest();
+
+// Leer credenciales existentes si hay
+let existingCreds = {};
+try {
+    const credFile = fs.readFileSync('flows_cred.json', 'utf8');
+    const credData = JSON.parse(credFile);
+    if (credData['\$']) {
+        const encData = credData['\$'];
+        const iv = Buffer.from(encData.substring(0, 32), 'hex');
+        const encrypted = encData.substring(32);
+        const decipher = crypto.createDecipheriv('aes-256-ctr', key, iv);
+        let decrypted = decipher.update(encrypted, 'base64', 'utf8');
+        decrypted += decipher.final('utf8');
+        existingCreds = JSON.parse(decrypted);
+    }
+} catch (e) {
+    // No hay archivo o error al leer, empezar vacío
+}
+
+// Añadir/actualizar credenciales de chronos
+existingCreds['$CHRONOS_ID'] = {
+    latitude: '$LAT',
+    longitude: '$LON'
+};
+
+// Encriptar y guardar
 const iv = crypto.randomBytes(16);
 const cipher = crypto.createCipheriv('aes-256-ctr', key, iv);
-
-let encrypted = cipher.update(JSON.stringify(credentials), 'utf8', 'base64');
+let encrypted = cipher.update(JSON.stringify(existingCreds), 'utf8', 'base64');
 encrypted += cipher.final('base64');
 
 const result = {};
 result['\$'] = iv.toString('hex') + encrypted;
 
-console.log(JSON.stringify(result, null, 4));
-" > flows_cred.json 2>/dev/null
+fs.writeFileSync('flows_cred.json', JSON.stringify(result, null, 4));
+" 2>/dev/null
 }
 
 # Función para hacer deploy vía API de Node-RED (fuerza recarga de flows)
@@ -1832,9 +1851,8 @@ if changed:
                 sudo systemctl stop nodered
                 sleep 2
                 
-                # Crear credenciales para chronos si no existen o están vacías
-                if [ ! -f "$NODERED_DIR/flows_cred.json" ] || [ ! -s "$NODERED_DIR/flows_cred.json" ]; then
-                    CHRONOS_CREDS=$(python3 -c "
+                # Añadir credenciales de chronos (preserva las existentes como MQTT)
+                CHRONOS_CREDS=$(python3 -c "
 import json
 with open('$NODERED_DIR/flows.json', 'r') as f:
     flows = json.load(f)
@@ -1846,16 +1864,13 @@ for node in flows:
         print(f'{cid}|{lat}|{lon}')
         break
 " 2>/dev/null)
-                    
-                    if [ -n "$CHRONOS_CREDS" ]; then
-                        CHRONOS_ID=$(echo "$CHRONOS_CREDS" | cut -d'|' -f1)
-                        CHRONOS_LAT=$(echo "$CHRONOS_CREDS" | cut -d'|' -f2)
-                        CHRONOS_LON=$(echo "$CHRONOS_CREDS" | cut -d'|' -f3)
-                        crear_chronos_credentials "$NODERED_DIR" "$CHRONOS_ID" "$CHRONOS_LAT" "$CHRONOS_LON"
-                        echo "  [OK] Credenciales chronos creadas"
-                    fi
-                else
-                    echo "  [i] Credenciales chronos: ya existen"
+                
+                if [ -n "$CHRONOS_CREDS" ]; then
+                    CHRONOS_ID=$(echo "$CHRONOS_CREDS" | cut -d'|' -f1)
+                    CHRONOS_LAT=$(echo "$CHRONOS_CREDS" | cut -d'|' -f2)
+                    CHRONOS_LON=$(echo "$CHRONOS_CREDS" | cut -d'|' -f3)
+                    crear_chronos_credentials "$NODERED_DIR" "$CHRONOS_ID" "$CHRONOS_LAT" "$CHRONOS_LON"
+                    echo "  [OK] Credenciales chronos actualizadas"
                 fi
                 
                 echo "  [~] Iniciando Node-RED..."
