@@ -397,6 +397,31 @@ except:
                 fi
             done
             
+            # Mostrar configuración chronos-config desde flows.json
+            for flowfile in /home/*/.node-red/flows.json; do
+                if [ -f "$flowfile" ]; then
+                    python3 -c "
+import json
+try:
+    with open('$flowfile') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'chronos-config':
+            tz = node.get('timezone', '')
+            lat = node.get('latitude', '')
+            lon = node.get('longitude', '')
+            if tz and lat:
+                print(f'  🕐 Chronos: {tz} ({lat}, {lon})')
+            else:
+                print(f'  🕐 Chronos: ⚠️  No configurado')
+            break
+except:
+    pass
+" 2>/dev/null
+                    break
+                fi
+            done
+            
             # Mostrar maxQueue del nodo guaranteed-delivery desde flows.json
             for flowfile in /home/*/.node-red/flows.json; do
                 if [ -f "$flowfile" ]; then
