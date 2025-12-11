@@ -73,24 +73,19 @@ fs.writeFileSync('flows_cred.json', JSON.stringify(result, null, 4));
 
 # Usuario fijo de GitHub
 GIT_USER="Gesinne"
+GIT_TOKEN=""
 
-# Verificar si hay token guardado
+# Cargar token guardado si existe
 if [ -f "$CREDS_FILE" ]; then
-    source "$CREDS_FILE"
-    echo "  [K] Usuario: $GIT_USER"
-    if [ -n "$GIT_TOKEN" ]; then
-        echo "  [K] Token guardado encontrado"
-        echo ""
-        read -p "  ¿Usar este token? [S/n]: " USE_SAVED
-        if [ "$USE_SAVED" = "n" ] || [ "$USE_SAVED" = "N" ]; then
-            GIT_TOKEN=""
-        fi
-    fi
+    source "$CREDS_FILE" 2>/dev/null
 fi
 
-# Solicitar token si no hay guardado
-if [ -z "$GIT_TOKEN" ]; then
-    echo "  [K] Credenciales de GitHub (repo privado)"
+# Si hay token guardado, usarlo directamente (sin preguntar)
+if [ -n "$GIT_TOKEN" ]; then
+    echo "  [K] Usuario: $GIT_USER"
+    echo "  [K] Usando token guardado"
+else
+    # Solicitar token
     echo "  [K] Usuario: $GIT_USER"
     echo ""
     read -s -p "  Token/Contraseña: " GIT_TOKEN
@@ -101,7 +96,7 @@ if [ -z "$GIT_TOKEN" ]; then
         exit 1
     fi
     
-    # Guardar credenciales para próximas veces
+    # Guardar token para próximas veces
     sudo mkdir -p "$CACHE_DIR" 2>/dev/null
     echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
     echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
