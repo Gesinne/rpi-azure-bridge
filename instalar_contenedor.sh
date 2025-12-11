@@ -50,6 +50,20 @@ sudo chattr +i "$INSTALL_DIR/docker-compose.yml"
 echo "  ✅ Archivos copiados a $INSTALL_DIR"
 echo "  🔒 Archivos protegidos con chattr +i (inmutables)"
 
+# Preguntar antes de construir y levantar contenedor
+echo ""
+read -p "  ¿Desea construir y levantar el contenedor ahora? [y/N]: " respuesta
+if [[ ! "$respuesta" =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "  ⚠️  Instalación cancelada por el usuario."
+    echo "  Los archivos están copiados pero el contenedor NO se ha levantado."
+    echo ""
+    echo "  Para levantar el contenedor manualmente:"
+    echo "    cd $INSTALL_DIR && sudo docker-compose up -d --build"
+    echo ""
+    exit 0
+fi
+
 # Construir y levantar contenedor
 cd "$INSTALL_DIR"
 sudo docker-compose up -d --build
