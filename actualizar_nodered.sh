@@ -18,8 +18,28 @@ if ! command -v node-red &> /dev/null; then
     exit 1
 fi
 
+# Verificar si hay actualización de npm disponible
 echo "  [~] Comprobando versiones..."
 echo ""
+
+CURRENT_NPM=$(npm --version 2>/dev/null || echo "0.0.0")
+LATEST_NPM=$(npm view npm version 2>/dev/null || echo "?")
+
+if [ "$CURRENT_NPM" != "$LATEST_NPM" ] && [ "$LATEST_NPM" != "?" ]; then
+    echo "  ┌─────────────────────────────────────────┐"
+    echo "  │  npm actual:   $CURRENT_NPM"
+    echo "  │  npm última:   $LATEST_NPM"
+    echo "  └─────────────────────────────────────────┘"
+    echo ""
+    read -p "  ¿Actualizar npm primero? [S/n]: " UPDATE_NPM
+    if [ "$UPDATE_NPM" != "n" ] && [ "$UPDATE_NPM" != "N" ]; then
+        echo ""
+        echo "  [~] Actualizando npm..."
+        sudo npm install -g npm@latest 2>&1 | grep -E '(added|removed|changed|npm@)' || true
+        echo "  [OK] npm actualizado a $(npm --version)"
+        echo ""
+    fi
+fi
 
 # Obtener versión actual
 CURRENT_VERSION=$(node-red --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "0.0.0")
