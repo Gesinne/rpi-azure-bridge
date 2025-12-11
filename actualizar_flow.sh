@@ -310,6 +310,11 @@ cd "$NODERED_HOME"
 KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo $SUDO_USER)/kiosk.sh"
 
 # OPTIMIZACIÓN: Solo cambiar dashboard si es necesario
+# Cache de dashboards para conexiones lentas
+DASHBOARD_CACHE="/opt/nodered-dashboard-cache"
+FLOWFUSE_CACHE="$DASHBOARD_CACHE/flowfuse"
+CLASSIC_CACHE="$DASHBOARD_CACHE/classic"
+
 NEED_INSTALL="no"
 if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
     if [ "$HAS_FLOWFUSE" != "yes" ]; then
@@ -317,13 +322,30 @@ if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
         echo ""
         echo "  [C] Cambiando a FlowFuse Dashboard..."
         npm uninstall node-red-dashboard 2>/dev/null || true
-        echo "  [P] Instalando FlowFuse Dashboard..."
-        npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
-        if [ $? -eq 0 ]; then
-            echo "  [OK] FlowFuse Dashboard instalado"
+        
+        # Intentar usar cache local primero
+        if [ -d "$FLOWFUSE_CACHE/@flowfuse" ]; then
+            echo "  [P] Instalando FlowFuse Dashboard (desde cache local)..."
+            cp -r "$FLOWFUSE_CACHE/@flowfuse" "$NODERED_HOME/node_modules/" 2>/dev/null
+            if [ $? -eq 0 ]; then
+                echo "  [OK] FlowFuse Dashboard instalado (cache)"
+            else
+                echo "  [!] Cache fallido, descargando..."
+                npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
+            fi
         else
-            echo "  [X] Error instalando FlowFuse Dashboard"
-            exit 1
+            echo "  [P] Instalando FlowFuse Dashboard (descargando)..."
+            npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
+            if [ $? -eq 0 ]; then
+                echo "  [OK] FlowFuse Dashboard instalado"
+                # Guardar en cache para próximas veces
+                sudo mkdir -p "$FLOWFUSE_CACHE" 2>/dev/null
+                sudo cp -r "$NODERED_HOME/node_modules/@flowfuse" "$FLOWFUSE_CACHE/" 2>/dev/null
+                echo "  [D] Cache guardado para futuras instalaciones"
+            else
+                echo "  [X] Error instalando FlowFuse Dashboard"
+                exit 1
+            fi
         fi
     else
         echo "  [OK] FlowFuse Dashboard ya instalado (sin cambios)"
@@ -337,13 +359,30 @@ else
         echo ""
         echo "  [C] Cambiando a Dashboard Clásico..."
         npm uninstall @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led 2>/dev/null || true
-        echo "  [P] Instalando Dashboard Clásico..."
-        npm install node-red-dashboard --save
-        if [ $? -eq 0 ]; then
-            echo "  [OK] Dashboard Clásico instalado"
+        
+        # Intentar usar cache local primero
+        if [ -d "$CLASSIC_CACHE/node-red-dashboard" ]; then
+            echo "  [P] Instalando Dashboard Clásico (desde cache local)..."
+            cp -r "$CLASSIC_CACHE/node-red-dashboard" "$NODERED_HOME/node_modules/" 2>/dev/null
+            if [ $? -eq 0 ]; then
+                echo "  [OK] Dashboard Clásico instalado (cache)"
+            else
+                echo "  [!] Cache fallido, descargando..."
+                npm install node-red-dashboard --save
+            fi
         else
-            echo "  [X] Error instalando Dashboard Clásico"
-            exit 1
+            echo "  [P] Instalando Dashboard Clásico (descargando)..."
+            npm install node-red-dashboard --save
+            if [ $? -eq 0 ]; then
+                echo "  [OK] Dashboard Clásico instalado"
+                # Guardar en cache para próximas veces
+                sudo mkdir -p "$CLASSIC_CACHE" 2>/dev/null
+                sudo cp -r "$NODERED_HOME/node_modules/node-red-dashboard" "$CLASSIC_CACHE/" 2>/dev/null
+                echo "  [D] Cache guardado para futuras instalaciones"
+            else
+                echo "  [X] Error instalando Dashboard Clásico"
+                exit 1
+            fi
         fi
     else
         echo "  [OK] Dashboard Clásico ya instalado (sin cambios)"
