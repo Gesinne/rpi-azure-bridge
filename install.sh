@@ -866,35 +866,23 @@ with open('$CONFIG_FILE', 'w') as f:
             fi
             
             if [ "$MODIFY" = "3" ]; then
-                # Actualizar Node-RED
-                echo ""
-                echo "  [~] Actualizando Node-RED..."
-                echo ""
-                echo "  [!]  Esto puede tardar varios minutos"
-                echo ""
-                
-                # Parar Node-RED
-                sudo systemctl stop nodered
-                
-                # Actualizar Node-RED globalmente
-                echo "  → Actualizando Node-RED..."
-                sudo npm install -g --unsafe-perm node-red@latest 2>&1 | tail -5
-                
-                # Reiniciar Node-RED
-                echo ""
-                read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
-                if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
-                    echo "  [~] Iniciando Node-RED..."
-                    sudo systemctl start nodered
-                    sleep 3
-                    
-                    # Mostrar nueva versión
-                    NEW_VERSION=$(node-red --version 2>/dev/null || echo "?")
-                    echo ""
-                    echo "  [OK] Node-RED actualizado a: $NEW_VERSION"
+                # Llamar al script externo de actualización de Node-RED
+                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                if [ -f "$SCRIPT_DIR/actualizar_nodered.sh" ]; then
+                    bash "$SCRIPT_DIR/actualizar_nodered.sh"
+                elif [ -f "$INSTALL_DIR/actualizar_nodered.sh" ]; then
+                    bash "$INSTALL_DIR/actualizar_nodered.sh"
                 else
-                    echo "  [!] Node-RED NO iniciado. Recuerda iniciarlo manualmente:"
-                    echo "      sudo systemctl start nodered"
+                    # Descargar script si no existe localmente
+                    NODERED_SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/actualizar_nodered.sh"
+                    TEMP_NODERED_SCRIPT="/tmp/actualizar_nodered_$$.sh"
+                    if curl -sL "$NODERED_SCRIPT_URL" -o "$TEMP_NODERED_SCRIPT" 2>/dev/null || wget -qO "$TEMP_NODERED_SCRIPT" "$NODERED_SCRIPT_URL" 2>/dev/null; then
+                        chmod +x "$TEMP_NODERED_SCRIPT"
+                        bash "$TEMP_NODERED_SCRIPT"
+                        rm -f "$TEMP_NODERED_SCRIPT"
+                    else
+                        echo "  [X] No se pudo encontrar actualizar_nodered.sh"
+                    fi
                 fi
             fi
             
