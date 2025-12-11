@@ -351,7 +351,8 @@ if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
         echo "  [OK] FlowFuse Dashboard ya instalado (sin cambios)"
     fi
     if [ -f "$KIOSK_SCRIPT" ]; then
-        sed -i 's|http://localhost:1880/ui|http://localhost:1880/dashboard|g' "$KIOSK_SCRIPT"
+        sed -i 's|http://localhost:1880/ui|http://localhost:1880/dashboard/|g' "$KIOSK_SCRIPT"
+        sed -i 's|http://localhost:1880/dashboard[^/]|http://localhost:1880/dashboard/|g' "$KIOSK_SCRIPT"
     fi
 else
     if [ "$HAS_CLASSIC" != "yes" ]; then
@@ -388,7 +389,7 @@ else
         echo "  [OK] Dashboard Clásico ya instalado (sin cambios)"
     fi
     if [ -f "$KIOSK_SCRIPT" ]; then
-        sed -i 's|http://localhost:1880/dashboard|http://localhost:1880/ui|g' "$KIOSK_SCRIPT"
+        sed -i 's|http://localhost:1880/dashboard/\?|http://localhost:1880/ui|g' "$KIOSK_SCRIPT"
     fi
 fi
 
