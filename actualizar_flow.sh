@@ -285,6 +285,18 @@ if [ -z "$FLOW_FILE" ]; then
     exit 1
 fi
 
+# OPTIMIZACIÓN: Detectar si es la misma versión
+SELECTED_DATE=$(echo "$VERSION_NAME" | grep -oE '^[0-9]{8}' || echo "00000000")
+if [ "$SELECTED_DATE" = "$CURRENT_VERSION" ] && [ -n "$CURRENT_VERSION" ]; then
+    echo ""
+    echo "  [!] Esta es la versión actualmente instalada"
+    read -p "  ¿Reinstalar de todos modos? [s/N]: " REINSTALL
+    if [[ ! "$REINSTALL" =~ ^[Ss]$ ]]; then
+        echo "  [OK] Operación cancelada"
+        exit 0
+    fi
+fi
+
 # Detectar si el flow necesita FlowFuse o Clásico
 NEEDS_FLOWFUSE="no"
 if grep -q '"type":\s*"ui-' "$FLOW_FILE" 2>/dev/null; then
@@ -294,43 +306,50 @@ else
     echo "  [#] Flow detectado: Dashboard Clásico"
 fi
 
-# Verificar si necesita cambiar el dashboard
 cd "$NODERED_HOME"
-
-# Limpiar dashboards anteriores
-echo ""
-echo "  [C] Limpiando dashboards anteriores..."
-npm uninstall node-red-dashboard 2>/dev/null || true
-npm uninstall @flowfuse/node-red-dashboard 2>/dev/null || true
-npm uninstall @flowfuse/node-red-dashboard-2-ui-led 2>/dev/null || true
-
 KIOSK_SCRIPT="/home/$(logname 2>/dev/null || echo $SUDO_USER)/kiosk.sh"
 
+# OPTIMIZACIÓN: Solo cambiar dashboard si es necesario
+NEED_INSTALL="no"
 if [ "$NEEDS_FLOWFUSE" = "yes" ]; then
-    echo "  [P] Instalando FlowFuse Dashboard (puede tardar)..."
-    npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
-    if [ $? -eq 0 ]; then
-        echo "  [OK] FlowFuse Dashboard instalado"
+    if [ "$HAS_FLOWFUSE" != "yes" ]; then
+        NEED_INSTALL="yes"
+        echo ""
+        echo "  [C] Cambiando a FlowFuse Dashboard..."
+        npm uninstall node-red-dashboard 2>/dev/null || true
+        echo "  [P] Instalando FlowFuse Dashboard..."
+        npm install @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led --save
+        if [ $? -eq 0 ]; then
+            echo "  [OK] FlowFuse Dashboard instalado"
+        else
+            echo "  [X] Error instalando FlowFuse Dashboard"
+            exit 1
+        fi
     else
-        echo "  [X] Error instalando FlowFuse Dashboard"
-        exit 1
+        echo "  [OK] FlowFuse Dashboard ya instalado (sin cambios)"
     fi
     if [ -f "$KIOSK_SCRIPT" ]; then
         sed -i 's|http://localhost:1880/ui|http://localhost:1880/dashboard|g' "$KIOSK_SCRIPT"
-        echo "  [S]  Kiosko actualizado a /dashboard"
     fi
 else
-    echo "  [P] Instalando Dashboard Clásico (puede tardar)..."
-    npm install node-red-dashboard --save
-    if [ $? -eq 0 ]; then
-        echo "  [OK] Dashboard Clásico instalado"
+    if [ "$HAS_CLASSIC" != "yes" ]; then
+        NEED_INSTALL="yes"
+        echo ""
+        echo "  [C] Cambiando a Dashboard Clásico..."
+        npm uninstall @flowfuse/node-red-dashboard @flowfuse/node-red-dashboard-2-ui-led 2>/dev/null || true
+        echo "  [P] Instalando Dashboard Clásico..."
+        npm install node-red-dashboard --save
+        if [ $? -eq 0 ]; then
+            echo "  [OK] Dashboard Clásico instalado"
+        else
+            echo "  [X] Error instalando Dashboard Clásico"
+            exit 1
+        fi
     else
-        echo "  [X] Error instalando Dashboard Clásico"
-        exit 1
+        echo "  [OK] Dashboard Clásico ya instalado (sin cambios)"
     fi
     if [ -f "$KIOSK_SCRIPT" ]; then
         sed -i 's|http://localhost:1880/dashboard|http://localhost:1880/ui|g' "$KIOSK_SCRIPT"
-        echo "  [S]  Kiosko actualizado a /ui"
     fi
 fi
 
@@ -482,7 +501,7 @@ if changed:
     echo ""
     echo "  [~] Parando Node-RED..."
     sudo systemctl stop nodered
-    sleep 2
+    sleep 1
     
     # Añadir credenciales de chronos
     CHRONOS_CREDS=$(python3 -c "
@@ -510,15 +529,14 @@ for node in flows:
     if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
         echo "  [~] Iniciando Node-RED..."
         sudo systemctl start nodered
-        sleep 5
+        sleep 3
         echo "  [OK] Node-RED reiniciado"
         
         # Reiniciar kiosko si existe
         if systemctl list-unit-files kiosk.service &>/dev/null; then
-            echo ""
             echo "  [~] Iniciando modo kiosko..."
             sudo systemctl restart kiosk.service
-            sleep 2
+            sleep 1
             echo "  [OK] Kiosko iniciado"
         fi
     else
