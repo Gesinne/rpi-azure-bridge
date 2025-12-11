@@ -694,9 +694,10 @@ except Exception as e:
             echo "  7) Configurar contextStorage (persistir variables)"
             echo "  8) Configurar locale UTF-8 (sistema)"
             echo "  9) Configurar Chronos (zona horaria)"
+            echo "  10) Instalar Tailscale (SSH rápido)"
             echo "  0) Volver al menú principal"
             echo ""
-            read -p "  Opción [0-9]: " MODIFY
+            read -p "  Opción [0-10]: " MODIFY
             
             # Salir al menú principal si se pulsa 0 o Enter
             if [ -z "$MODIFY" ] || [ "$MODIFY" = "0" ]; then
@@ -1237,6 +1238,27 @@ LANGUAGE=$NEW_LOCALE\" > /etc/default/locale"
                     else
                         echo ""
                         echo "  [i]  Recuerda reiniciar manualmente: sudo reboot"
+                    fi
+                fi
+            fi
+            
+            if [ "$MODIFY" = "10" ]; then
+                # Instalar Tailscale (SSH rápido)
+                SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                if [ -f "$SCRIPT_DIR/instalar_tailscale.sh" ]; then
+                    bash "$SCRIPT_DIR/instalar_tailscale.sh"
+                elif [ -f "$INSTALL_DIR/instalar_tailscale.sh" ]; then
+                    bash "$INSTALL_DIR/instalar_tailscale.sh"
+                else
+                    # Descargar script si no existe localmente
+                    TAILSCALE_SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/instalar_tailscale.sh"
+                    TEMP_TAILSCALE_SCRIPT="/tmp/instalar_tailscale_$$.sh"
+                    if curl -sL "$TAILSCALE_SCRIPT_URL" -o "$TEMP_TAILSCALE_SCRIPT" 2>/dev/null || wget -qO "$TEMP_TAILSCALE_SCRIPT" "$TAILSCALE_SCRIPT_URL" 2>/dev/null; then
+                        chmod +x "$TEMP_TAILSCALE_SCRIPT"
+                        bash "$TEMP_TAILSCALE_SCRIPT"
+                        rm -f "$TEMP_TAILSCALE_SCRIPT"
+                    else
+                        echo "  [X] No se pudo encontrar instalar_tailscale.sh"
                     fi
                 fi
             fi
