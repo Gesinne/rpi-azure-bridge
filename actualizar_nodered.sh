@@ -35,7 +35,7 @@ if [ "$CURRENT_NPM" != "$LATEST_NPM" ] && [ "$LATEST_NPM" != "?" ]; then
     if [ "$UPDATE_NPM" != "n" ] && [ "$UPDATE_NPM" != "N" ]; then
         echo ""
         echo "  [~] Actualizando npm..."
-        sudo npm install -g npm@latest 2>&1 | grep -E '(added|removed|changed|npm@)' || true
+        sudo npm install -g --no-audit --no-fund --progress=false npm@latest 2>&1 | grep -E '(added|removed|changed|npm@)' || true
         echo "  [OK] npm actualizado a $(npm --version)"
         echo ""
     fi
@@ -83,6 +83,20 @@ if [ "$DO_UPDATE" = "n" ] || [ "$DO_UPDATE" = "N" ]; then
     exit 0
 fi
 
+echo ""
+echo "  [~] Preparando descarga (sin parar Node-RED)..."
+echo ""
+
+TMP_DIR="/tmp/nodered_update_$$"
+mkdir -p "$TMP_DIR"
+NODERED_TGZ=""
+
+if [ "$LATEST_VERSION" != "?" ]; then
+    if npm pack "node-red@$LATEST_VERSION" --silent --pack-destination "$TMP_DIR" 2>/dev/null; then
+        NODERED_TGZ=$(ls -1 "$TMP_DIR"/node-red-*.tgz 2>/dev/null | head -1 || true)
+    fi
+fi
+
 # Parar Node-RED
 echo ""
 echo "  [~] Parando Node-RED..."
@@ -95,12 +109,21 @@ echo ""
 echo "  ────────────────────────────────────────────"
 
 # Mostrar progreso de npm
-sudo npm install -g --unsafe-perm node-red@latest 2>&1 | while read line; do
-    # Filtrar solo líneas relevantes
-    if echo "$line" | grep -qE '(added|removed|changed|node-red@|npm warn|npm error|packages in)'; then
-        echo "  $line"
-    fi
-done
+if [ -n "$NODERED_TGZ" ] && [ -f "$NODERED_TGZ" ]; then
+    sudo npm install -g --unsafe-perm --no-audit --no-fund --progress=false "$NODERED_TGZ" 2>&1 | while read line; do
+        if echo "$line" | grep -qE '(added|removed|changed|node-red@|npm warn|npm error|packages in)'; then
+            echo "  $line"
+        fi
+    done
+else
+    sudo npm install -g --unsafe-perm --no-audit --no-fund --progress=false "node-red@$LATEST_VERSION" 2>&1 | while read line; do
+        if echo "$line" | grep -qE '(added|removed|changed|node-red@|npm warn|npm error|packages in)'; then
+            echo "  $line"
+        fi
+    done
+fi
+
+rm -rf "$TMP_DIR" 2>/dev/null || true
 
 echo "  ────────────────────────────────────────────"
 echo ""
