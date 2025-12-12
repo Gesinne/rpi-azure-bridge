@@ -110,13 +110,13 @@ echo "  ────────────────────────
 
 # Mostrar progreso de npm
 if [ -n "$NODERED_TGZ" ] && [ -f "$NODERED_TGZ" ]; then
-    sudo npm install -g --unsafe-perm --no-audit --no-fund --progress=false "$NODERED_TGZ" 2>&1 | while read line; do
+    sudo npm install -g --unsafe-perm=true --no-audit --no-fund --progress=false "$NODERED_TGZ" 2>&1 | while read line; do
         if echo "$line" | grep -qE '(added|removed|changed|node-red@|npm warn|npm error|packages in)'; then
             echo "  $line"
         fi
     done
 else
-    sudo npm install -g --unsafe-perm --no-audit --no-fund --progress=false "node-red@$LATEST_VERSION" 2>&1 | while read line; do
+    sudo npm install -g --unsafe-perm=true --no-audit --no-fund --progress=false "node-red@$LATEST_VERSION" 2>&1 | while read line; do
         if echo "$line" | grep -qE '(added|removed|changed|node-red@|npm warn|npm error|packages in)'; then
             echo "  $line"
         fi
