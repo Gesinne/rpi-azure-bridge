@@ -35,7 +35,7 @@ if [ "$CURRENT_NPM" != "$LATEST_NPM" ] && [ "$LATEST_NPM" != "?" ]; then
     if [ "$UPDATE_NPM" != "n" ] && [ "$UPDATE_NPM" != "N" ]; then
         echo ""
         echo "  [~] Actualizando npm..."
-        sudo npm install -g --no-audit --no-fund --progress=false npm@latest 2>&1 | grep -E '(added|removed|changed|npm@)' || true
+        sudo npm install -g --no-audit --no-fund --progress=false --loglevel=error npm@latest 2>&1 | grep -E '(added|removed|changed|npm@)' || true
         echo "  [OK] npm actualizado a $(npm --version)"
         echo ""
     fi
@@ -110,13 +110,13 @@ echo "  ────────────────────────
 
 # Mostrar progreso de npm
 if [ -n "$NODERED_TGZ" ] && [ -f "$NODERED_TGZ" ]; then
-    sudo env npm_config_unsafe_perm=true npm install -g --no-audit --no-fund --progress=false "$NODERED_TGZ" 2>&1 | while read line; do
+    sudo npm install -g --no-audit --no-fund --progress=false --loglevel=error "$NODERED_TGZ" 2>&1 | while read line; do
         if echo "$line" | grep -qE '(added|removed|changed|node-red@|npm warn|npm error|packages in)'; then
             echo "  $line"
         fi
     done
 else
-    sudo env npm_config_unsafe_perm=true npm install -g --no-audit --no-fund --progress=false "node-red@$LATEST_VERSION" 2>&1 | while read line; do
+    sudo npm install -g --no-audit --no-fund --progress=false --loglevel=error "node-red@$LATEST_VERSION" 2>&1 | while read line; do
         if echo "$line" | grep -qE '(added|removed|changed|node-red@|npm warn|npm error|packages in)'; then
             echo "  $line"
         fi
