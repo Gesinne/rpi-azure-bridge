@@ -39,6 +39,23 @@ fi
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
 INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
 
+download_repo_fallback() {
+    local dest_dir="$1"
+    local tmp_tgz="/tmp/rpi_azure_bridge_${$}.tgz"
+    rm -rf "$dest_dir" 2>/dev/null || true
+    mkdir -p "$dest_dir"
+
+    if curl -fsSL "https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main" -o "$tmp_tgz" 2>/dev/null || wget -qO "$tmp_tgz" "https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main" 2>/dev/null; then
+        if tar -xzf "$tmp_tgz" -C "$dest_dir" --strip-components=1 2>/dev/null; then
+            rm -f "$tmp_tgz" 2>/dev/null || true
+            return 0
+        fi
+    fi
+
+    rm -f "$tmp_tgz" 2>/dev/null || true
+    return 1
+}
+
 # Si no se ha actualizado aún (argumento --updated), actualizar y re-ejecutar desde el repo
 if [ "$1" != "--updated" ]; then
     echo ""
@@ -46,7 +63,12 @@ if [ "$1" != "--updated" ]; then
     
     # Borrar y clonar siempre
     rm -rf "$INSTALL_DIR" 2>/dev/null || true
-    git clone https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
+    if ! git clone https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null; then
+        if ! download_repo_fallback "$INSTALL_DIR"; then
+            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
+            exit 1
+        fi
+    fi
     
     # Ejecutar el script del repo con marca de actualizado
     exec bash "$INSTALL_DIR/install.sh" --updated
@@ -3090,16 +3112,40 @@ echo ""
 if [ -d "$INSTALL_DIR/.git" ]; then
     cd "$INSTALL_DIR"
     git stash -q 2>/dev/null || true
-    git fetch -q origin main
-    git reset --hard origin/main -q
-    echo "  [OK] Software actualizado"
+    if git fetch -q origin main 2>/dev/null && git reset --hard origin/main -q 2>/dev/null; then
+        echo "  [OK] Software actualizado"
+    else
+        cd /
+        if download_repo_fallback "$INSTALL_DIR"; then
+            echo "  [OK] Software descargado"
+        else
+            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
+            exit 1
+        fi
+    fi
 elif [ -d "$INSTALL_DIR" ]; then
     rm -rf "$INSTALL_DIR"
-    git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
-    echo "  [OK] Software descargado"
+    if git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null; then
+        echo "  [OK] Software descargado"
+    else
+        if download_repo_fallback "$INSTALL_DIR"; then
+            echo "  [OK] Software descargado"
+        else
+            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
+            exit 1
+        fi
+    fi
 else
-    git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR"
-    echo "  [OK] Software descargado"
+    if git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null; then
+        echo "  [OK] Software descargado"
+    else
+        if download_repo_fallback "$INSTALL_DIR"; then
+            echo "  [OK] Software descargado"
+        else
+            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
+            exit 1
+        fi
+    fi
 fi
 
 cd "$INSTALL_DIR"
