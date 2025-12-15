@@ -137,6 +137,8 @@ volver_menu() {
     read -p "  Pulsa ENTER para volver al menú (0 para salir): " VOLVER
     if [ "$VOLVER" = "0" ]; then
         echo ""
+        echo "  [~] Ajustando permisos de Node-RED..."
+        sudo chown -R gesinne:gesinne /home/gesinne/.node-red/node_modules 2>/dev/null || true
         echo "  [B] ¡Hasta luego!"
         echo ""
         exit 0
@@ -388,6 +390,8 @@ while true; do
     case $OPTION in
         0)
             echo ""
+            echo "  [~] Ajustando permisos de Node-RED..."
+            sudo chown -R gesinne:gesinne /home/gesinne/.node-red/node_modules 2>/dev/null || true
             echo "  [B] ¡Hasta luego!"
             echo ""
             exit 0
