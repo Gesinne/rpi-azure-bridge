@@ -242,7 +242,7 @@ if [ -n "$CURRENT_VERSION" ]; then
     echo "  [i] Versión actual instalada: $CURRENT_VERSION"
 fi
 echo ""
-echo "  Últimas 5 versiones disponibles:"
+echo "  Versiones disponibles:"
 echo ""
 
 i=1
@@ -257,10 +257,6 @@ for v in $VERSIONS; do
     fi
     VERSION_ARRAY[$i]="$v"
     i=$((i+1))
-    
-    if [ $i -gt 5 ]; then
-        break
-    fi
 done
 
 if [ $i -eq 1 ]; then
