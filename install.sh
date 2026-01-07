@@ -2861,13 +2861,91 @@ except:
                     ;;
                 3)
                     echo ""
-                    echo "  Nodos comunes:"
-                    echo "    - node-red-dashboard"
-                    echo "    - @flowfuse/node-red-dashboard"
-                    echo "    - node-red-contrib-ui-led"
-                    echo "    - node-red-node-serialport"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Nodos requeridos para Gesinne"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
-                    read -p "  Nombre del nodo a instalar: " NODE_NAME
+                    
+                    # Lista de nodos requeridos
+                    REQUIRED_NODES=(
+                        "@colinl/node-red-guaranteed-delivery"
+                        "@flowfuse/node-red-dashboard"
+                        "@flowfuse/node-red-dashboard-2-ui-led"
+                        "node-red-contrib-chronos"
+                        "node-red-contrib-modbus"
+                        "node-red-contrib-rpi-shutdown"
+                        "node-red-dashboard"
+                    )
+                    
+                    MISSING_NODES=()
+                    echo "  Comprobando nodos instalados..."
+                    echo ""
+                    
+                    for node in "${REQUIRED_NODES[@]}"; do
+                        if [ -d "$NODERED_DIR/node_modules/$node" ]; then
+                            echo "  [OK] $node"
+                        else
+                            echo "  [X]  $node (NO INSTALADO)"
+                            MISSING_NODES+=("$node")
+                        fi
+                    done
+                    
+                    echo ""
+                    
+                    if [ ${#MISSING_NODES[@]} -eq 0 ]; then
+                        echo "  [OK] Todos los nodos requeridos están instalados"
+                        echo ""
+                        read -p "  ¿Instalar otro nodo manualmente? [s/N]: " INSTALL_OTHER
+                        if [[ ! "$INSTALL_OTHER" =~ ^[Ss]$ ]]; then
+                            continue
+                        fi
+                        echo ""
+                        read -p "  Nombre del nodo a instalar: " NODE_NAME
+                    else
+                        echo "  Faltan ${#MISSING_NODES[@]} nodo(s) requerido(s)"
+                        echo ""
+                        echo "  1) Instalar TODOS los que faltan"
+                        echo "  2) Instalar uno específico"
+                        echo "  0) Cancelar"
+                        echo ""
+                        read -p "  Opción [0-2]: " INSTALL_OPT
+                        
+                        case $INSTALL_OPT in
+                            1)
+                                echo ""
+                                sudo systemctl stop nodered
+                                sleep 2
+                                for node in "${MISSING_NODES[@]}"; do
+                                    echo "  [~] Instalando $node..."
+                                    npm_install_clean "$node" "$NODERED_DIR"
+                                done
+                                read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
+                                if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
+                                    sudo systemctl start nodered
+                                    sleep 3
+                                    echo "  [OK] Nodos instalados"
+                                fi
+                                continue
+                                ;;
+                            2)
+                                echo ""
+                                echo "  Nodos que faltan:"
+                                for i in "${!MISSING_NODES[@]}"; do
+                                    echo "    $((i+1))) ${MISSING_NODES[$i]}"
+                                done
+                                echo ""
+                                read -p "  Número o nombre del nodo: " NODE_SEL
+                                if [[ "$NODE_SEL" =~ ^[0-9]+$ ]] && [ "$NODE_SEL" -ge 1 ] && [ "$NODE_SEL" -le ${#MISSING_NODES[@]} ]; then
+                                    NODE_NAME="${MISSING_NODES[$((NODE_SEL-1))]}"
+                                else
+                                    NODE_NAME="$NODE_SEL"
+                                fi
+                                ;;
+                            *)
+                                continue
+                                ;;
+                        esac
+                    fi
                     if [ -n "$NODE_NAME" ]; then
                         echo ""
                         echo "  [P] Instalando $NODE_NAME..."
