@@ -166,6 +166,35 @@ volver_menu() {
     fi
 }
 
+# Función para npm install con auto-limpieza si falla
+npm_install_clean() {
+    local PACKAGE="$1"
+    local NODERED_DIR="$2"
+    local USER_HOME=$(dirname "$NODERED_DIR")
+    
+    # Limpiar residuos antes de instalar
+    sudo find "$NODERED_DIR/node_modules" -maxdepth 2 -type d -name ".*-*" -exec rm -rf {} + 2>/dev/null || true
+    
+    # Intentar instalar
+    if sudo npm install "$PACKAGE" 2>&1 | tee /tmp/npm_install_$$.log | while read line; do echo "  $line"; done; then
+        rm -f /tmp/npm_install_$$.log
+        return 0
+    fi
+    
+    # Si falla con ENOTEMPTY, limpiar y reintentar
+    if grep -q "ENOTEMPTY" /tmp/npm_install_$$.log 2>/dev/null; then
+        echo ""
+        echo "  [!] Error ENOTEMPTY detectado, limpiando caché..."
+        sudo find "$NODERED_DIR/node_modules" -maxdepth 2 -type d -name ".*-*" -exec rm -rf {} + 2>/dev/null || true
+        sudo rm -rf "$USER_HOME/.npm/_cacache" 2>/dev/null || true
+        sudo rm -rf /root/.npm/_cacache 2>/dev/null || true
+        echo "  [~] Reintentando instalación..."
+        sudo npm install "$PACKAGE" 2>&1 | while read line; do echo "  $line"; done
+    fi
+    
+    rm -f /tmp/npm_install_$$.log
+}
+
 # Función para reiniciar Node-RED y kiosko
 reiniciar_nodered() {
     echo ""
@@ -2820,7 +2849,7 @@ except:
                         sudo systemctl stop nodered
                         sleep 2
                         
-                        sudo npm install "$INSTALL_PKG" 2>&1 | while read line; do echo "  $line"; done
+                        npm_install_clean "$INSTALL_PKG" "$NODERED_DIR"
                         
                         read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
                         if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
@@ -2850,7 +2879,7 @@ except:
                         sudo systemctl stop nodered
                         sleep 2
                         
-                        sudo npm install "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
+                        npm_install_clean "$NODE_NAME" "$NODERED_DIR"
                         
                         read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
                         if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
