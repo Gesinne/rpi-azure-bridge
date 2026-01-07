@@ -2714,14 +2714,15 @@ EOFLOGROTATE
                 echo ""
                 
                 # Obtener nodos instalados y comprobar actualizaciones con npm outdated
-                npm outdated --json 2>/dev/null > /tmp/npm_outdated_$$.json || echo "{}" > /tmp/npm_outdated_$$.json
+                OUTDATED_FILE="/tmp/npm_outdated_$$.json"
+                npm outdated --json 2>/dev/null > "$OUTDATED_FILE" || echo "{}" > "$OUTDATED_FILE"
                 
                 npm ls --depth=0 --json 2>/dev/null | python3 -c "
 import json, sys
 
 # Cargar nodos desactualizados
 try:
-    with open('/tmp/npm_outdated_$$.json') as f:
+    with open('$OUTDATED_FILE') as f:
         outdated = json.load(f)
 except:
     outdated = {}
@@ -2742,7 +2743,7 @@ except Exception as e:
     pass
 " 2>/dev/null
                 
-                rm -f /tmp/npm_outdated_$$.json
+                rm -f "$OUTDATED_FILE"
                 
                 cd - > /dev/null
             else
