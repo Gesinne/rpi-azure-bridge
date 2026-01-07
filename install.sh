@@ -2730,9 +2730,10 @@ except Exception as e:
             echo "  3) Instalar un nodo nuevo"
             echo "  4) Desinstalar un nodo"
             echo "  5) Verificar/Corregir permisos"
+            echo "  6) Limpiar caché npm (si falla actualización)"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-5]: " PALETTE_OPT
+            read -p "  Opción [0-6]: " PALETTE_OPT
             
             case $PALETTE_OPT in
                 1)
@@ -2929,6 +2930,50 @@ except:
                         else
                             echo "  [X] Cancelado"
                         fi
+                    fi
+                    ;;
+                6)
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Limpiar caché npm"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  Esto limpia residuos de actualizaciones fallidas"
+                    echo "  y la caché de npm que puede causar errores."
+                    echo ""
+                    
+                    # Buscar directorios temporales
+                    TEMP_DIRS=$(find "$NODERED_DIR/node_modules" -maxdepth 2 -type d -name ".*-*" 2>/dev/null | wc -l)
+                    CACHE_SIZE=$(du -sh ~/.npm/_cacache 2>/dev/null | cut -f1 || echo "0")
+                    
+                    echo "  Directorios temporales encontrados: $TEMP_DIRS"
+                    echo "  Tamaño caché npm: $CACHE_SIZE"
+                    echo ""
+                    
+                    read -p "  ¿Limpiar ahora? [S/n]: " CLEAN_NPM
+                    if [ "$CLEAN_NPM" != "n" ] && [ "$CLEAN_NPM" != "N" ]; then
+                        echo ""
+                        echo "  [~] Parando Node-RED..."
+                        sudo systemctl stop nodered
+                        sleep 2
+                        
+                        echo "  [~] Limpiando directorios temporales..."
+                        sudo find "$NODERED_DIR/node_modules" -maxdepth 2 -type d -name ".*-*" -exec rm -rf {} + 2>/dev/null || true
+                        
+                        echo "  [~] Limpiando caché npm..."
+                        sudo rm -rf ~/.npm/_cacache 2>/dev/null || true
+                        sudo rm -rf /root/.npm/_cacache 2>/dev/null || true
+                        
+                        echo "  [~] Iniciando Node-RED..."
+                        sudo systemctl start nodered
+                        sleep 3
+                        
+                        echo ""
+                        echo "  [OK] Limpieza completada"
+                        echo ""
+                        echo "  Ahora puedes intentar actualizar nodos desde el dashboard"
+                    else
+                        echo "  [X] Cancelado"
                     fi
                     ;;
                 *)
