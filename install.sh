@@ -2878,12 +2878,23 @@ except:
                     )
                     
                     MISSING_NODES=()
-                    echo "  Comprobando nodos instalados..."
+                    OUTDATED_NODES=()
+                    echo "  Comprobando nodos instalados y actualizaciones..."
                     echo ""
                     
                     for node in "${REQUIRED_NODES[@]}"; do
                         if [ -d "$NODERED_DIR/node_modules/$node" ]; then
-                            echo "  [OK] $node"
+                            # Obtener versión instalada
+                            INSTALLED_VER=$(cat "$NODERED_DIR/node_modules/$node/package.json" 2>/dev/null | grep '"version"' | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
+                            # Obtener última versión de npm
+                            LATEST_VER=$(npm view "$node" version 2>/dev/null || echo "?")
+                            
+                            if [ "$INSTALLED_VER" != "$LATEST_VER" ] && [ "$LATEST_VER" != "?" ]; then
+                                echo "  [^]  $node  v$INSTALLED_VER → v$LATEST_VER"
+                                OUTDATED_NODES+=("$node")
+                            else
+                                echo "  [OK] $node  v$INSTALLED_VER"
+                            fi
                         else
                             echo "  [X]  $node (NO INSTALADO)"
                             MISSING_NODES+=("$node")
@@ -2892,8 +2903,11 @@ except:
                     
                     echo ""
                     
-                    if [ ${#MISSING_NODES[@]} -eq 0 ]; then
-                        echo "  [OK] Todos los nodos requeridos están instalados"
+                    # Combinar nodos que faltan y desactualizados
+                    ALL_PENDING=("${MISSING_NODES[@]}" "${OUTDATED_NODES[@]}")
+                    
+                    if [ ${#ALL_PENDING[@]} -eq 0 ]; then
+                        echo "  [OK] Todos los nodos requeridos están instalados y actualizados"
                         echo ""
                         read -p "  ¿Instalar otro nodo manualmente? [s/N]: " INSTALL_OTHER
                         if [[ ! "$INSTALL_OTHER" =~ ^[Ss]$ ]]; then
@@ -2902,10 +2916,12 @@ except:
                         echo ""
                         read -p "  Nombre del nodo a instalar: " NODE_NAME
                     else
-                        echo "  Faltan ${#MISSING_NODES[@]} nodo(s) requerido(s)"
+                        # Mostrar resumen
+                        [ ${#MISSING_NODES[@]} -gt 0 ] && echo "  Faltan: ${#MISSING_NODES[@]} nodo(s)"
+                        [ ${#OUTDATED_NODES[@]} -gt 0 ] && echo "  Desactualizados: ${#OUTDATED_NODES[@]} nodo(s)"
                         echo ""
-                        echo "  1) Instalar TODOS los que faltan"
-                        echo "  2) Instalar uno específico"
+                        echo "  1) Instalar/Actualizar TODOS (${#ALL_PENDING[@]} nodos)"
+                        echo "  2) Seleccionar uno específico"
                         echo "  0) Cancelar"
                         echo ""
                         read -p "  Opción [0-2]: " INSTALL_OPT
@@ -2915,28 +2931,28 @@ except:
                                 echo ""
                                 sudo systemctl stop nodered
                                 sleep 2
-                                for node in "${MISSING_NODES[@]}"; do
-                                    echo "  [~] Instalando $node..."
+                                for node in "${ALL_PENDING[@]}"; do
+                                    echo "  [~] Instalando/Actualizando $node..."
                                     npm_install_clean "$node" "$NODERED_DIR"
                                 done
                                 read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
                                 if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
                                     sudo systemctl start nodered
                                     sleep 3
-                                    echo "  [OK] Nodos instalados"
+                                    echo "  [OK] Nodos instalados/actualizados"
                                 fi
                                 continue
                                 ;;
                             2)
                                 echo ""
-                                echo "  Nodos que faltan:"
-                                for i in "${!MISSING_NODES[@]}"; do
-                                    echo "    $((i+1))) ${MISSING_NODES[$i]}"
+                                echo "  Nodos pendientes:"
+                                for i in "${!ALL_PENDING[@]}"; do
+                                    echo "    $((i+1))) ${ALL_PENDING[$i]}"
                                 done
                                 echo ""
                                 read -p "  Número o nombre del nodo: " NODE_SEL
-                                if [[ "$NODE_SEL" =~ ^[0-9]+$ ]] && [ "$NODE_SEL" -ge 1 ] && [ "$NODE_SEL" -le ${#MISSING_NODES[@]} ]; then
-                                    NODE_NAME="${MISSING_NODES[$((NODE_SEL-1))]}"
+                                if [[ "$NODE_SEL" =~ ^[0-9]+$ ]] && [ "$NODE_SEL" -ge 1 ] && [ "$NODE_SEL" -le ${#ALL_PENDING[@]} ]; then
+                                    NODE_NAME="${ALL_PENDING[$((NODE_SEL-1))]}"
                                 else
                                     NODE_NAME="$NODE_SEL"
                                 fi
