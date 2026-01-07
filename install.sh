@@ -10,6 +10,22 @@
 # Una vez instalado, ejecutar con: gesinne
 #
 
+# Función de limpieza al salir (interrupción, error, etc.)
+cleanup_on_exit() {
+    echo ""
+    echo "  [~] Ajustando permisos de Node-RED..."
+    for d in /home/*/.node-red/node_modules; do
+        if [ -d "$d" ]; then
+            OWNER=$(stat -c '%U:%G' "$(dirname "$d")" 2>/dev/null)
+            sudo chown -R "$OWNER" "$d" 2>/dev/null || true
+        fi
+    done
+    echo "  [OK] Permisos ajustados"
+}
+
+# Capturar señales de interrupción (Ctrl+C, cierre terminal, etc.)
+trap cleanup_on_exit EXIT
+
 # Si se ejecuta desde curl/pipe, descargar y ejecutar localmente
 if [ ! -t 0 ]; then
     SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh"
@@ -138,7 +154,12 @@ volver_menu() {
     if [ "$VOLVER" = "0" ]; then
         echo ""
         echo "  [~] Ajustando permisos de Node-RED..."
-        sudo chown -R gesinne:gesinne /home/gesinne/.node-red/node_modules 2>/dev/null || true
+        for d in /home/*/.node-red/node_modules; do
+            if [ -d "$d" ]; then
+                OWNER=$(stat -c '%U:%G' "$(dirname "$d")" 2>/dev/null)
+                sudo chown -R "$OWNER" "$d" 2>/dev/null || true
+            fi
+        done
         echo "  [B] ¡Hasta luego!"
         echo ""
         exit 0
@@ -391,7 +412,12 @@ while true; do
         0)
             echo ""
             echo "  [~] Ajustando permisos de Node-RED..."
-            sudo chown -R gesinne:gesinne /home/gesinne/.node-red/node_modules 2>/dev/null || true
+            for d in /home/*/.node-red/node_modules; do
+                if [ -d "$d" ]; then
+                    OWNER=$(stat -c '%U:%G' "$(dirname "$d")" 2>/dev/null)
+                    sudo chown -R "$OWNER" "$d" 2>/dev/null || true
+                fi
+            done
             echo "  [B] ¡Hasta luego!"
             echo ""
             exit 0
@@ -2703,9 +2729,10 @@ except Exception as e:
             echo "  2) Actualizar un nodo específico"
             echo "  3) Instalar un nodo nuevo"
             echo "  4) Desinstalar un nodo"
+            echo "  5) Verificar/Corregir permisos"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-4]: " PALETTE_OPT
+            read -p "  Opción [0-5]: " PALETTE_OPT
             
             case $PALETTE_OPT in
                 1)
@@ -2792,7 +2819,7 @@ except:
                         sudo systemctl stop nodered
                         sleep 2
                         
-                        npm install "$INSTALL_PKG" 2>&1 | while read line; do echo "  $line"; done
+                        sudo npm install "$INSTALL_PKG" 2>&1 | while read line; do echo "  $line"; done
                         
                         read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
                         if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
@@ -2822,7 +2849,7 @@ except:
                         sudo systemctl stop nodered
                         sleep 2
                         
-                        npm install "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
+                        sudo npm install "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
                         
                         read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
                         if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
@@ -2849,7 +2876,7 @@ except:
                             sudo systemctl stop nodered
                             sleep 2
                             
-                            npm uninstall "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
+                            sudo npm uninstall "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
                             
                             read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
                             if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
@@ -2860,6 +2887,45 @@ except:
                                 echo "  [!] Node-RED NO iniciado. Recuerda iniciarlo manualmente:"
                                 echo "      sudo systemctl start nodered"
                             fi
+                        else
+                            echo "  [X] Cancelado"
+                        fi
+                    fi
+                    ;;
+                5)
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Verificar permisos de Node-RED"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    
+                    # Obtener propietario esperado (del directorio .node-red)
+                    EXPECTED_OWNER=$(stat -c '%U:%G' "$NODERED_DIR" 2>/dev/null)
+                    MODULES_OWNER=$(stat -c '%U:%G' "$NODERED_DIR/node_modules" 2>/dev/null)
+                    
+                    echo "  Directorio .node-red:    $NODERED_DIR"
+                    echo "  Propietario esperado:    $EXPECTED_OWNER"
+                    echo "  Propietario node_modules: $MODULES_OWNER"
+                    echo ""
+                    
+                    if [ "$EXPECTED_OWNER" = "$MODULES_OWNER" ]; then
+                        echo "  [OK] Los permisos son correctos"
+                        echo ""
+                        echo "  Puedes actualizar nodos desde el dashboard de Node-RED"
+                    else
+                        echo "  [X] Los permisos NO coinciden"
+                        echo ""
+                        echo "  Esto puede causar errores al actualizar nodos"
+                        echo "  desde el dashboard de Node-RED."
+                        echo ""
+                        read -p "  ¿Corregir permisos ahora? [S/n]: " FIX_PERMS
+                        if [ "$FIX_PERMS" != "n" ] && [ "$FIX_PERMS" != "N" ]; then
+                            echo ""
+                            echo "  [~] Corrigiendo permisos..."
+                            sudo chown -R "$EXPECTED_OWNER" "$NODERED_DIR/node_modules" 2>/dev/null
+                            echo "  [OK] Permisos corregidos"
+                            echo ""
+                            echo "  Ahora puedes actualizar nodos desde el dashboard"
                         else
                             echo "  [X] Cancelado"
                         fi
