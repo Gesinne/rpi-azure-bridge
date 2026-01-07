@@ -2713,19 +2713,17 @@ EOFLOGROTATE
                 echo "  Cargando lista de nodos y comprobando actualizaciones..."
                 echo ""
                 
-                # Obtener nodos instalados y comprobar actualizaciones con npm outdated
-                OUTDATED_FILE="/tmp/npm_outdated_$$.json"
-                npm outdated --json 2>/dev/null > "$OUTDATED_FILE" || echo "{}" > "$OUTDATED_FILE"
-                
+                # Obtener nodos instalados y comprobar actualizaciones
                 npm ls --depth=0 --json 2>/dev/null | python3 -c "
-import json, sys
+import json, sys, subprocess
 
-# Cargar nodos desactualizados
-try:
-    with open('$OUTDATED_FILE') as f:
-        outdated = json.load(f)
-except:
-    outdated = {}
+def get_latest_version(pkg_name):
+    try:
+        result = subprocess.run(['npm', 'view', pkg_name, 'version'], 
+                              capture_output=True, text=True, timeout=10)
+        return result.stdout.strip() if result.returncode == 0 else None
+    except:
+        return None
 
 try:
     data = json.load(sys.stdin)
@@ -2734,16 +2732,14 @@ try:
         version = info.get('version', '?')
         # Mostrar solo nodos de Node-RED (excluir dependencias internas)
         if 'node-red' in name or name.startswith('@') or name in ['guaranteed-delivery', 'modbus-serial']:
-            if name in outdated:
-                latest = outdated[name].get('latest', '?')
+            latest = get_latest_version(name)
+            if latest and latest != version:
                 print(f'  {name:<42} v{version:<10} → v{latest} [^]')
             else:
                 print(f'  {name:<42} v{version:<10} [OK]')
 except Exception as e:
     pass
 " 2>/dev/null
-                
-                rm -f "$OUTDATED_FILE"
                 
                 cd - > /dev/null
             else
