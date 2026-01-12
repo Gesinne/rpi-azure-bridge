@@ -110,6 +110,14 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Asegurar HDMI siempre activo (evita pantalla negra)
+CONFIG_FILE="/boot/firmware/config.txt"
+[ ! -f "$CONFIG_FILE" ] && CONFIG_FILE="/boot/config.txt"
+if [ -f "$CONFIG_FILE" ]; then
+    grep -q "^hdmi_force_hotplug=1" "$CONFIG_FILE" || echo "hdmi_force_hotplug=1" >> "$CONFIG_FILE"
+    grep -q "^hdmi_blanking=0" "$CONFIG_FILE" || echo "hdmi_blanking=0" >> "$CONFIG_FILE"
+fi
+
 # Detectar si ya está instalado
 INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
 OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
