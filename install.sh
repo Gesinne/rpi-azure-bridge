@@ -1015,6 +1015,30 @@ with open('$CONFIG_FILE', 'w') as f:
                 else
                     echo "  [+] RPI Connect ya está vinculado"
                 fi
+                
+                # Asegurar HDMI siempre activo (evita pantalla negra)
+                CONFIG_FILE="/boot/firmware/config.txt"
+                if [ ! -f "$CONFIG_FILE" ]; then
+                    CONFIG_FILE="/boot/config.txt"
+                fi
+                
+                if [ -f "$CONFIG_FILE" ]; then
+                    HDMI_CHANGED=false
+                    if ! grep -q "^hdmi_force_hotplug=1" "$CONFIG_FILE"; then
+                        echo "hdmi_force_hotplug=1" | sudo tee -a "$CONFIG_FILE" > /dev/null
+                        HDMI_CHANGED=true
+                    fi
+                    if ! grep -q "^hdmi_blanking=0" "$CONFIG_FILE"; then
+                        echo "hdmi_blanking=0" | sudo tee -a "$CONFIG_FILE" > /dev/null
+                        HDMI_CHANGED=true
+                    fi
+                    
+                    if [ "$HDMI_CHANGED" = true ]; then
+                        echo ""
+                        echo "  [OK] Configuración HDMI añadida (evita pantalla negra)"
+                        echo "  [!]  Requiere reinicio para aplicar"
+                    fi
+                fi
             fi
             
             if [ "$MODIFY" = "5" ]; then
