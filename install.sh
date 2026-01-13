@@ -114,8 +114,8 @@ fi
 CONFIG_FILE="/boot/firmware/config.txt"
 [ ! -f "$CONFIG_FILE" ] && CONFIG_FILE="/boot/config.txt"
 if [ -f "$CONFIG_FILE" ]; then
-    grep -q "^hdmi_force_hotplug=1" "$CONFIG_FILE" || echo "hdmi_force_hotplug=1" >> "$CONFIG_FILE"
-    grep -q "^hdmi_blanking=0" "$CONFIG_FILE" || echo "hdmi_blanking=0" >> "$CONFIG_FILE"
+    grep -q "^hdmi_force_hotplug=1" "$CONFIG_FILE" 2>/dev/null || echo "hdmi_force_hotplug=1" | sudo tee -a "$CONFIG_FILE" > /dev/null 2>&1 || true
+    grep -q "^hdmi_blanking=0" "$CONFIG_FILE" 2>/dev/null || echo "hdmi_blanking=0" | sudo tee -a "$CONFIG_FILE" > /dev/null 2>&1 || true
 fi
 
 # Detectar si ya está instalado
