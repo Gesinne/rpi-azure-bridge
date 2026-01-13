@@ -174,9 +174,173 @@ EOFVERIF
     echo "  [OK] Node-RED reiniciado"
 }
 
+# Función para reparar placas corruptas
+reparar_placas() {
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Reparar placas desparametrizadas"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Este proceso escribirá valores correctos en los"
+    echo "  registros corruptos de las placas."
+    echo ""
+    echo "  Registros que se pueden reparar:"
+    echo "    - Reg 55 (estado_inicial): valores válidos 0 o 2"
+    echo "    - Reg 56 (tension_consigna): rango 1760-2640"
+    echo ""
+    
+    # Preguntar valores a escribir
+    echo "  ¿Qué valores quieres escribir?"
+    echo ""
+    read -p "  Registro 55 (estado_inicial) [0=Bypass, 2=Regulación]: " REG55_VALUE
+    REG55_VALUE=${REG55_VALUE:-0}
+    
+    if [ "$REG55_VALUE" != "0" ] && [ "$REG55_VALUE" != "2" ]; then
+        echo "  [X] Valor inválido. Debe ser 0 o 2"
+        return 1
+    fi
+    
+    read -p "  Registro 56 (tension_consigna) [1760-2640, ej: 2200]: " REG56_VALUE
+    REG56_VALUE=${REG56_VALUE:-2200}
+    
+    if [ "$REG56_VALUE" -lt 1760 ] || [ "$REG56_VALUE" -gt 2640 ] 2>/dev/null; then
+        echo "  [X] Valor inválido. Debe estar entre 1760 y 2640"
+        return 1
+    fi
+    
+    echo ""
+    echo "  Valores a escribir:"
+    echo "    - Registro 55 = $REG55_VALUE"
+    echo "    - Registro 56 = $REG56_VALUE"
+    echo ""
+    read -p "  ¿Continuar? [s/N]: " CONFIRM
+    if [ "$CONFIRM" != "s" ] && [ "$CONFIRM" != "S" ]; then
+        echo "  [X] Cancelado"
+        return 0
+    fi
+    
+    echo ""
+    echo "  [!]  Parando Node-RED temporalmente..."
+    sudo systemctl stop nodered 2>/dev/null
+    docker stop gesinne-rpi >/dev/null 2>&1 || true
+    sleep 2
+    echo "  [OK] Servicios parados"
+    echo ""
+    
+    python3 << EOFREPARAR
+import sys
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+import time
+
+client = ModbusSerialClient(
+    port='/dev/ttyAMA0',
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+REG55_VALUE = $REG55_VALUE
+REG56_VALUE = $REG56_VALUE
+
+print("  [M] Reparando las 3 tarjetas...")
+print("")
+
+total_reparadas = 0
+total_errores = 0
+
+for unit_id in [1, 2, 3]:
+    fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
+    print(f"  [{fase}] Procesando...", end=" ", flush=True)
+    
+    # Primero leer valores actuales
+    try:
+        result = client.read_holding_registers(address=55, count=2, slave=unit_id)
+        if result.isError():
+            print("[X] Error leyendo")
+            total_errores += 1
+            continue
+        
+        current_55 = result.registers[0]
+        current_56 = result.registers[1]
+        
+        cambios = []
+        
+        # Verificar y reparar registro 55
+        if current_55 not in [0, 2]:
+            print(f"\n       Reg 55: {current_55} → {REG55_VALUE}", end="", flush=True)
+            write_result = client.write_register(address=55, value=REG55_VALUE, slave=unit_id)
+            if write_result.isError():
+                print(" [X]", end="")
+                total_errores += 1
+            else:
+                print(" [OK]", end="")
+                cambios.append("R55")
+            time.sleep(0.2)
+        
+        # Verificar y reparar registro 56
+        if current_56 < 1760 or current_56 > 2640:
+            print(f"\n       Reg 56: {current_56} → {REG56_VALUE}", end="", flush=True)
+            write_result = client.write_register(address=56, value=REG56_VALUE, slave=unit_id)
+            if write_result.isError():
+                print(" [X]", end="")
+                total_errores += 1
+            else:
+                print(" [OK]", end="")
+                cambios.append("R56")
+            time.sleep(0.2)
+        
+        if cambios:
+            total_reparadas += 1
+            print(f"\n       [OK] Reparada ({', '.join(cambios)})")
+        else:
+            print("[OK] Sin cambios necesarios")
+            
+    except Exception as e:
+        print(f"[X] Error: {e}")
+        total_errores += 1
+
+client.close()
+
+print("")
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+if total_errores == 0:
+    print(f"  [OK] REPARACIÓN COMPLETADA - {total_reparadas} placa(s) modificada(s)")
+else:
+    print(f"  [!] REPARACIÓN CON ERRORES - {total_errores} error(es)")
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+EOFREPARAR
+    
+    echo ""
+    echo "  [~] Reiniciando Node-RED..."
+    sudo systemctl start nodered
+    docker start gesinne-rpi >/dev/null 2>&1 || true
+    sleep 3
+    echo "  [OK] Servicios reiniciados"
+}
+
 # Si se llama con argumento "verificar", ejecutar directamente
 if [ "$1" = "verificar" ]; then
     verificar_parametrizacion
+    exit 0
+fi
+
+# Si se llama con argumento "reparar", ejecutar reparación
+if [ "$1" = "reparar" ]; then
+    reparar_placas
     exit 0
 fi
 

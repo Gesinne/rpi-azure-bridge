@@ -441,9 +441,10 @@ while true; do
     echo "  6) Revisar espacio y logs"
     echo "  7) Gestionar paleta Node-RED"
     echo "  8) Verificar parametrización placas"
+    echo "  9) Reparar placas desparametrizadas"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-8]: " OPTION
+    read -p "  Opción [0-9]: " OPTION
 
     case $OPTION in
         0)
@@ -1573,9 +1574,10 @@ if chronos_id:
             echo "  2) Tarjeta L2 (Fase 2)"
             echo "  3) Tarjeta L3 (Fase 3)"
             echo "  4) TODAS en columnas (L1, L2, L3)"
+            echo "  5) Diagnóstico valores clavados (3 placas)"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-4]: " TARJETA
+            read -p "  Opción [0-5]: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
@@ -1583,6 +1585,337 @@ if chronos_id:
                 2) UNIT_IDS="2"; FASES="L2"; MODO_COLUMNAS="no" ;;
                 3) UNIT_IDS="3"; FASES="L3"; MODO_COLUMNAS="no" ;;
                 4) UNIT_IDS="1 2 3"; FASES="L1 L2 L3"; MODO_COLUMNAS="yes" ;;
+                5) 
+                    # Diagnóstico de valores clavados
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  DIAGNÓSTICO DE VALORES CLAVADOS"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  Este diagnóstico lee valores críticos de las 3 placas"
+                    echo "  para detectar problemas con offsets, calibración y"
+                    echo "  valores que no cambian (clavados)."
+                    echo ""
+                    echo "  [!] Parando Node-RED temporalmente..."
+                    
+                    sudo systemctl stop nodered 2>/dev/null
+                    docker stop gesinne-rpi >/dev/null 2>&1 || true
+                    sleep 2
+                    echo "  [OK] Servicios parados"
+                    echo ""
+                    
+                    # Detectar puerto serie
+                    DIAG_PORT=""
+                    for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                        if [ -e "$port" ]; then
+                            DIAG_PORT="$port"
+                            echo "  [OK] Puerto serie: $DIAG_PORT"
+                            break
+                        fi
+                    done
+                    
+                    if [ -z "$DIAG_PORT" ]; then
+                        echo "  [X] No se encontró ningún puerto serie"
+                        volver_menu
+                        continue
+                    fi
+                    echo ""
+                    
+                    python3 << EOFDIAG
+import sys
+import time
+import os
+
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+PUERTO = "$DIAG_PORT"
+BAUDRATES = [115200, 57600, 9600]
+
+client = None
+connected = False
+
+for baudrate in BAUDRATES:
+    try:
+        client = ModbusSerialClient(
+            port=PUERTO,
+            baudrate=baudrate,
+            bytesize=8,
+            parity='N',
+            stopbits=1,
+            timeout=2
+        )
+        
+        if client.connect():
+            # Probar lectura con placa L1 (unit_id=1)
+            result = client.read_holding_registers(address=0, count=1, slave=1)
+            if not result.isError():
+                print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
+                connected = True
+                break
+            client.close()
+    except Exception as e:
+        if client:
+            client.close()
+        continue
+
+if not connected:
+    print(f"  [X] No se pudo comunicar con las placas")
+    print(f"      Puerto: {PUERTO}")
+    print(f"      Baudrates probados: {BAUDRATES}")
+    print("")
+    print("  Posibles causas:")
+    print("      • Las placas no están conectadas o alimentadas")
+    print("      • El cable serie está desconectado")
+    print("      • Otro proceso está usando el puerto")
+    sys.exit(1)
+
+# Registros críticos para diagnóstico
+REGS_DIAGNOSTICO = {
+    # Tiempo real - si están clavados hay problema
+    3: "V salida",
+    4: "V entrada",
+    5: "Frecuencia",
+    6: "I Salida",
+    7: "I Chopper",
+    15: "Factor Potencia",
+    17: "Temperatura",
+    # Calibración - valores K y b
+    71: "Ca00 (K V salida)",
+    72: "Ca01 (K V entrada)",
+    73: "Ca03 (b V salida)",
+    74: "Ca04 (b V entrada)",
+    75: "Ca06 (K I Chopper)",
+    76: "Ca07 (K I Salida)",
+    77: "Ca08 (b I Chopper)",
+    78: "Ca09 (b I Salida)",
+    79: "Ca10 (Ruido I Chop)",
+    80: "Ca11 (Ruido I Sal)",
+}
+
+# Valores esperados/límites para calibración
+LIMITES_CALIB = {
+    71: (8000, 12000, "K tensión salida"),
+    72: (8000, 12000, "K tensión entrada"),
+    73: (0, 500, "b tensión salida"),
+    74: (0, 500, "b tensión entrada"),
+    75: (8000, 12000, "K corriente chopper"),
+    76: (8000, 12000, "K corriente salida"),
+    77: (0, 500, "b corriente chopper"),
+    78: (0, 500, "b corriente salida"),
+    79: (0, 100, "Ruido I chopper"),
+    80: (0, 100, "Ruido I salida"),
+}
+
+print("  ╔════════════════════════════════════════════════════════════════════════════════╗")
+print("  ║  DIAGNÓSTICO DE VALORES CLAVADOS - 3 PLACAS                                    ║")
+print("  ╚════════════════════════════════════════════════════════════════════════════════╝")
+print("")
+
+# Primera lectura
+print("  [1/2] Primera lectura...")
+data_lectura1 = {}
+for unit_id in [1, 2, 3]:
+    fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
+    data = []
+    for start in range(0, 96, 40):
+        count = min(40, 96 - start)
+        result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+        if not result.isError():
+            data.extend(result.registers)
+        else:
+            break
+    data_lectura1[unit_id] = data if len(data) >= 81 else None
+    status = "[OK]" if data_lectura1[unit_id] else "[X]"
+    print(f"        {fase}: {status}")
+
+# Esperar 2 segundos
+print("")
+print("  [~] Esperando 2 segundos para segunda lectura...")
+time.sleep(2)
+
+# Segunda lectura
+print("  [2/2] Segunda lectura...")
+data_lectura2 = {}
+for unit_id in [1, 2, 3]:
+    fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
+    data = []
+    for start in range(0, 96, 40):
+        count = min(40, 96 - start)
+        result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+        if not result.isError():
+            data.extend(result.registers)
+        else:
+            break
+    data_lectura2[unit_id] = data if len(data) >= 81 else None
+    status = "[OK]" if data_lectura2[unit_id] else "[X]"
+    print(f"        {fase}: {status}")
+
+client.close()
+
+# Análisis de resultados
+print("")
+print("  ════════════════════════════════════════════════════════════════════════════════")
+print("  ANÁLISIS DE VALORES EN TIEMPO REAL (deben cambiar)")
+print("  ════════════════════════════════════════════════════════════════════════════════")
+print("")
+print(f"  {'Reg':<4} {'Parámetro':<18} {'L1 t1':>7} {'L1 t2':>7} {'L2 t1':>7} {'L2 t2':>7} {'L3 t1':>7} {'L3 t2':>7}  Estado")
+print(f"  {'─'*4} {'─'*18} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*7}  {'─'*12}")
+
+problemas = []
+for reg in [3, 4, 5, 6, 7, 15, 17]:
+    nombre = REGS_DIAGNOSTICO.get(reg, f"Reg {reg}")
+    valores = []
+    clavados = []
+    
+    for unit_id in [1, 2, 3]:
+        d1 = data_lectura1.get(unit_id)
+        d2 = data_lectura2.get(unit_id)
+        
+        if d1 and d2 and len(d1) > reg and len(d2) > reg:
+            v1, v2 = d1[reg], d2[reg]
+            valores.append((v1, v2))
+            # Valores que deberían cambiar (excepto temperatura que cambia lento)
+            if reg != 17 and v1 == v2 and v1 != 0:
+                clavados.append(unit_id)
+        else:
+            valores.append((None, None))
+    
+    # Formatear salida
+    cols = []
+    for v1, v2 in valores:
+        if v1 is not None:
+            cols.append(f"{v1:>7}")
+            cols.append(f"{v2:>7}")
+        else:
+            cols.append("    ---")
+            cols.append("    ---")
+    
+    estado = ""
+    if clavados:
+        fases_clavadas = ", ".join([f"L{u}" for u in clavados])
+        estado = f"⚠️  CLAVADO en {fases_clavadas}"
+        problemas.append(f"Reg {reg} ({nombre}) clavado en {fases_clavadas}")
+    elif all(v[0] is not None for v in valores):
+        estado = "✓ OK"
+    
+    print(f"  {reg:<4} {nombre:<18} {cols[0]} {cols[1]} {cols[2]} {cols[3]} {cols[4]} {cols[5]}  {estado}")
+
+print("")
+print("  ════════════════════════════════════════════════════════════════════════════════")
+print("  ANÁLISIS DE CALIBRACIÓN (valores K y b)")
+print("  ════════════════════════════════════════════════════════════════════════════════")
+print("")
+print(f"  {'Reg':<4} {'Parámetro':<20} {'L1':>8} {'L2':>8} {'L3':>8}  {'Rango esperado':<20} Estado")
+print(f"  {'─'*4} {'─'*20} {'─'*8} {'─'*8} {'─'*8}  {'─'*20} {'─'*12}")
+
+for reg in [71, 72, 73, 74, 75, 76, 77, 78, 79, 80]:
+    nombre = REGS_DIAGNOSTICO.get(reg, f"Reg {reg}")
+    min_val, max_val, desc = LIMITES_CALIB.get(reg, (0, 65535, ""))
+    
+    valores = []
+    fuera_rango = []
+    
+    for unit_id in [1, 2, 3]:
+        d = data_lectura1.get(unit_id)
+        if d and len(d) > reg:
+            v = d[reg]
+            valores.append(v)
+            if v < min_val or v > max_val:
+                fuera_rango.append(unit_id)
+        else:
+            valores.append(None)
+    
+    cols = [f"{v:>8}" if v is not None else "     ---" for v in valores]
+    rango_str = f"{min_val}-{max_val}"
+    
+    estado = ""
+    if fuera_rango:
+        fases = ", ".join([f"L{u}" for u in fuera_rango])
+        estado = f"⚠️  FUERA en {fases}"
+        problemas.append(f"Reg {reg} ({nombre}) fuera de rango en {fases}")
+    elif all(v is not None for v in valores):
+        estado = "✓ OK"
+    
+    print(f"  {reg:<4} {nombre:<20} {cols[0]} {cols[1]} {cols[2]}  {rango_str:<20} {estado}")
+
+# Comparar valores entre fases (deben ser similares)
+print("")
+print("  ════════════════════════════════════════════════════════════════════════════════")
+print("  COMPARACIÓN ENTRE FASES (diferencias significativas)")
+print("  ════════════════════════════════════════════════════════════════════════════════")
+print("")
+
+for reg, nombre in [(3, "V salida"), (4, "V entrada"), (6, "I Salida"), (17, "Temperatura")]:
+    valores = []
+    for unit_id in [1, 2, 3]:
+        d = data_lectura1.get(unit_id)
+        if d and len(d) > reg:
+            valores.append(d[reg])
+        else:
+            valores.append(None)
+    
+    vals_validos = [v for v in valores if v is not None]
+    if len(vals_validos) >= 2:
+        diff = max(vals_validos) - min(vals_validos)
+        # Umbral de diferencia significativa
+        umbral = 50 if reg == 17 else (100 if reg in [3, 4] else 50)
+        
+        cols = [f"{v:>8}" if v is not None else "     ---" for v in valores]
+        estado = f"⚠️  Diff={diff}" if diff > umbral else f"✓ Diff={diff}"
+        
+        if diff > umbral:
+            problemas.append(f"{nombre}: diferencia de {diff} entre fases")
+        
+        print(f"  {nombre:<20} L1={cols[0]}  L2={cols[1]}  L3={cols[2]}  {estado}")
+
+# Resumen final
+print("")
+print("  ════════════════════════════════════════════════════════════════════════════════")
+print("  RESUMEN DEL DIAGNÓSTICO")
+print("  ════════════════════════════════════════════════════════════════════════════════")
+print("")
+
+if problemas:
+    print("  ⚠️  PROBLEMAS DETECTADOS:")
+    for p in problemas:
+        print(f"      • {p}")
+    print("")
+    print("  POSIBLES CAUSAS:")
+    print("      • Offsets dinámicos saturados (OFFSET_MAX/MIN)")
+    print("      • ADC no convirtiendo correctamente")
+    print("      • Calibración incorrecta o corrupta")
+    print("      • Interrupción PWM no ejecutándose")
+    print("      • Problema de comunicación Modbus")
+else:
+    print("  ✓ No se detectaron problemas evidentes")
+    print("    Los valores cambian correctamente y la calibración está en rango.")
+
+print("")
+EOFDIAG
+                    
+                    # Reiniciar servicios
+                    echo ""
+                    read -p "  ¿Reiniciar servicios ahora? [y/N]: " CONFIRMAR_RESTART
+                    if [[ "$CONFIRMAR_RESTART" =~ ^[Yy]$ ]]; then
+                        echo "  [~] Reiniciando servicios..."
+                        sudo systemctl start nodered
+                        docker start gesinne-rpi 2>/dev/null || true
+                        echo "  [OK] Listo"
+                    else
+                        echo "  [!] Servicios NO reiniciados. Recuerda iniciarlos manualmente:"
+                        echo "      sudo systemctl start nodered"
+                    fi
+                    
+                    volver_menu
+                    continue
+                    ;;
                 *) echo "  [X] Opción no válida"; continue ;;
             esac
             
@@ -1603,13 +1936,34 @@ if chronos_id:
             echo "  [OK] Servicios parados"
             echo ""
             
+            # Detectar puerto serie automáticamente
+            echo "  [~] Detectando puerto serie..."
+            SERIAL_PORT=""
+            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                if [ -e "$port" ]; then
+                    SERIAL_PORT="$port"
+                    echo "  [OK] Puerto encontrado: $SERIAL_PORT"
+                    break
+                fi
+            done
+            
+            if [ -z "$SERIAL_PORT" ]; then
+                echo "  [X] No se encontró ningún puerto serie"
+                echo "      Puertos buscados: /dev/ttyAMA0, /dev/serial0, /dev/ttyUSB0, /dev/ttyACM0, /dev/ttyS0"
+                volver_menu
+                continue
+            fi
+            echo ""
+            
             # Si es modo columnas, leer las 3 placas y mostrar en tabla
             if [ "$MODO_COLUMNAS" = "yes" ]; then
                 echo "  [M] Leyendo las 3 tarjetas..."
                 echo ""
                 
-                python3 << 'EOFCOL'
+                python3 << EOFCOL
 import sys
+import time
+
 try:
     from pymodbus.client import ModbusSerialClient
 except ImportError:
@@ -1619,20 +1973,40 @@ except ImportError:
         print("  [X] pymodbus no instalado")
         sys.exit(1)
 
-client = ModbusSerialClient(
-    port='/dev/ttyAMA0',
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+PUERTO = "$SERIAL_PORT"
+BAUDRATES = [115200, 57600, 9600]
 
-if not client.connect():
-    print("  [X] No se pudo conectar al puerto serie")
+client = None
+connected = False
+
+for baudrate in BAUDRATES:
+    try:
+        client = ModbusSerialClient(
+            port=PUERTO,
+            baudrate=baudrate,
+            bytesize=8,
+            parity='N',
+            stopbits=1,
+            timeout=2
+        )
+        
+        if client.connect():
+            result = client.read_holding_registers(address=0, count=1, slave=1)
+            if not result.isError():
+                print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
+                connected = True
+                break
+            client.close()
+    except Exception as e:
+        if client:
+            client.close()
+        continue
+
+if not connected:
+    print(f"  [X] No se pudo comunicar con las placas")
+    print(f"      Puerto: {PUERTO}")
+    print(f"      Baudrates probados: {BAUDRATES}")
     sys.exit(1)
-
-import time
 
 # Leer las 3 placas con reintentos
 data_all = {}
@@ -1760,7 +2134,7 @@ EOFCOL
                 continue
             fi
             
-            # Modo normal: una placa a la vez
+            # Modo normal: una placa a la vez (SERIAL_PORT ya detectado arriba)
             for UNIT_ID in $UNIT_IDS; do
             
             case $UNIT_ID in
@@ -1774,6 +2148,9 @@ EOFCOL
             
             python3 << EOF
 import sys
+import os
+import glob
+
 try:
     from pymodbus.client import ModbusSerialClient
 except ImportError:
@@ -1783,17 +2160,49 @@ except ImportError:
         print("  [X] pymodbus no instalado. Instala con: pip3 install pymodbus")
         sys.exit(1)
 
-client = ModbusSerialClient(
-    port='/dev/ttyAMA0',
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+# Puerto detectado por bash
+PUERTO = "$SERIAL_PORT"
 
-if not client.connect():
-    print("  [X] No se pudo conectar al puerto serie /dev/ttyAMA0")
+# Probar diferentes baudrates si falla
+BAUDRATES = [115200, 57600, 9600]
+
+client = None
+connected = False
+
+for baudrate in BAUDRATES:
+    try:
+        client = ModbusSerialClient(
+            port=PUERTO,
+            baudrate=baudrate,
+            bytesize=8,
+            parity='N',
+            stopbits=1,
+            timeout=2
+        )
+        
+        if client.connect():
+            # Probar lectura rápida para verificar comunicación
+            result = client.read_holding_registers(address=0, count=1, slave=$UNIT_ID)
+            if not result.isError():
+                print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
+                connected = True
+                break
+            client.close()
+    except Exception as e:
+        if client:
+            client.close()
+        continue
+
+if not connected:
+    print(f"  [X] No se pudo comunicar con la placa $FASE (Unit ID: $UNIT_ID)")
+    print(f"      Puerto: {PUERTO}")
+    print(f"      Baudrates probados: {BAUDRATES}")
+    print("")
+    print("  Posibles causas:")
+    print("      • La placa no está conectada o alimentada")
+    print("      • El Unit ID ($UNIT_ID) no coincide con la dirección Modbus de la placa")
+    print("      • El cable serie está desconectado o dañado")
+    print("      • Otro proceso está usando el puerto serie")
     sys.exit(1)
 
 try:
@@ -3145,6 +3554,20 @@ except:
                 bash "$VERIF_SCRIPT" verificar
             else
                 echo "  [X] Error descargando script de verificacion"
+            fi
+            
+            volver_menu
+            ;;
+        9)
+            # Reparar placas desparametrizadas
+            REPAIR_SCRIPT="/tmp/gesinne-reparar.sh"
+            curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/firmware.sh" -o "$REPAIR_SCRIPT" 2>/dev/null
+            
+            if [ -f "$REPAIR_SCRIPT" ]; then
+                chmod +x "$REPAIR_SCRIPT"
+                bash "$REPAIR_SCRIPT" reparar
+            else
+                echo "  [X] Error descargando script de reparacion"
             fi
             
             volver_menu
