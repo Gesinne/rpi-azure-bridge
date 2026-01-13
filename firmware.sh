@@ -224,6 +224,9 @@ print("  │  Fase   │  Reg 55 (estado_inicial)  │  Reg 56 (consigna)   │"
 print("  ├─────────┼───────────────────────────┼──────────────────────┤")
 
 problemas = []
+errores_lectura = []
+placas_ok = 0
+
 for unit_id in [1, 2, 3]:
     fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
     
@@ -231,6 +234,7 @@ for unit_id in [1, 2, 3]:
         result = client.read_holding_registers(address=55, count=2, slave=unit_id)
         if result.isError():
             print(f"  │   {fase}    │  [X] Error leyendo        │  [X] Error leyendo   │")
+            errores_lectura.append(fase)
             continue
         
         reg55 = result.registers[0]
@@ -249,26 +253,45 @@ for unit_id in [1, 2, 3]:
             problemas.append(f"{fase}: Reg55={reg55}")
         if not r56_ok:
             problemas.append(f"{fase}: Reg56={reg56}")
+        
+        if r55_ok and r56_ok:
+            placas_ok += 1
             
     except Exception as e:
         print(f"  │   {fase}    │  [X] Error: {str(e)[:15]}   │  [X] Error           │")
+        errores_lectura.append(fase)
 
 client.close()
 
 print("  └─────────────────────────────────────────────────────────────┘")
 print("")
 
+# Mostrar errores de lectura
+if errores_lectura:
+    print(f"  [X] ERROR DE LECTURA en: {', '.join(errores_lectura)}")
+    print("      Verifica la conexión física con esas placas.")
+    print("")
+
+# Mostrar problemas de valores
 if problemas:
-    print("  [!] PROBLEMAS DETECTADOS:")
+    print("  [!] VALORES CORRUPTOS DETECTADOS:")
     for p in problemas:
         print(f"      - {p}")
     print("")
     print("  Valores válidos:")
     print("    - Reg 55: 0 (Bypass) o 2 (Regulación)")
     print("    - Reg 56: 1760-2640 (ej: 2200 para 220V)")
-else:
-    print("  [OK] Todos los valores son correctos. No hay nada que reparar.")
+
+# Solo decir OK si las 3 placas responden Y están correctas
+if placas_ok == 3 and not errores_lectura and not problemas:
+    print("  [OK] Las 3 placas responden y tienen valores correctos.")
+    print("       No hay nada que reparar.")
     sys.exit(2)
+elif errores_lectura and not problemas:
+    print("")
+    print("  [!] No se puede verificar completamente sin leer las 3 placas.")
+    print("      Soluciona los errores de lectura antes de continuar.")
+    sys.exit(1)
 EOFLEER
     
     LEER_RESULT=$?
