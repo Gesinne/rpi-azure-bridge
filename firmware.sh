@@ -181,22 +181,131 @@ reparar_placas() {
     echo "  Reparar placas desparametrizadas"
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "  Este proceso escribirá valores correctos en los"
-    echo "  registros corruptos de las placas."
+    echo "  [!]  Parando Node-RED para leer registros..."
+    sudo systemctl stop nodered 2>/dev/null
+    docker stop gesinne-rpi >/dev/null 2>&1 || true
+    sleep 2
+    echo "  [OK] Servicios parados"
     echo ""
-    echo "  Registros que se pueden reparar:"
-    echo "    - Reg 55 (estado_inicial): valores válidos 0 o 2"
-    echo "    - Reg 56 (tension_consigna): rango 1760-2640"
+    echo "  [M] Leyendo valores actuales de las 3 placas..."
     echo ""
     
-    # Preguntar valores a escribir
+    # Leer y mostrar valores actuales
+    python3 << 'EOFLEER'
+import sys
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+import time
+
+client = ModbusSerialClient(
+    port='/dev/ttyAMA0',
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+print("  ┌─────────────────────────────────────────────────────────────┐")
+print("  │  VALORES ACTUALES                                          │")
+print("  ├─────────────────────────────────────────────────────────────┤")
+print("  │  Fase   │  Reg 55 (estado_inicial)  │  Reg 56 (consigna)   │")
+print("  ├─────────┼───────────────────────────┼──────────────────────┤")
+
+problemas = []
+for unit_id in [1, 2, 3]:
+    fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
+    
+    try:
+        result = client.read_holding_registers(address=55, count=2, slave=unit_id)
+        if result.isError():
+            print(f"  │   {fase}    │  [X] Error leyendo        │  [X] Error leyendo   │")
+            continue
+        
+        reg55 = result.registers[0]
+        reg56 = result.registers[1]
+        
+        # Verificar si están corruptos
+        r55_ok = reg55 in [0, 2]
+        r56_ok = 1760 <= reg56 <= 2640
+        
+        r55_status = f"{reg55}" if r55_ok else f"{reg55} [!] CORRUPTO"
+        r56_status = f"{reg56}" if r56_ok else f"{reg56} [!] CORRUPTO"
+        
+        print(f"  │   {fase}    │  {r55_status:<25} │  {r56_status:<20} │")
+        
+        if not r55_ok:
+            problemas.append(f"{fase}: Reg55={reg55}")
+        if not r56_ok:
+            problemas.append(f"{fase}: Reg56={reg56}")
+            
+    except Exception as e:
+        print(f"  │   {fase}    │  [X] Error: {str(e)[:15]}   │  [X] Error           │")
+
+client.close()
+
+print("  └─────────────────────────────────────────────────────────────┘")
+print("")
+
+if problemas:
+    print("  [!] PROBLEMAS DETECTADOS:")
+    for p in problemas:
+        print(f"      - {p}")
+    print("")
+    print("  Valores válidos:")
+    print("    - Reg 55: 0 (Bypass) o 2 (Regulación)")
+    print("    - Reg 56: 1760-2640 (ej: 2200 para 220V)")
+else:
+    print("  [OK] Todos los valores son correctos. No hay nada que reparar.")
+    sys.exit(2)
+EOFLEER
+    
+    LEER_RESULT=$?
+    
+    # Si no hay problemas (exit 2), reiniciar y salir
+    if [ $LEER_RESULT -eq 2 ]; then
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        sleep 2
+        echo "  [OK] Servicios reiniciados"
+        return 0
+    fi
+    
+    # Si hubo error de conexión (exit 1), salir
+    if [ $LEER_RESULT -eq 1 ]; then
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 1
+    fi
+    
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  ¿Qué valores quieres escribir?"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     read -p "  Registro 55 (estado_inicial) [0=Bypass, 2=Regulación]: " REG55_VALUE
     REG55_VALUE=${REG55_VALUE:-0}
     
     if [ "$REG55_VALUE" != "0" ] && [ "$REG55_VALUE" != "2" ]; then
         echo "  [X] Valor inválido. Debe ser 0 o 2"
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered
+        docker start gesinne-rpi >/dev/null 2>&1 || true
         return 1
     fi
     
@@ -205,6 +314,9 @@ reparar_placas() {
     
     if [ "$REG56_VALUE" -lt 1760 ] || [ "$REG56_VALUE" -gt 2640 ] 2>/dev/null; then
         echo "  [X] Valor inválido. Debe estar entre 1760 y 2640"
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered
+        docker start gesinne-rpi >/dev/null 2>&1 || true
         return 1
     fi
     
@@ -213,18 +325,17 @@ reparar_placas() {
     echo "    - Registro 55 = $REG55_VALUE"
     echo "    - Registro 56 = $REG56_VALUE"
     echo ""
-    read -p "  ¿Continuar? [s/N]: " CONFIRM
+    read -p "  ¿Continuar con la escritura? [s/N]: " CONFIRM
     if [ "$CONFIRM" != "s" ] && [ "$CONFIRM" != "S" ]; then
         echo "  [X] Cancelado"
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered
+        docker start gesinne-rpi >/dev/null 2>&1 || true
         return 0
     fi
     
     echo ""
-    echo "  [!]  Parando Node-RED temporalmente..."
-    sudo systemctl stop nodered 2>/dev/null
-    docker stop gesinne-rpi >/dev/null 2>&1 || true
-    sleep 2
-    echo "  [OK] Servicios parados"
+    echo "  [M] Escribiendo valores en las placas..."
     echo ""
     
     python3 << EOFREPARAR
