@@ -287,11 +287,6 @@ if placas_ok == 3 and not errores_lectura and not problemas:
     print("  [OK] Las 3 placas responden y tienen valores correctos.")
     print("       No hay nada que reparar.")
     sys.exit(2)
-elif errores_lectura and not problemas:
-    print("")
-    print("  [!] No se puede verificar completamente sin leer las 3 placas.")
-    print("      Soluciona los errores de lectura antes de continuar.")
-    sys.exit(1)
 EOFLEER
     
     LEER_RESULT=$?
