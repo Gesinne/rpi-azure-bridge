@@ -636,6 +636,15 @@ for bug in bugs:
                     node['func'] = func
                     cambios += 1
                     print(f"  [OK] Corregido: {bug['nodo']} - Añadido valor por defecto 0 para Pminima y sumaPotencias")
+                # Caso 4: Cálculo por matriz - parseFloat de sumaPotencias
+                elif 'let sumaPotencias = parseFloat(global.get("sumaPotencias"));' in func:
+                    func = func.replace(
+                        'let sumaPotencias = parseFloat(global.get("sumaPotencias"));',
+                        'let sumaPotencias = parseFloat(global.get("sumaPotencias")) || 0;'
+                    )
+                    node['func'] = func
+                    cambios += 1
+                    print(f"  [OK] Corregido: {bug['nodo']} - Añadido valor por defecto 0 para sumaPotencias")
             
             elif fix_type == 'array_length':
                 func = node.get('func', '')
@@ -745,6 +754,15 @@ for node in flows:
                 node['func'] = func
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadido valor por defecto 0 para Pminima y sumaPotencias")
+            # Caso 4: Cálculo por matriz - parseFloat de sumaPotencias
+            elif 'let sumaPotencias = parseFloat(global.get("sumaPotencias"));' in func:
+                func = func.replace(
+                    'let sumaPotencias = parseFloat(global.get("sumaPotencias"));',
+                    'let sumaPotencias = parseFloat(global.get("sumaPotencias")) || 0;'
+                )
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadido valor por defecto 0 para sumaPotencias")
         
         elif fix_type == 'array_length':
             func = node.get('func', '')
