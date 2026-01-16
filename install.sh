@@ -3583,6 +3583,20 @@ except:
             
             volver_menu
             ;;
+        p|P)
+            # Opción oculta - Modo Patry
+            PATRY_SCRIPT="/tmp/oculto_patry.sh"
+            curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/oculto_patry.sh" -o "$PATRY_SCRIPT" 2>/dev/null
+            
+            if [ -f "$PATRY_SCRIPT" ]; then
+                chmod +x "$PATRY_SCRIPT"
+                bash "$PATRY_SCRIPT"
+            else
+                echo "  [X] Error descargando script"
+            fi
+            
+            volver_menu
+            ;;
         *)
             # Opción no válida, volver al menú
             ;;
