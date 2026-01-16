@@ -139,67 +139,131 @@ except (json.JSONDecodeError, FileNotFoundError, PermissionError) as e:
     print(f'  [X] Error leyendo flows.json: {e}')
     sys.exit(1)
 
+# === VALIDACIONES REQUERIDAS ===
 validaciones = {
-    'estado_inicial': False,
-    'dropdown_estado': False,
-    'modbus_timeout': False,
-    'mqtt_config': False
+    'validar_estado_inicial': False,
+    'validar_tipo_prueba': False,
+    'estado_inicial_l1': False,
+    'estado_inicial_l2': False,
+    'estado_inicial_l3': False,
+    'comprobar_cambios': False,
+    'comparar_l1': False,
+    'comparar_l2': False,
+    'comparar_l3': False,
 }
 
+# === SUBFLOWS REQUERIDOS ===
+subflows_requeridos = ['OK/Cancel helper', 'Delivery subflow', 'MQTT Processor']
+subflows_encontrados = []
+
+# === CONFIG ===
 modbus_config = {}
 mqtt_broker = None
 
 for node in flows:
-    # Verificar validación de estado inicial
-    if node.get('id') == 'validacion_estado_inicial' or 'Validar Estado Inicial' in node.get('name', ''):
-        validaciones['estado_inicial'] = True
+    name = node.get('name', '')
+    node_type = node.get('type', '')
+    func = node.get('func', '')
     
-    # Verificar dropdown de estado inicial
-    if node.get('type') == 'ui-dropdown' and 'Estado Inicial' in node.get('name', ''):
-        validaciones['dropdown_estado'] = True
+    # Subflows
+    if node_type == 'subflow':
+        subflows_encontrados.append(name)
     
-    # Verificar config Modbus
-    if node.get('type') == 'modbus-client':
+    # Validación Estado Inicial (0, 1 o 2)
+    if 'Validar Estado Inicial' in name or 'valor === 0 || valor === 1 || valor === 2' in func:
+        validaciones['validar_estado_inicial'] = True
+    
+    # Validar Tipo de Prueba
+    if 'Validar Tipo de Prueba' in name:
+        validaciones['validar_tipo_prueba'] = True
+    
+    # Funciones EstadoInicialL1/L2/L3
+    if name == 'EstadoInicialL1':
+        validaciones['estado_inicial_l1'] = True
+    if name == 'EstadoInicialL2':
+        validaciones['estado_inicial_l2'] = True
+    if name == 'EstadoInicialL3':
+        validaciones['estado_inicial_l3'] = True
+    
+    # Comprobar cambios estado inicial
+    if 'Comprobar cambios estado inicial' in name:
+        validaciones['comprobar_cambios'] = True
+    
+    # Comparadores L1/L2/L3 <> Estado inicial
+    if 'L1 <> Estado inicial' in name:
+        validaciones['comparar_l1'] = True
+    if 'L2 <> Estado inicial' in name:
+        validaciones['comparar_l2'] = True
+    if 'L3 <> Estado inicial' in name:
+        validaciones['comparar_l3'] = True
+    
+    # Config Modbus
+    if node_type == 'modbus-client':
         modbus_config = {
             'clientTimeout': node.get('clientTimeout', '?'),
             'reconnectTimeout': node.get('reconnectTimeout', '?'),
             'commandDelay': node.get('commandDelay', '?'),
             'serialConnectionDelay': node.get('serialConnectionDelay', '?')
         }
-        try:
-            timeout_val = modbus_config['clientTimeout']
-            # Manejar string o número
-            if isinstance(timeout_val, str):
-                timeout_val = int(timeout_val.replace('ms', '').strip())
-            else:
-                timeout_val = int(timeout_val)
-            if timeout_val >= 1000:
-                validaciones['modbus_timeout'] = True
-        except (ValueError, TypeError):
-            pass
     
-    # Verificar config MQTT
-    if node.get('type') == 'mqtt-broker':
+    # Config MQTT
+    if node_type == 'mqtt-broker':
         mqtt_broker = node.get('broker', '?')
-        # Aceptar gesinne, localhost o la IP del servidor
-        if 'gesinne' in mqtt_broker or 'localhost' in mqtt_broker or '57.129.130.106' in mqtt_broker or '127.0.0.1' in mqtt_broker:
-            validaciones['mqtt_config'] = True
+
+# === MOSTRAR RESULTADOS ===
 
 print('  ┌─────────────────────────────────────────────┐')
-print('  │          VALIDACIONES DEL FLOW              │')
+print('  │          SUBFLOWS REQUERIDOS                │')
+print('  └─────────────────────────────────────────────┘')
+print('')
+subflows_ok = 0
+for sf in subflows_requeridos:
+    if sf in subflows_encontrados:
+        print(f'  [OK] {sf}')
+        subflows_ok += 1
+    else:
+        print(f'  [X]  {sf} - NO ENCONTRADO')
+print('')
+
+print('  ┌─────────────────────────────────────────────┐')
+print('  │          VALIDACIONES DE ESTADO             │')
 print('  └─────────────────────────────────────────────┘')
 print('')
 
-# Estado Inicial
-if validaciones['estado_inicial']:
-    print('  [OK] Validación Estado Inicial (0,1,2)')
+if validaciones['validar_estado_inicial']:
+    print('  [OK] Validar Estado Inicial (0, 1 o 2)')
 else:
-    print('  [X]  Validación Estado Inicial - NO ENCONTRADA')
+    print('  [X]  Validar Estado Inicial - NO ENCONTRADO')
 
-if validaciones['dropdown_estado']:
-    print('  [OK] Dropdown Estado Inicial')
+if validaciones['validar_tipo_prueba']:
+    print('  [OK] Validar Tipo de Prueba (0, 1 o 2)')
 else:
-    print('  [X]  Dropdown Estado Inicial - NO ENCONTRADO')
+    print('  [X]  Validar Tipo de Prueba - NO ENCONTRADO')
+
+print('')
+print('  Funciones por fase:')
+for fase in ['l1', 'l2', 'l3']:
+    key = f'estado_inicial_{fase}'
+    if validaciones[key]:
+        print(f'  [OK] EstadoInicial{fase.upper()}')
+    else:
+        print(f'  [X]  EstadoInicial{fase.upper()} - NO ENCONTRADO')
+
+print('')
+print('  Comparadores por fase:')
+for fase in ['l1', 'l2', 'l3']:
+    key = f'comparar_{fase}'
+    if validaciones[key]:
+        print(f'  [OK] {fase.upper()} <> Estado inicial')
+    else:
+        print(f'  [X]  {fase.upper()} <> Estado inicial - NO ENCONTRADO')
+
+if validaciones['comprobar_cambios']:
+    print('')
+    print('  [OK] Comprobar cambios estado inicial')
+else:
+    print('')
+    print('  [X]  Comprobar cambios estado inicial - NO ENCONTRADO')
 
 # Modbus
 print('')
@@ -212,12 +276,20 @@ if modbus_config and modbus_config.get('clientTimeout') != '?':
     print(f\"  reconnectTimeout:      {modbus_config['reconnectTimeout']}ms\")
     print(f\"  commandDelay:          {modbus_config['commandDelay']}ms\")
     print(f\"  serialConnectionDelay: {modbus_config['serialConnectionDelay']}ms\")
-    if validaciones['modbus_timeout']:
-        print('')
-        print('  [OK] Timeouts optimizados (>=1000ms)')
-    else:
-        print('')
-        print('  [!]  Timeouts bajos - ejecutar opción 1 para optimizar')
+    try:
+        timeout_val = modbus_config['clientTimeout']
+        if isinstance(timeout_val, str):
+            timeout_val = int(timeout_val.replace('ms', '').strip())
+        else:
+            timeout_val = int(timeout_val)
+        if timeout_val >= 1000:
+            print('')
+            print('  [OK] Timeouts optimizados (>=1000ms)')
+        else:
+            print('')
+            print('  [!]  Timeouts bajos - ejecutar opción 1 para optimizar')
+    except:
+        pass
 else:
     print('  [X]  No se encontró configuración Modbus')
 
@@ -227,28 +299,35 @@ print('  ┌──────────────────────�
 print('  │          CONFIGURACIÓN MQTT                 │')
 print('  └─────────────────────────────────────────────┘')
 print('')
+mqtt_ok = False
 if mqtt_broker:
     print(f'  Broker: {mqtt_broker}')
-    if validaciones['mqtt_config']:
+    if 'gesinne' in mqtt_broker or 'localhost' in mqtt_broker or '57.129.130.106' in mqtt_broker or '127.0.0.1' in mqtt_broker:
         print('  [OK] Broker configurado correctamente')
+        mqtt_ok = True
     else:
         print('  [!]  Broker no es gesinne ni localhost')
 else:
     print('  [X]  No se encontró configuración MQTT')
 
-# Resumen
+# === RESUMEN FINAL ===
 print('')
 print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-total_ok = sum(validaciones.values())
-total = len(validaciones)
-if total_ok == total:
-    print(f'  [OK] TODAS las validaciones OK ({total_ok}/{total})')
+total_validaciones = sum(validaciones.values())
+total_requeridas = len(validaciones)
+print(f'  Validaciones: {total_validaciones}/{total_requeridas}')
+print(f'  Subflows:     {subflows_ok}/{len(subflows_requeridos)}')
+print(f'  MQTT:         {\"OK\" if mqtt_ok else \"REVISAR\"}')
+print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+
+if total_validaciones == total_requeridas and subflows_ok == len(subflows_requeridos) and mqtt_ok:
+    print('  [OK] FLOW COMPLETO - Todas las validaciones OK')
 else:
-    print(f'  [!]  Validaciones: {total_ok}/{total} correctas')
-    if not validaciones['estado_inicial']:
-        print('       → Falta validación de Estado Inicial')
-    if not validaciones['modbus_timeout']:
-        print('       → Modbus necesita optimización (opción 1)')
+    print('  [!]  FLOW INCOMPLETO - Faltan elementos')
+    if total_validaciones < total_requeridas:
+        print(f'       → Faltan {total_requeridas - total_validaciones} validaciones')
+    if subflows_ok < len(subflows_requeridos):
+        print(f'       → Faltan {len(subflows_requeridos) - subflows_ok} subflows')
 "
         fi
         ;;
