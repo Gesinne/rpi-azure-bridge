@@ -539,6 +539,30 @@ for node in flows:
                 'desc': 'Escritura Modbus sin validación de rango (debe ser 0 o 2)',
                 'fix_type': 'estado_inicial_validacion'
             })
+    
+    # 7. Escritura Modbus sin validación (TensionConsigna)
+    if node_type == 'function' and name.startswith('TensionConsigna') and "global.get('consigna')" in func:
+        if 'consigna < 1760' not in func and 'VALIDACIÓN' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Escritura Modbus sin validación de rango (debe ser 1760-2640)',
+                'fix_type': 'tension_consigna_validacion'
+            })
+    
+    # 8. Crear variable global sin validación (consigna)
+    if node_type == 'function' and name == 'Crear variable global' and 'global.set("consigna"' in func:
+        if 'consigna < 1760' not in func and 'VALIDACIÓN' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Guarda consigna sin validar rango (debe ser 1760-2640)',
+                'fix_type': 'crear_consigna_validacion'
+            })
 
 # Guardar bugs en archivo temporal
 with open('/tmp/flow_bugs.json', 'w') as f:
@@ -701,6 +725,48 @@ return msg;"""
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (0 o 2)")
             
+            elif fix_type == 'tension_consigna_validacion':
+                func = node.get('func', '')
+                # Detectar unitid del nodo
+                unitid = '1'
+                if 'L2' in bug['nodo']:
+                    unitid = '2'
+                elif 'L3' in bug['nodo']:
+                    unitid = '3'
+                
+                nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que consigna esté entre 1760-2640
+var consigna = global.get('consigna');
+if (consigna < 1760 || consigna > 2640) {{
+    node.error("ERROR CRÍTICO: consigna fuera de rango (1760-2640). Valor: " + consigna + ". Escritura bloqueada.");
+    return null;
+}}
+
+msg.payload = {{
+    value: consigna,
+    'fc': 6,
+    'unitid': {unitid},
+    'address': 32,
+    'quantity': 1
+}}
+msg.topic = "TensionConsigna L{unitid}"
+return msg;"""
+                node['func'] = nuevo_codigo
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
+            
+            elif fix_type == 'crear_consigna_validacion':
+                nuevo_codigo = """// VALIDACIÓN CRÍTICA: Verificar que consigna esté entre 1760-2640
+var consigna = msg.payload * 10;
+if (consigna < 1760 || consigna > 2640) {
+    node.error("ERROR CRÍTICO: consigna fuera de rango (1760-2640). Valor: " + consigna + ". No se guarda.");
+    return null;
+}
+global.set("consigna", consigna);
+return msg;"""
+                node['func'] = nuevo_codigo
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
+            
             break
 
 if cambios > 0:
@@ -847,6 +913,48 @@ return msg;"""
             node['func'] = nuevo_codigo
             cambios += 1
             print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (0 o 2)")
+        
+        elif fix_type == 'tension_consigna_validacion':
+            func = node.get('func', '')
+            # Detectar unitid del nodo
+            unitid = '1'
+            if 'L2' in bug['nodo']:
+                unitid = '2'
+            elif 'L3' in bug['nodo']:
+                unitid = '3'
+            
+            nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que consigna esté entre 1760-2640
+var consigna = global.get('consigna');
+if (consigna < 1760 || consigna > 2640) {{
+    node.error("ERROR CRÍTICO: consigna fuera de rango (1760-2640). Valor: " + consigna + ". Escritura bloqueada.");
+    return null;
+}}
+
+msg.payload = {{
+    value: consigna,
+    'fc': 6,
+    'unitid': {unitid},
+    'address': 32,
+    'quantity': 1
+}}
+msg.topic = "TensionConsigna L{unitid}"
+return msg;"""
+            node['func'] = nuevo_codigo
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
+        
+        elif fix_type == 'crear_consigna_validacion':
+            nuevo_codigo = """// VALIDACIÓN CRÍTICA: Verificar que consigna esté entre 1760-2640
+var consigna = msg.payload * 10;
+if (consigna < 1760 || consigna > 2640) {
+    node.error("ERROR CRÍTICO: consigna fuera de rango (1760-2640). Valor: " + consigna + ". No se guarda.");
+    return null;
+}
+global.set("consigna", consigna);
+return msg;"""
+            node['func'] = nuevo_codigo
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
