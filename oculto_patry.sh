@@ -530,13 +530,13 @@ for node in flows:
     
     # 6. Escritura Modbus sin validación (EstadoInicial)
     if node_type == 'function' and name.startswith('EstadoInicial') and "global.get('estadoinicial')" in func:
-        if 'estadoinicial !== 0 && estadoinicial !== 1 && estadoinicial !== 2' not in func and 'VALIDACIÓN' not in func:
+        if 'estadoinicial !== 0 && estadoinicial !== 2' not in func and 'VALIDACIÓN' not in func:
             bugs.append({
                 'num': len(bugs) + 1,
                 'tipo': 'ALTO',
                 'nodo': name,
                 'id': node_id,
-                'desc': 'Escritura Modbus sin validación de rango (debe ser 0, 1 o 2)',
+                'desc': 'Escritura Modbus sin validación de rango (debe ser 0 o 2)',
                 'fix_type': 'estado_inicial_validacion'
             })
 
@@ -681,10 +681,10 @@ for bug in bugs:
                 elif 'L3' in bug['nodo']:
                     unitid = '3'
                 
-                nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que estadoinicial sea 0, 1 o 2
+                nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que estadoinicial sea 0 o 2
 var estadoinicial = global.get('estadoinicial');
-if (estadoinicial !== 0 && estadoinicial !== 1 && estadoinicial !== 2) {{
-    node.error("ERROR CRÍTICO: estadoinicial fuera de rango (0-2). Valor: " + estadoinicial + ". Escritura bloqueada.");
+if (estadoinicial !== 0 && estadoinicial !== 2) {{
+    node.error("ERROR CRÍTICO: estadoinicial fuera de rango (0 o 2). Valor: " + estadoinicial + ". Escritura bloqueada.");
     return null;
 }}
 
@@ -699,7 +699,7 @@ msg.topic = "{bug['nodo']}"
 return msg;"""
                 node['func'] = nuevo_codigo
                 cambios += 1
-                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (0, 1 o 2)")
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (0 o 2)")
             
             break
 
@@ -828,10 +828,10 @@ for node in flows:
             elif 'L3' in bug['nodo']:
                 unitid = '3'
             
-            nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que estadoinicial sea 0, 1 o 2
+            nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que estadoinicial sea 0 o 2
 var estadoinicial = global.get('estadoinicial');
-if (estadoinicial !== 0 && estadoinicial !== 1 && estadoinicial !== 2) {{
-    node.error("ERROR CRÍTICO: estadoinicial fuera de rango (0-2). Valor: " + estadoinicial + ". Escritura bloqueada.");
+if (estadoinicial !== 0 && estadoinicial !== 2) {{
+    node.error("ERROR CRÍTICO: estadoinicial fuera de rango (0 o 2). Valor: " + estadoinicial + ". Escritura bloqueada.");
     return null;
 }}
 
@@ -846,7 +846,7 @@ msg.topic = "{bug['nodo']}"
 return msg;"""
             node['func'] = nuevo_codigo
             cambios += 1
-            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (0, 1 o 2)")
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (0 o 2)")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
