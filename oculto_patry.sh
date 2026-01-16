@@ -612,7 +612,18 @@ for bug in bugs:
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - QoS cambiado a 1")
             
-            # Otros fixes se pueden añadir aquí
+            elif fix_type == 'parse_nan':
+                func = node.get('func', '')
+                # Buscar parseFloat(config.potencia * 100) y corregirlo
+                if 'parseFloat(config.potencia * 100)' in func:
+                    func = func.replace(
+                        "global.set('Pminima', parseFloat(config.potencia * 100));",
+                        "var potenciaVal = parseFloat(config.potencia);\nif (!isNaN(potenciaVal)) {\n    global.set('Pminima', potenciaVal * 100);\n} else {\n    node.warn('Potencia no válida en config');\n}"
+                    )
+                    node['func'] = func
+                    cambios += 1
+                    print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación NaN para Pminima")
+            
             break
 
 if cambios > 0:
@@ -672,6 +683,17 @@ for node in flows:
             node['qos'] = '1'
             cambios += 1
             print(f"  [OK] Corregido: {bug['nodo']} - QoS cambiado a 1")
+        
+        elif fix_type == 'parse_nan':
+            func = node.get('func', '')
+            if 'parseFloat(config.potencia * 100)' in func:
+                func = func.replace(
+                    "global.set('Pminima', parseFloat(config.potencia * 100));",
+                    "var potenciaVal = parseFloat(config.potencia);\nif (!isNaN(potenciaVal)) {\n    global.set('Pminima', potenciaVal * 100);\n} else {\n    node.warn('Potencia no válida en config');\n}"
+                )
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación NaN para Pminima")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
