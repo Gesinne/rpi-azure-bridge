@@ -464,18 +464,7 @@ for node in flows:
     
     # === BUGS CRÍTICOS ===
     
-    # 1. Lógica incorrecta en comparación de estado inicial
-    if 'EstadoInicialL1 != estadoinicial' in func and '&& (EstadoInicialL3' in func:
-        bugs.append({
-            'tipo': 'CRÍTICO',
-            'nodo': name,
-            'id': node_id,
-            'desc': 'Lógica incorrecta: usa && cuando debería ser ||',
-            'fix': 'comprobar_cambios'
-        })
-        fixes_disponibles.append('comprobar_cambios')
-    
-    # 2. node.name puede ser undefined
+    # 1. node.name puede ser undefined
     if node_type == 'function' and 'node.name' in func:
         bugs.append({
             'tipo': 'MEDIO',
@@ -587,18 +576,8 @@ for node in flows:
     func = node.get('func', '')
     name = node.get('name', '')
     
-    # Fix 1: Corregir lógica && por ||
-    if 'Comprobar cambios estado inicial' in name or 'EstadoInicialL1 != estadoinicial' in func:
-        if '&& (EstadoInicialL3' in func:
-            # Corregir la lógica
-            func_corregida = func.replace(
-                '(EstadoInicialL2 != estadoinicial) && (EstadoInicialL3 != estadoinicial)',
-                '(EstadoInicialL2 != estadoinicial) || (EstadoInicialL3 != estadoinicial)'
-            )
-            if func_corregida != func:
-                node['func'] = func_corregida
-                cambios += 1
-                print(f"  [OK] Corregido: {name}")
+    # Placeholder para futuras correcciones
+    pass
 
 if cambios > 0:
     with open('$FLOWS_FILE', 'w') as f:
