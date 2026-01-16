@@ -633,6 +633,21 @@ for bug in bugs:
                     cambios += 1
                     print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación para match null")
             
+            elif fix_type == 'array_length':
+                func = node.get('func', '')
+                # Caso: Procesar Alarmas L1/L2/L3
+                if 'const alarmValue = msg.payload.data[2];' in func:
+                    for phase in ['L1', 'L2', 'L3']:
+                        if f"msg.phase = '{phase}';" in func:
+                            func = func.replace(
+                                "const alarmValue = msg.payload.data[2];",
+                                f"if (!msg.payload.data || msg.payload.data.length < 3) {{\n    msg.payload = false;\n    msg.alarmValue = 0;\n    msg.phase = '{phase}';\n    return msg;\n}}\nconst alarmValue = msg.payload.data[2];"
+                            )
+                            node['func'] = func
+                            cambios += 1
+                            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de longitud de array")
+                            break
+            
             break
 
 if cambios > 0:
@@ -713,6 +728,21 @@ for node in flows:
                 node['func'] = func
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación para match null")
+        
+        elif fix_type == 'array_length':
+            func = node.get('func', '')
+            # Caso: Procesar Alarmas L1/L2/L3
+            if 'const alarmValue = msg.payload.data[2];' in func:
+                for phase in ['L1', 'L2', 'L3']:
+                    if f"msg.phase = '{phase}';" in func:
+                        func = func.replace(
+                            "const alarmValue = msg.payload.data[2];",
+                            f"if (!msg.payload.data || msg.payload.data.length < 3) {{\n    msg.payload = false;\n    msg.alarmValue = 0;\n    msg.phase = '{phase}';\n    return msg;\n}}\nconst alarmValue = msg.payload.data[2];"
+                        )
+                        node['func'] = func
+                        cambios += 1
+                        print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de longitud de array")
+                        break
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
