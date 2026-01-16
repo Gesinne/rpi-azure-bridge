@@ -617,6 +617,19 @@ for bug in bugs:
                     node['func'] = func
                     cambios += 1
                     print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación para match null")
+                # Caso 3: interrumpeFlujo - parseFloat de Pminima y sumaPotencias
+                elif 'parseFloat(global.get("Pminima"))' in func and 'parseFloat(global.get("sumaPotencias"))' in func:
+                    func = func.replace(
+                        'var Pminima = parseFloat(global.get("Pminima"));',
+                        'var Pminima = parseFloat(global.get("Pminima")) || 0;'
+                    )
+                    func = func.replace(
+                        'var sumaPotencias = parseFloat(global.get("sumaPotencias"));',
+                        'var sumaPotencias = parseFloat(global.get("sumaPotencias")) || 0;'
+                    )
+                    node['func'] = func
+                    cambios += 1
+                    print(f"  [OK] Corregido: {bug['nodo']} - Añadido valor por defecto 0 para Pminima y sumaPotencias")
             
             elif fix_type == 'array_length':
                 func = node.get('func', '')
@@ -713,6 +726,19 @@ for node in flows:
                 node['func'] = func
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación para match null")
+            # Caso 3: interrumpeFlujo - parseFloat de Pminima y sumaPotencias
+            elif 'parseFloat(global.get("Pminima"))' in func and 'parseFloat(global.get("sumaPotencias"))' in func:
+                func = func.replace(
+                    'var Pminima = parseFloat(global.get("Pminima"));',
+                    'var Pminima = parseFloat(global.get("Pminima")) || 0;'
+                )
+                func = func.replace(
+                    'var sumaPotencias = parseFloat(global.get("sumaPotencias"));',
+                    'var sumaPotencias = parseFloat(global.get("sumaPotencias")) || 0;'
+                )
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadido valor por defecto 0 para Pminima y sumaPotencias")
         
         elif fix_type == 'array_length':
             func = node.get('func', '')
