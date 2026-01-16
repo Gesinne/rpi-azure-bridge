@@ -2963,10 +2963,9 @@ EOFEMAIL
             echo "  4) Limpiar Docker (imágenes y contenedores sin usar)"
             echo "  5) Limpiar TODO (journal + logs + apt + docker)"
             echo "  6) Reducir logs permanentemente (conexión lenta)"
-            echo "  7) Optimizar rendimiento (zram + Modbus)"
             echo "  0) No limpiar, volver al menú"
             echo ""
-            read -p "  Opción [0-7]: " CLEAN_OPT
+            read -p "  Opción [0-6]: " CLEAN_OPT
             
             case $CLEAN_OPT in
                 1)
@@ -3103,10 +3102,10 @@ EOFLOGROTATE
                     echo "     • Logs debug/info desactivados"
                     echo "     • Kernel en modo silencioso"
                     ;;
-                7)
+                [Pp]atry1|PATRY1)
                     echo ""
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "  Optimizar rendimiento (zram + Modbus)"
+                    echo "  🔐 Modo Patry - Optimizar rendimiento (zram + Modbus)"
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
                     
@@ -3189,7 +3188,7 @@ else:
                     echo "     • Modbus: timeouts optimizados (evita errores)"
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     ;;
-                [Pp]atry|PATRY)
+                [Pp]atry|PATRY|[Pp]atry2|PATRY2)
                     echo ""
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo "  🔐 Modo Patry - Verificar validaciones del Flow"
