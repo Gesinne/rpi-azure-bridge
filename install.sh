@@ -3004,7 +3004,7 @@ EOFEMAIL
                 4)
                     echo ""
                     echo "  [C] Limpiando Docker..."
-                    docker system prune -af 2>/dev/null || echo "  [!] Docker no disponible"
+                    docker system prune -f --filter "until=24h" 2>/dev/null || echo "  [!] Docker no disponible"
                     echo "  [OK] Docker limpiado"
                     ;;
                 5)
@@ -3032,7 +3032,7 @@ EOFEMAIL
                     sudo apt-get autoremove -y
                     echo ""
                     echo "  → Docker..."
-                    docker system prune -af 2>/dev/null || echo "  [!] Docker no disponible"
+                    docker system prune -f --filter "until=24h" 2>/dev/null || echo "  [!] Docker no disponible"
                     echo ""
                     echo "  [OK] Limpieza completa"
                     ;;
@@ -3069,7 +3069,7 @@ EOFJOURNALD
     compress
     delaycompress
     postrotate
-        /usr/lib/rsyslog/rsyslog-rotate
+        [ -x /usr/lib/rsyslog/rsyslog-rotate ] && /usr/lib/rsyslog/rsyslog-rotate || systemctl restart rsyslog 2>/dev/null || true
     endscript
 }
 EOFLOGROTATE
@@ -3112,7 +3112,7 @@ EOFLOGROTATE
                     
                     # 1. Instalar y configurar zram
                     echo "  [1/2] Configurando zram (swap en RAM comprimida)..."
-                    if ! dpkg -l | grep -q zram-tools; then
+                    if ! dpkg -s zram-tools &>/dev/null; then
                         echo "  → Instalando zram-tools..."
                         sudo apt-get update -qq
                         sudo apt-get install -y -qq zram-tools
@@ -3143,8 +3143,16 @@ EOFLOGROTATE
                         
                         python3 -c "
 import json
-with open('$FLOWS_FILE', 'r') as f:
-    flows = json.load(f)
+import sys
+try:
+    with open('$FLOWS_FILE', 'r') as f:
+        flows = json.load(f)
+except json.JSONDecodeError as e:
+    print(f'  [X] Error: flows.json corrupto - {e}')
+    sys.exit(1)
+except Exception as e:
+    print(f'  [X] Error leyendo flows.json - {e}')
+    sys.exit(1)
 changed = False
 for node in flows:
     if node.get('type') == 'modbus-client':
@@ -3160,10 +3168,10 @@ for node in flows:
         print('       • serialConnectionDelay: 500ms')
 if changed:
     with open('$FLOWS_FILE', 'w') as f:
-        json.dump(flows, f, indent=4)
+        json.dump(flows, f, separators=(',', ':'))
 else:
     print('  [!] No se encontró modbus-client en el flow')
-" 2>/dev/null
+"
                         
                         echo ""
                         echo "  [~] Reiniciando Node-RED..."
@@ -3180,6 +3188,144 @@ else:
                     echo "     • zram: swap comprimido en RAM (no desgasta SD)"
                     echo "     • Modbus: timeouts optimizados (evita errores)"
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    ;;
+                [Pp]atry|PATRY)
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  🔐 Modo Patry - Verificar validaciones del Flow"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    
+                    FLOWS_FILE=""
+                    for f in /home/*/.node-red/flows.json; do
+                        if [ -f "$f" ]; then
+                            FLOWS_FILE="$f"
+                            break
+                        fi
+                    done
+                    
+                    if [ -z "$FLOWS_FILE" ]; then
+                        echo "  [X] No se encontró flows.json"
+                    else
+                        echo "  [P] Analizando: $FLOWS_FILE"
+                        echo ""
+                        
+                        python3 -c "
+import json
+import sys
+
+try:
+    with open('$FLOWS_FILE', 'r') as f:
+        flows = json.load(f)
+except:
+    print('  [X] Error leyendo flows.json')
+    sys.exit(1)
+
+validaciones = {
+    'estado_inicial': False,
+    'dropdown_estado': False,
+    'modbus_timeout': False,
+    'mqtt_config': False
+}
+
+modbus_config = {}
+mqtt_broker = None
+
+for node in flows:
+    # Verificar validación de estado inicial
+    if node.get('id') == 'validacion_estado_inicial' or 'Validar Estado Inicial' in node.get('name', ''):
+        validaciones['estado_inicial'] = True
+    
+    # Verificar dropdown de estado inicial
+    if node.get('type') == 'ui-dropdown' and 'Estado Inicial' in node.get('name', ''):
+        validaciones['dropdown_estado'] = True
+    
+    # Verificar config Modbus
+    if node.get('type') == 'modbus-client':
+        modbus_config = {
+            'clientTimeout': node.get('clientTimeout', '?'),
+            'reconnectTimeout': node.get('reconnectTimeout', '?'),
+            'commandDelay': node.get('commandDelay', '?'),
+            'serialConnectionDelay': node.get('serialConnectionDelay', '?')
+        }
+        try:
+            if int(modbus_config['clientTimeout']) >= 1000:
+                validaciones['modbus_timeout'] = True
+        except:
+            pass
+    
+    # Verificar config MQTT
+    if node.get('type') == 'mqtt-broker':
+        mqtt_broker = node.get('broker', '?')
+        if 'gesinne' in mqtt_broker or 'localhost' in mqtt_broker:
+            validaciones['mqtt_config'] = True
+
+print('  ┌─────────────────────────────────────────────┐')
+print('  │          VALIDACIONES DEL FLOW              │')
+print('  └─────────────────────────────────────────────┘')
+print('')
+
+# Estado Inicial
+if validaciones['estado_inicial']:
+    print('  [OK] Validación Estado Inicial (0,1,2)')
+else:
+    print('  [X]  Validación Estado Inicial - NO ENCONTRADA')
+
+if validaciones['dropdown_estado']:
+    print('  [OK] Dropdown Estado Inicial')
+else:
+    print('  [X]  Dropdown Estado Inicial - NO ENCONTRADO')
+
+# Modbus
+print('')
+print('  ┌─────────────────────────────────────────────┐')
+print('  │          CONFIGURACIÓN MODBUS               │')
+print('  └─────────────────────────────────────────────┘')
+print('')
+if modbus_config:
+    print(f\"  clientTimeout:         {modbus_config['clientTimeout']}ms\")
+    print(f\"  reconnectTimeout:      {modbus_config['reconnectTimeout']}ms\")
+    print(f\"  commandDelay:          {modbus_config['commandDelay']}ms\")
+    print(f\"  serialConnectionDelay: {modbus_config['serialConnectionDelay']}ms\")
+    if validaciones['modbus_timeout']:
+        print('')
+        print('  [OK] Timeouts optimizados (>=1000ms)')
+    else:
+        print('')
+        print('  [!]  Timeouts bajos - ejecutar opción 7 para optimizar')
+else:
+    print('  [X]  No se encontró configuración Modbus')
+
+# MQTT
+print('')
+print('  ┌─────────────────────────────────────────────┐')
+print('  │          CONFIGURACIÓN MQTT                 │')
+print('  └─────────────────────────────────────────────┘')
+print('')
+if mqtt_broker:
+    print(f'  Broker: {mqtt_broker}')
+    if validaciones['mqtt_config']:
+        print('  [OK] Broker configurado correctamente')
+    else:
+        print('  [!]  Broker no es gesinne ni localhost')
+else:
+    print('  [X]  No se encontró configuración MQTT')
+
+# Resumen
+print('')
+print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+total_ok = sum(validaciones.values())
+total = len(validaciones)
+if total_ok == total:
+    print(f'  [OK] TODAS las validaciones OK ({total_ok}/{total})')
+else:
+    print(f'  [!]  Validaciones: {total_ok}/{total} correctas')
+    if not validaciones['estado_inicial']:
+        print('       → Falta validación de Estado Inicial')
+    if not validaciones['modbus_timeout']:
+        print('       → Modbus necesita optimización (opción 7)')
+"
+                    fi
                     ;;
                 *)
                     echo "  [X] Cancelado"
