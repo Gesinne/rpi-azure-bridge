@@ -472,9 +472,9 @@ for node in flows:
             'fix_type': 'node_name'
         })
     
-    # 2. parseInt/parseFloat sin verificar NaN (ignorar si tiene try/catch)
+    # 2. parseInt/parseFloat sin verificar NaN (ignorar si tiene try/catch o validación de match)
     if node_type == 'function' and ('parseInt(' in func or 'parseFloat(' in func):
-        if 'isNaN' not in func and 'try' not in func and 'catch' not in func:
+        if 'isNaN' not in func and 'try' not in func and 'catch' not in func and 'if (!match)' not in func:
             bugs.append({
                 'num': len(bugs) + 1,
                 'tipo': 'BAJO',
