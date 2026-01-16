@@ -322,13 +322,101 @@ print('  ━━━━━━━━━━━━━━━━━━━━━━━�
 
 if total_validaciones == total_requeridas and subflows_ok == len(subflows_requeridos) and mqtt_ok:
     print('  [OK] FLOW COMPLETO - Todas las validaciones OK')
+    print('FLOW_OK')
 else:
     print('  [!]  FLOW INCOMPLETO - Faltan elementos')
     if total_validaciones < total_requeridas:
         print(f'       → Faltan {total_requeridas - total_validaciones} validaciones')
     if subflows_ok < len(subflows_requeridos):
         print(f'       → Faltan {len(subflows_requeridos) - subflows_ok} subflows')
+    print('FLOW_INCOMPLETO')
+" | tee /tmp/flow_check_result.txt
+            
+            # Verificar si el flow está incompleto y ofrecer actualizar
+            if grep -q "FLOW_INCOMPLETO" /tmp/flow_check_result.txt 2>/dev/null; then
+                echo ""
+                echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "  ¿Quieres actualizar el flow con la versión completa?"
+                echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                echo "  [!] ADVERTENCIA: Esto reemplazará el flow actual"
+                echo "      Se creará un backup antes de actualizar"
+                echo ""
+                read -p "  ¿Actualizar flow? [s/N]: " ACTUALIZAR_FLOW
+                
+                if [[ "$ACTUALIZAR_FLOW" =~ ^[Ss]$ ]]; then
+                    echo ""
+                    echo "  [~] Descargando flow de referencia..."
+                    
+                    # Backup del flow actual
+                    cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+                    echo "  [OK] Backup creado: ${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+                    
+                    # Descargar flow de referencia
+                    FLOW_URL="https://raw.githubusercontent.com/Gesinne/NODERED/main/20260102_dbrd2.json"
+                    if curl -sSL "$FLOW_URL" -o /tmp/flow_nuevo.json 2>/dev/null; then
+                        
+                        # Preservar configuración actual (serie, MQTT, Modbus)
+                        echo "  [~] Preservando configuración actual..."
+                        python3 -c "
+import json
+
+# Leer flow actual
+with open('$FLOWS_FILE', 'r') as f:
+    flow_actual = json.load(f)
+
+# Leer flow nuevo
+with open('/tmp/flow_nuevo.json', 'r') as f:
+    flow_nuevo = json.load(f)
+
+# Extraer config del flow actual
+mqtt_config = None
+modbus_config = None
+serie_config = None
+
+for node in flow_actual:
+    if node.get('type') == 'mqtt-broker':
+        mqtt_config = node
+    if node.get('type') == 'modbus-client':
+        modbus_config = node
+
+# Aplicar config al flow nuevo
+for i, node in enumerate(flow_nuevo):
+    if node.get('type') == 'mqtt-broker' and mqtt_config:
+        # Preservar broker, user, password del actual
+        flow_nuevo[i]['broker'] = mqtt_config.get('broker', flow_nuevo[i].get('broker'))
+        flow_nuevo[i]['port'] = mqtt_config.get('port', flow_nuevo[i].get('port'))
+        if mqtt_config.get('credentials'):
+            flow_nuevo[i]['credentials'] = mqtt_config.get('credentials')
+    if node.get('type') == 'modbus-client' and modbus_config:
+        # Preservar puerto serial del actual
+        flow_nuevo[i]['serialPort'] = modbus_config.get('serialPort', flow_nuevo[i].get('serialPort'))
+
+# Guardar flow nuevo con config preservada
+with open('$FLOWS_FILE', 'w') as f:
+    json.dump(flow_nuevo, f, separators=(',', ':'))
+
+print('  [OK] Flow actualizado con configuración preservada')
 "
+                        
+                        echo ""
+                        echo "  [~] Reiniciando Node-RED..."
+                        sudo systemctl restart nodered
+                        sleep 5
+                        echo "  [OK] Node-RED reiniciado"
+                        echo ""
+                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "  [OK] Flow actualizado correctamente"
+                        echo "      Verifica el dashboard en /dashboard"
+                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    else
+                        echo "  [X] Error descargando flow de referencia"
+                    fi
+                else
+                    echo "  [X] Actualización cancelada"
+                fi
+            fi
+            rm -f /tmp/flow_check_result.txt
         fi
         ;;
     0|*)
