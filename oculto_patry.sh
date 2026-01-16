@@ -509,21 +509,6 @@ for node in flows:
                 'fix_type': 'mqtt_qos'
             })
     
-    # 5. Delays muy largos
-    if node_type == 'delay':
-        try:
-            timeout = int(node.get('timeout', 0))
-            if timeout > 60:
-                bugs.append({
-                    'num': len(bugs) + 1,
-                    'tipo': 'BAJO',
-                    'nodo': name,
-                    'id': node_id,
-                    'desc': f'Delay muy largo: {timeout}s',
-                    'fix_type': 'delay_long'
-                })
-        except:
-            pass
     
     # 6. Modbus timeouts bajos
     if node_type == 'modbus-client':
