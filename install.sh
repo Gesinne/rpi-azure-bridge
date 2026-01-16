@@ -2963,9 +2963,10 @@ EOFEMAIL
             echo "  4) Limpiar Docker (imágenes y contenedores sin usar)"
             echo "  5) Limpiar TODO (journal + logs + apt + docker)"
             echo "  6) Reducir logs permanentemente (conexión lenta)"
+            echo "  7) Optimizar rendimiento (zram + Modbus)"
             echo "  0) No limpiar, volver al menú"
             echo ""
-            read -p "  Opción [0-6]: " CLEAN_OPT
+            read -p "  Opción [0-7]: " CLEAN_OPT
             
             case $CLEAN_OPT in
                 1)
@@ -3101,6 +3102,84 @@ EOFLOGROTATE
                     echo "     • Rotación diaria, máximo 2 archivos"
                     echo "     • Logs debug/info desactivados"
                     echo "     • Kernel en modo silencioso"
+                    ;;
+                7)
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Optimizar rendimiento (zram + Modbus)"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    
+                    # 1. Instalar y configurar zram
+                    echo "  [1/2] Configurando zram (swap en RAM comprimida)..."
+                    if ! dpkg -l | grep -q zram-tools; then
+                        echo "  → Instalando zram-tools..."
+                        sudo apt-get update -qq
+                        sudo apt-get install -y -qq zram-tools
+                    fi
+                    
+                    echo "  → Configurando zram al 50% de RAM con LZ4..."
+                    echo -e "ALGO=lz4\nPERCENT=50" | sudo tee /etc/default/zramswap > /dev/null
+                    sudo systemctl restart zramswap
+                    
+                    ZRAM_SIZE=$(free -h | grep Swap | awk '{print $2}')
+                    echo "  [OK] zram configurado: $ZRAM_SIZE de swap comprimido"
+                    echo ""
+                    
+                    # 2. Optimizar cliente Modbus en Node-RED
+                    echo "  [2/2] Optimizando cliente Modbus en Node-RED..."
+                    
+                    FLOWS_FILE=""
+                    for f in /home/*/.node-red/flows.json; do
+                        if [ -f "$f" ]; then
+                            FLOWS_FILE="$f"
+                            break
+                        fi
+                    done
+                    
+                    if [ -n "$FLOWS_FILE" ]; then
+                        # Backup
+                        cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+                        
+                        python3 -c "
+import json
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+changed = False
+for node in flows:
+    if node.get('type') == 'modbus-client':
+        node['clientTimeout'] = 1000
+        node['reconnectTimeout'] = 2000
+        node['commandDelay'] = 300
+        node['serialConnectionDelay'] = 500
+        changed = True
+        print('  [OK] Modbus client optimizado:')
+        print('       • clientTimeout: 1000ms')
+        print('       • reconnectTimeout: 2000ms')
+        print('       • commandDelay: 300ms')
+        print('       • serialConnectionDelay: 500ms')
+if changed:
+    with open('$FLOWS_FILE', 'w') as f:
+        json.dump(flows, f, indent=4)
+else:
+    print('  [!] No se encontró modbus-client en el flow')
+" 2>/dev/null
+                        
+                        echo ""
+                        echo "  [~] Reiniciando Node-RED..."
+                        sudo systemctl restart nodered
+                        sleep 3
+                        echo "  [OK] Node-RED reiniciado"
+                    else
+                        echo "  [!] No se encontró flows.json"
+                    fi
+                    
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  [OK] Optimización completada:"
+                    echo "     • zram: swap comprimido en RAM (no desgasta SD)"
+                    echo "     • Modbus: timeouts optimizados (evita errores)"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     ;;
                 *)
                     echo "  [X] Cancelado"
