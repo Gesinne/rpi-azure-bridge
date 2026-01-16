@@ -442,11 +442,9 @@ print('  [OK] Flow actualizado con configuración preservada')
             echo ""
             
             # Analizar y guardar bugs en archivo temporal
-            python3 << 'PYEOF'
+            python3 << PYEOF
 import json
 import sys
-
-FLOWS_FILE = sys.argv[1] if len(sys.argv) > 1 else "$FLOWS_FILE"
 
 try:
     with open('$FLOWS_FILE', 'r') as f:
@@ -584,7 +582,7 @@ PYEOF
                     
                     echo "  [~] Corrigiendo TODOS los bugs..."
                     
-                    python3 << 'PYFIX'
+                    python3 << PYFIX
 import json
 
 with open('$FLOWS_FILE', 'r') as f:
