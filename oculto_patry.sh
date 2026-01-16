@@ -614,7 +614,7 @@ for bug in bugs:
             
             elif fix_type == 'parse_nan':
                 func = node.get('func', '')
-                # Buscar parseFloat(config.potencia * 100) y corregirlo
+                # Caso 1: parseFloat(config.potencia * 100)
                 if 'parseFloat(config.potencia * 100)' in func:
                     func = func.replace(
                         "global.set('Pminima', parseFloat(config.potencia * 100));",
@@ -623,6 +623,15 @@ for bug in bugs:
                     node['func'] = func
                     cambios += 1
                     print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación NaN para Pminima")
+                # Caso 2: parseInt(msg.payload.match(...)[1]) - Configurar Máximo UI
+                elif 'parseInt(msg.payload.match' in func and 'MemTotal' in func:
+                    func = func.replace(
+                        "const memTotalKB = parseInt(msg.payload.match(/MemTotal:\\s*(\\d+)/)[1]);",
+                        "const match = msg.payload.match(/MemTotal:\\s*(\\d+)/);\nif (!match) {\n    node.warn('No se pudo leer MemTotal');\n    return null;\n}\nconst memTotalKB = parseInt(match[1]);"
+                    )
+                    node['func'] = func
+                    cambios += 1
+                    print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación para match null")
             
             break
 
@@ -686,6 +695,7 @@ for node in flows:
         
         elif fix_type == 'parse_nan':
             func = node.get('func', '')
+            # Caso 1: parseFloat(config.potencia * 100)
             if 'parseFloat(config.potencia * 100)' in func:
                 func = func.replace(
                     "global.set('Pminima', parseFloat(config.potencia * 100));",
@@ -694,6 +704,15 @@ for node in flows:
                 node['func'] = func
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación NaN para Pminima")
+            # Caso 2: parseInt(msg.payload.match(...)[1]) - Configurar Máximo UI
+            elif 'parseInt(msg.payload.match' in func and 'MemTotal' in func:
+                func = func.replace(
+                    "const memTotalKB = parseInt(msg.payload.match(/MemTotal:\\s*(\\d+)/)[1]);",
+                    "const match = msg.payload.match(/MemTotal:\\s*(\\d+)/);\nif (!match) {\n    node.warn('No se pudo leer MemTotal');\n    return null;\n}\nconst memTotalKB = parseInt(match[1]);"
+                )
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación para match null")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
