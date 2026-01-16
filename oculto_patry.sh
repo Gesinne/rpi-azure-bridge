@@ -472,9 +472,12 @@ for node in flows:
             'fix_type': 'node_name'
         })
     
-    # 2. parseInt/parseFloat sin verificar NaN (ignorar si tiene try/catch o validación de match)
+    # 2. parseInt/parseFloat sin verificar NaN (ignorar si tiene try/catch, validación de match, o nombre genérico)
     if node_type == 'function' and ('parseInt(' in func or 'parseFloat(' in func):
-        if 'isNaN' not in func and 'try' not in func and 'catch' not in func and 'if (!match)' not in func:
+        # Ignorar nodos con nombres genéricos (function 1, function 2, etc.)
+        if name.startswith('function ') and name.split(' ')[-1].isdigit():
+            pass  # Ignorar
+        elif 'isNaN' not in func and 'try' not in func and 'catch' not in func and 'if (!match)' not in func and '|| 0' not in func:
             bugs.append({
                 'num': len(bugs) + 1,
                 'tipo': 'BAJO',
@@ -484,9 +487,12 @@ for node in flows:
                 'fix_type': 'parse_nan'
             })
     
-    # 3. Acceso a array sin verificar longitud
+    # 3. Acceso a array sin verificar longitud (ignorar nodos con nombres genéricos)
     if node_type == 'function' and 'msg.payload.data[' in func:
-        if '.length' not in func and 'undefined' not in func:
+        # Ignorar nodos con nombres genéricos (function 1, function 2, etc.)
+        if name.startswith('function ') and name.split(' ')[-1].isdigit():
+            pass  # Ignorar
+        elif '.length' not in func and 'undefined' not in func:
             bugs.append({
                 'num': len(bugs) + 1,
                 'tipo': 'MEDIO',
