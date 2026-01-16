@@ -563,6 +563,30 @@ for node in flows:
                 'desc': 'Guarda consigna sin validar rango (debe ser 1760-2640)',
                 'fix_type': 'crear_consigna_validacion'
             })
+    
+    # 9. Escritura Modbus sin validación (TensionInicial)
+    if node_type == 'function' and name.startswith('TensionInicial') and "global.get('inicial')" in func:
+        if 'inicial < 1760' not in func and 'VALIDACIÓN' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Escritura Modbus sin validación de rango (debe ser 1760-2640)',
+                'fix_type': 'tension_inicial_validacion'
+            })
+    
+    # 10. Crear variable global sin validación (inicial)
+    if node_type == 'function' and name == 'Crear variable global' and 'global.set("inicial"' in func:
+        if 'inicial < 1760' not in func and 'VALIDACIÓN' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Guarda inicial sin validar rango (debe ser 1760-2640)',
+                'fix_type': 'crear_inicial_validacion'
+            })
 
 # Guardar bugs en archivo temporal
 with open('/tmp/flow_bugs.json', 'w') as f:
@@ -767,6 +791,48 @@ return msg;"""
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
             
+            elif fix_type == 'tension_inicial_validacion':
+                func = node.get('func', '')
+                # Detectar unitid del nodo
+                unitid = '1'
+                if 'L2' in bug['nodo']:
+                    unitid = '2'
+                elif 'L3' in bug['nodo']:
+                    unitid = '3'
+                
+                nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que inicial esté entre 1760-2640
+var inicial = global.get('inicial');
+if (inicial < 1760 || inicial > 2640) {{
+    node.error("ERROR CRÍTICO: inicial fuera de rango (1760-2640). Valor: " + inicial + ". Escritura bloqueada.");
+    return null;
+}}
+
+msg.payload = {{
+    value: inicial,
+    'fc': 6,
+    'unitid': {unitid},
+    'address': 56,
+    'quantity': 1
+}}
+msg.topic = "TensionInicial L{unitid}"
+return msg;"""
+                node['func'] = nuevo_codigo
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
+            
+            elif fix_type == 'crear_inicial_validacion':
+                nuevo_codigo = """// VALIDACIÓN CRÍTICA: Verificar que inicial esté entre 1760-2640
+var inicial = msg.payload * 10;
+if (inicial < 1760 || inicial > 2640) {
+    node.error("ERROR CRÍTICO: inicial fuera de rango (1760-2640). Valor: " + inicial + ". No se guarda.");
+    return null;
+}
+global.set("inicial", inicial);
+return msg;"""
+                node['func'] = nuevo_codigo
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
+            
             break
 
 if cambios > 0:
@@ -951,6 +1017,48 @@ if (consigna < 1760 || consigna > 2640) {
     return null;
 }
 global.set("consigna", consigna);
+return msg;"""
+            node['func'] = nuevo_codigo
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
+        
+        elif fix_type == 'tension_inicial_validacion':
+            func = node.get('func', '')
+            # Detectar unitid del nodo
+            unitid = '1'
+            if 'L2' in bug['nodo']:
+                unitid = '2'
+            elif 'L3' in bug['nodo']:
+                unitid = '3'
+            
+            nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que inicial esté entre 1760-2640
+var inicial = global.get('inicial');
+if (inicial < 1760 || inicial > 2640) {{
+    node.error("ERROR CRÍTICO: inicial fuera de rango (1760-2640). Valor: " + inicial + ". Escritura bloqueada.");
+    return null;
+}}
+
+msg.payload = {{
+    value: inicial,
+    'fc': 6,
+    'unitid': {unitid},
+    'address': 56,
+    'quantity': 1
+}}
+msg.topic = "TensionInicial L{unitid}"
+return msg;"""
+            node['func'] = nuevo_codigo
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
+        
+        elif fix_type == 'crear_inicial_validacion':
+            nuevo_codigo = """// VALIDACIÓN CRÍTICA: Verificar que inicial esté entre 1760-2640
+var inicial = msg.payload * 10;
+if (inicial < 1760 || inicial > 2640) {
+    node.error("ERROR CRÍTICO: inicial fuera de rango (1760-2640). Valor: " + inicial + ". No se guarda.");
+    return null;
+}
+global.set("inicial", inicial);
 return msg;"""
             node['func'] = nuevo_codigo
             cambios += 1
