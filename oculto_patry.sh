@@ -438,12 +438,15 @@ print('  [OK] Flow actualizado con configuración preservada')
         if [ -z "$FLOWS_FILE" ]; then
             echo "  [X] No se encontró flows.json"
         else
-            echo "  [P] Analizando: $FLOWS_FILE"
+            echo "  [F] Analizando: $FLOWS_FILE"
             echo ""
             
-            python3 << PYEOF
+            # Analizar y guardar bugs en archivo temporal
+            python3 << 'PYEOF'
 import json
 import sys
+
+FLOWS_FILE = sys.argv[1] if len(sys.argv) > 1 else "$FLOWS_FILE"
 
 try:
     with open('$FLOWS_FILE', 'r') as f:
@@ -453,131 +456,166 @@ except Exception as e:
     sys.exit(1)
 
 bugs = []
-warnings = []
-fixes_disponibles = []
 
 for node in flows:
     node_type = node.get('type', '')
-    name = node.get('name', '')
+    name = node.get('name', '') or 'Sin nombre'
     func = node.get('func', '')
     node_id = node.get('id', '')
-    
-    # === BUGS CRÍTICOS ===
     
     # 1. node.name puede ser undefined
     if node_type == 'function' and 'node.name' in func:
         bugs.append({
+            'num': len(bugs) + 1,
             'tipo': 'MEDIO',
             'nodo': name,
             'id': node_id,
             'desc': 'Usa node.name que puede ser undefined',
-            'fix': None
+            'fix_type': 'node_name'
         })
     
-    # === ADVERTENCIAS ===
-    
-    # 3. parseInt/parseFloat sin verificar NaN
+    # 2. parseInt/parseFloat sin verificar NaN
     if node_type == 'function' and ('parseInt(' in func or 'parseFloat(' in func):
         if 'isNaN' not in func:
-            warnings.append(f"'{name}' usa parseInt/parseFloat sin verificar NaN")
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'BAJO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Usa parseInt/parseFloat sin verificar NaN',
+                'fix_type': 'parse_nan'
+            })
     
-    # 4. Acceso a array sin verificar longitud
+    # 3. Acceso a array sin verificar longitud
     if node_type == 'function' and 'msg.payload.data[' in func:
         if '.length' not in func and 'undefined' not in func:
-            warnings.append(f"'{name}' accede a array sin verificar longitud")
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'MEDIO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Accede a array sin verificar longitud',
+                'fix_type': 'array_length'
+            })
     
-    # 5. MQTT con QoS 0
+    # 4. MQTT con QoS 0
     if node_type == 'mqtt out':
         qos = node.get('qos', '0')
         if qos == '0' or qos == 0:
-            warnings.append(f"MQTT out '{name or node_id[:8]}' con QoS 0 (sin garantía)")
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'BAJO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'MQTT con QoS 0 (sin garantía de entrega)',
+                'fix_type': 'mqtt_qos'
+            })
     
-    # 6. Delays muy largos
+    # 5. Delays muy largos
     if node_type == 'delay':
         try:
             timeout = int(node.get('timeout', 0))
             if timeout > 60:
-                warnings.append(f"Delay '{name}' con timeout largo: {timeout}s")
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'BAJO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': f'Delay muy largo: {timeout}s',
+                    'fix_type': 'delay_long'
+                })
         except:
             pass
+    
+    # 6. Modbus timeouts bajos
+    if node_type == 'modbus-client':
+        timeout = node.get('clientTimeout', 0)
+        if isinstance(timeout, int) and timeout < 1000:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name or 'modbus-client',
+                'id': node_id,
+                'desc': f'Timeout Modbus muy bajo: {timeout}ms (recomendado: 1000ms)',
+                'fix_type': 'modbus_timeout'
+            })
 
-# === MOSTRAR RESULTADOS ===
+# Guardar bugs en archivo temporal
+with open('/tmp/flow_bugs.json', 'w') as f:
+    json.dump(bugs, f)
 
-print('  ┌─────────────────────────────────────────────┐')
-print('  │          BUGS CRÍTICOS                      │')
-print('  └─────────────────────────────────────────────┘')
-print('')
-
-if bugs:
+# Mostrar bugs
+if not bugs:
+    print('  [OK] No se encontraron bugs')
+    print('')
+else:
+    print(f'  Se encontraron {len(bugs)} bugs:')
+    print('')
     for b in bugs:
-        print(f"  [{b['tipo']}] {b['nodo']}")
-        print(f"           {b['desc']}")
-        if b['fix']:
-            print(f"           → Corrección disponible")
+        tipo_color = {'ALTO': '🔴', 'MEDIO': '🟡', 'BAJO': '🟢'}.get(b['tipo'], '⚪')
+        print(f"  {b['num']}) {tipo_color} [{b['tipo']}] {b['nodo']}")
+        print(f"      {b['desc']}")
         print('')
-else:
-    print('  [OK] No se encontraron bugs críticos')
-    print('')
 
-print('  ┌─────────────────────────────────────────────┐')
-print('  │          ADVERTENCIAS                       │')
-print('  └─────────────────────────────────────────────┘')
-print('')
-
-if warnings:
-    for w in warnings[:10]:
-        print(f'  [!] {w}')
-    if len(warnings) > 10:
-        print(f'  ... y {len(warnings) - 10} más')
-    print('')
-else:
-    print('  [OK] No se encontraron advertencias')
-    print('')
-
-# === RESUMEN ===
-print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-print(f'  Bugs críticos: {len(bugs)}')
-print(f'  Advertencias:  {len(warnings)}')
-print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-
-# Guardar si hay fixes disponibles
-if fixes_disponibles:
-    with open('/tmp/bugs_fixes.txt', 'w') as f:
-        f.write(','.join(fixes_disponibles))
-    print('')
-    print('  HAY_FIXES_DISPONIBLES')
+print('BUGS_ENCONTRADOS=' + str(len(bugs)))
 PYEOF
             
-            # Verificar si hay fixes disponibles
-            if grep -q "HAY_FIXES_DISPONIBLES" /tmp/bugs_fixes.txt 2>/dev/null || [ -f /tmp/bugs_fixes.txt ]; then
+            # Leer cantidad de bugs
+            BUGS_COUNT=$(python3 -c "import json; bugs=json.load(open('/tmp/flow_bugs.json')); print(len(bugs))" 2>/dev/null || echo "0")
+            
+            if [ "$BUGS_COUNT" -gt 0 ]; then
                 echo ""
                 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "  ¿Quieres corregir los bugs automáticamente?"
+                echo "  ¿Qué bug quieres corregir?"
                 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 echo ""
-                read -p "  ¿Corregir bugs? [s/N]: " CORREGIR_BUGS
+                echo "  Introduce el número del bug (1-$BUGS_COUNT)"
+                echo "  'a' para corregir TODOS"
+                echo "  '0' para no corregir nada"
+                echo ""
+                read -p "  Opción: " BUG_OPT
                 
-                if [[ "$CORREGIR_BUGS" =~ ^[Ss]$ ]]; then
+                if [ "$BUG_OPT" = "0" ]; then
+                    echo "  [X] Cancelado"
+                elif [ "$BUG_OPT" = "a" ] || [ "$BUG_OPT" = "A" ]; then
                     echo ""
                     echo "  [~] Creando backup..."
                     cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
                     
-                    echo "  [~] Aplicando correcciones..."
+                    echo "  [~] Corrigiendo TODOS los bugs..."
                     
-                    python3 << PYFIX
+                    python3 << 'PYFIX'
 import json
 
 with open('$FLOWS_FILE', 'r') as f:
     flows = json.load(f)
 
+with open('/tmp/flow_bugs.json', 'r') as f:
+    bugs = json.load(f)
+
 cambios = 0
 
-for node in flows:
-    func = node.get('func', '')
-    name = node.get('name', '')
+for bug in bugs:
+    node_id = bug['id']
+    fix_type = bug['fix_type']
     
-    # Placeholder para futuras correcciones
-    pass
+    for node in flows:
+        if node.get('id') == node_id:
+            if fix_type == 'modbus_timeout':
+                node['clientTimeout'] = 1000
+                node['reconnectTimeout'] = 2000
+                node['commandDelay'] = 300
+                node['serialConnectionDelay'] = 500
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Timeouts Modbus optimizados")
+            
+            elif fix_type == 'mqtt_qos':
+                node['qos'] = '1'
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - QoS cambiado a 1")
+            
+            # Otros fixes se pueden añadir aquí
+            break
 
 if cambios > 0:
     with open('$FLOWS_FILE', 'w') as f:
@@ -585,19 +623,85 @@ if cambios > 0:
     print(f"")
     print(f"  [OK] {cambios} corrección(es) aplicada(s)")
 else:
-    print("  [!] No se encontraron bugs para corregir")
+    print("  [!] No hay correcciones automáticas disponibles para estos bugs")
 PYFIX
                     
+                    if [ $? -eq 0 ]; then
+                        echo ""
+                        read -p "  ¿Reiniciar Node-RED para aplicar cambios? [s/N]: " REINICIAR
+                        if [[ "$REINICIAR" =~ ^[Ss]$ ]]; then
+                            echo "  [~] Reiniciando Node-RED..."
+                            sudo systemctl restart nodered
+                            sleep 3
+                            echo "  [OK] Node-RED reiniciado"
+                        fi
+                    fi
+                    
+                elif [ "$BUG_OPT" -ge 1 ] 2>/dev/null && [ "$BUG_OPT" -le "$BUGS_COUNT" ] 2>/dev/null; then
                     echo ""
-                    echo "  [~] Reiniciando Node-RED..."
-                    sudo systemctl restart nodered
-                    sleep 3
-                    echo "  [OK] Node-RED reiniciado"
+                    echo "  [~] Creando backup..."
+                    cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+                    
+                    echo "  [~] Corrigiendo bug #$BUG_OPT..."
+                    
+                    python3 << PYFIX
+import json
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+with open('/tmp/flow_bugs.json', 'r') as f:
+    bugs = json.load(f)
+
+bug_num = $BUG_OPT
+bug = bugs[bug_num - 1]
+node_id = bug['id']
+fix_type = bug['fix_type']
+
+cambios = 0
+
+for node in flows:
+    if node.get('id') == node_id:
+        if fix_type == 'modbus_timeout':
+            node['clientTimeout'] = 1000
+            node['reconnectTimeout'] = 2000
+            node['commandDelay'] = 300
+            node['serialConnectionDelay'] = 500
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Timeouts Modbus optimizados")
+        
+        elif fix_type == 'mqtt_qos':
+            node['qos'] = '1'
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - QoS cambiado a 1")
+        
+        else:
+            print(f"  [!] No hay corrección automática para: {bug['desc']}")
+        break
+
+if cambios > 0:
+    with open('$FLOWS_FILE', 'w') as f:
+        json.dump(flows, f, separators=(',', ':'))
+else:
+    print("  [!] Este bug requiere corrección manual")
+PYFIX
+                    
+                    if [ $? -eq 0 ]; then
+                        echo ""
+                        read -p "  ¿Reiniciar Node-RED para aplicar cambios? [s/N]: " REINICIAR
+                        if [[ "$REINICIAR" =~ ^[Ss]$ ]]; then
+                            echo "  [~] Reiniciando Node-RED..."
+                            sudo systemctl restart nodered
+                            sleep 3
+                            echo "  [OK] Node-RED reiniciado"
+                        fi
+                    fi
                 else
-                    echo "  [X] Corrección cancelada"
+                    echo "  [X] Opción no válida"
                 fi
-                rm -f /tmp/bugs_fixes.txt
             fi
+            
+            rm -f /tmp/flow_bugs.json
         fi
         ;;
     0|*)
