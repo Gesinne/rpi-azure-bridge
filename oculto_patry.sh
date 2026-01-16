@@ -33,7 +33,12 @@ case $PATRY_OPT in
         
         echo "  → Configurando zram al 50% de RAM con LZ4..."
         echo -e "ALGO=lz4\nPERCENT=50" | sudo tee /etc/default/zramswap > /dev/null
-        sudo systemctl restart zramswap
+        if systemctl list-unit-files | grep -q zramswap; then
+            sudo systemctl restart zramswap
+        else
+            echo "  [!] Servicio zramswap no encontrado, intentando iniciar..."
+            sudo systemctl start zramswap 2>/dev/null || true
+        fi
         
         ZRAM_SIZE=$(free -h | grep Swap | awk '{print $2}')
         echo "  [OK] zram configurado: $ZRAM_SIZE de swap comprimido"
@@ -130,8 +135,8 @@ import sys
 try:
     with open('$FLOWS_FILE', 'r') as f:
         flows = json.load(f)
-except:
-    print('  [X] Error leyendo flows.json')
+except (json.JSONDecodeError, FileNotFoundError, PermissionError) as e:
+    print(f'  [X] Error leyendo flows.json: {e}')
     sys.exit(1)
 
 validaciones = {
@@ -162,15 +167,22 @@ for node in flows:
             'serialConnectionDelay': node.get('serialConnectionDelay', '?')
         }
         try:
-            if int(modbus_config['clientTimeout']) >= 1000:
+            timeout_val = modbus_config['clientTimeout']
+            # Manejar string o número
+            if isinstance(timeout_val, str):
+                timeout_val = int(timeout_val.replace('ms', '').strip())
+            else:
+                timeout_val = int(timeout_val)
+            if timeout_val >= 1000:
                 validaciones['modbus_timeout'] = True
-        except:
+        except (ValueError, TypeError):
             pass
     
     # Verificar config MQTT
     if node.get('type') == 'mqtt-broker':
         mqtt_broker = node.get('broker', '?')
-        if 'gesinne' in mqtt_broker or 'localhost' in mqtt_broker:
+        # Aceptar gesinne, localhost o la IP del servidor
+        if 'gesinne' in mqtt_broker or 'localhost' in mqtt_broker or '57.129.130.106' in mqtt_broker or '127.0.0.1' in mqtt_broker:
             validaciones['mqtt_config'] = True
 
 print('  ┌─────────────────────────────────────────────┐')
@@ -195,7 +207,7 @@ print('  ┌──────────────────────�
 print('  │          CONFIGURACIÓN MODBUS               │')
 print('  └─────────────────────────────────────────────┘')
 print('')
-if modbus_config:
+if modbus_config and modbus_config.get('clientTimeout') != '?':
     print(f\"  clientTimeout:         {modbus_config['clientTimeout']}ms\")
     print(f\"  reconnectTimeout:      {modbus_config['reconnectTimeout']}ms\")
     print(f\"  commandDelay:          {modbus_config['commandDelay']}ms\")
