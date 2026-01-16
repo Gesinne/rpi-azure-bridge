@@ -515,8 +515,7 @@ for node in flows:
                 'fix_type': 'mqtt_qos'
             })
     
-    
-    # 6. Modbus timeouts bajos
+    # 5. Modbus timeouts bajos
     if node_type == 'modbus-client':
         timeout = node.get('clientTimeout', 0)
         if isinstance(timeout, int) and timeout < 1000:
@@ -527,6 +526,18 @@ for node in flows:
                 'id': node_id,
                 'desc': f'Timeout Modbus muy bajo: {timeout}ms (recomendado: 1000ms)',
                 'fix_type': 'modbus_timeout'
+            })
+    
+    # 6. Escritura Modbus sin validación (EstadoInicial)
+    if node_type == 'function' and name.startswith('EstadoInicial') and "global.get('estadoinicial')" in func:
+        if 'estadoinicial !== 0 && estadoinicial !== 1 && estadoinicial !== 2' not in func and 'VALIDACIÓN' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Escritura Modbus sin validación de rango (debe ser 0, 1 o 2)',
+                'fix_type': 'estado_inicial_validacion'
             })
 
 # Guardar bugs en archivo temporal
@@ -661,6 +672,35 @@ for bug in bugs:
                             print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de longitud de array")
                             break
             
+            elif fix_type == 'estado_inicial_validacion':
+                func = node.get('func', '')
+                # Detectar unitid del nodo
+                unitid = '1'
+                if 'L2' in bug['nodo']:
+                    unitid = '2'
+                elif 'L3' in bug['nodo']:
+                    unitid = '3'
+                
+                nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que estadoinicial sea 0, 1 o 2
+var estadoinicial = global.get('estadoinicial');
+if (estadoinicial !== 0 && estadoinicial !== 1 && estadoinicial !== 2) {{
+    node.error("ERROR CRÍTICO: estadoinicial fuera de rango (0-2). Valor: " + estadoinicial + ". Escritura bloqueada.");
+    return null;
+}}
+
+msg.payload = {{
+    value: estadoinicial,
+    'fc': 6,
+    'unitid': {unitid},
+    'address': 55,
+    'quantity': 1
+}}
+msg.topic = "{bug['nodo']}"
+return msg;"""
+                node['func'] = nuevo_codigo
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (0, 1 o 2)")
+            
             break
 
 if cambios > 0:
@@ -778,6 +818,35 @@ for node in flows:
                         cambios += 1
                         print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de longitud de array")
                         break
+        
+        elif fix_type == 'estado_inicial_validacion':
+            func = node.get('func', '')
+            # Detectar unitid del nodo
+            unitid = '1'
+            if 'L2' in bug['nodo']:
+                unitid = '2'
+            elif 'L3' in bug['nodo']:
+                unitid = '3'
+            
+            nuevo_codigo = f"""// VALIDACIÓN CRÍTICA: Verificar que estadoinicial sea 0, 1 o 2
+var estadoinicial = global.get('estadoinicial');
+if (estadoinicial !== 0 && estadoinicial !== 1 && estadoinicial !== 2) {{
+    node.error("ERROR CRÍTICO: estadoinicial fuera de rango (0-2). Valor: " + estadoinicial + ". Escritura bloqueada.");
+    return null;
+}}
+
+msg.payload = {{
+    value: estadoinicial,
+    'fc': 6,
+    'unitid': {unitid},
+    'address': 55,
+    'quantity': 1
+}}
+msg.topic = "{bug['nodo']}"
+return msg;"""
+            node['func'] = nuevo_codigo
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (0, 1 o 2)")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
