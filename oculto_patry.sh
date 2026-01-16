@@ -11,9 +11,10 @@ echo "  ━━━━━━━━━━━━━━━━━━━━━━━━
 echo ""
 echo "  1) Optimizar rendimiento (zram + Modbus)"
 echo "  2) Verificar validaciones del Flow"
+echo "  3) Analizar bugs del Flow"
 echo "  0) Salir"
 echo ""
-read -p "  Opción [0-2]: " PATRY_OPT
+read -p "  Opción [0-3]: " PATRY_OPT
 
 case $PATRY_OPT in
     1)
@@ -417,6 +418,207 @@ print('  [OK] Flow actualizado con configuración preservada')
                 fi
             fi
             rm -f /tmp/flow_check_result.txt
+        fi
+        ;;
+    3)
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Analizar bugs del Flow"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        
+        FLOWS_FILE=""
+        for f in /home/*/.node-red/flows.json; do
+            if [ -f "$f" ]; then
+                FLOWS_FILE="$f"
+                break
+            fi
+        done
+        
+        if [ -z "$FLOWS_FILE" ]; then
+            echo "  [X] No se encontró flows.json"
+        else
+            echo "  [P] Analizando: $FLOWS_FILE"
+            echo ""
+            
+            python3 << PYEOF
+import json
+import sys
+
+try:
+    with open('$FLOWS_FILE', 'r') as f:
+        flows = json.load(f)
+except Exception as e:
+    print(f'  [X] Error leyendo flows.json: {e}')
+    sys.exit(1)
+
+bugs = []
+warnings = []
+fixes_disponibles = []
+
+for node in flows:
+    node_type = node.get('type', '')
+    name = node.get('name', '')
+    func = node.get('func', '')
+    node_id = node.get('id', '')
+    
+    # === BUGS CRÍTICOS ===
+    
+    # 1. Lógica incorrecta en comparación de estado inicial
+    if 'EstadoInicialL1 != estadoinicial' in func and '&& (EstadoInicialL3' in func:
+        bugs.append({
+            'tipo': 'CRÍTICO',
+            'nodo': name,
+            'id': node_id,
+            'desc': 'Lógica incorrecta: usa && cuando debería ser ||',
+            'fix': 'comprobar_cambios'
+        })
+        fixes_disponibles.append('comprobar_cambios')
+    
+    # 2. node.name puede ser undefined
+    if node_type == 'function' and 'node.name' in func:
+        bugs.append({
+            'tipo': 'MEDIO',
+            'nodo': name,
+            'id': node_id,
+            'desc': 'Usa node.name que puede ser undefined',
+            'fix': None
+        })
+    
+    # === ADVERTENCIAS ===
+    
+    # 3. parseInt/parseFloat sin verificar NaN
+    if node_type == 'function' and ('parseInt(' in func or 'parseFloat(' in func):
+        if 'isNaN' not in func:
+            warnings.append(f"'{name}' usa parseInt/parseFloat sin verificar NaN")
+    
+    # 4. Acceso a array sin verificar longitud
+    if node_type == 'function' and 'msg.payload.data[' in func:
+        if '.length' not in func and 'undefined' not in func:
+            warnings.append(f"'{name}' accede a array sin verificar longitud")
+    
+    # 5. MQTT con QoS 0
+    if node_type == 'mqtt out':
+        qos = node.get('qos', '0')
+        if qos == '0' or qos == 0:
+            warnings.append(f"MQTT out '{name or node_id[:8]}' con QoS 0 (sin garantía)")
+    
+    # 6. Delays muy largos
+    if node_type == 'delay':
+        try:
+            timeout = int(node.get('timeout', 0))
+            if timeout > 60:
+                warnings.append(f"Delay '{name}' con timeout largo: {timeout}s")
+        except:
+            pass
+
+# === MOSTRAR RESULTADOS ===
+
+print('  ┌─────────────────────────────────────────────┐')
+print('  │          BUGS CRÍTICOS                      │')
+print('  └─────────────────────────────────────────────┘')
+print('')
+
+if bugs:
+    for b in bugs:
+        print(f"  [{b['tipo']}] {b['nodo']}")
+        print(f"           {b['desc']}")
+        if b['fix']:
+            print(f"           → Corrección disponible")
+        print('')
+else:
+    print('  [OK] No se encontraron bugs críticos')
+    print('')
+
+print('  ┌─────────────────────────────────────────────┐')
+print('  │          ADVERTENCIAS                       │')
+print('  └─────────────────────────────────────────────┘')
+print('')
+
+if warnings:
+    for w in warnings[:10]:
+        print(f'  [!] {w}')
+    if len(warnings) > 10:
+        print(f'  ... y {len(warnings) - 10} más')
+    print('')
+else:
+    print('  [OK] No se encontraron advertencias')
+    print('')
+
+# === RESUMEN ===
+print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+print(f'  Bugs críticos: {len(bugs)}')
+print(f'  Advertencias:  {len(warnings)}')
+print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+
+# Guardar si hay fixes disponibles
+if fixes_disponibles:
+    with open('/tmp/bugs_fixes.txt', 'w') as f:
+        f.write(','.join(fixes_disponibles))
+    print('')
+    print('  HAY_FIXES_DISPONIBLES')
+PYEOF
+            
+            # Verificar si hay fixes disponibles
+            if grep -q "HAY_FIXES_DISPONIBLES" /tmp/bugs_fixes.txt 2>/dev/null || [ -f /tmp/bugs_fixes.txt ]; then
+                echo ""
+                echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "  ¿Quieres corregir los bugs automáticamente?"
+                echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                read -p "  ¿Corregir bugs? [s/N]: " CORREGIR_BUGS
+                
+                if [[ "$CORREGIR_BUGS" =~ ^[Ss]$ ]]; then
+                    echo ""
+                    echo "  [~] Creando backup..."
+                    cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+                    
+                    echo "  [~] Aplicando correcciones..."
+                    
+                    python3 << PYFIX
+import json
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+cambios = 0
+
+for node in flows:
+    func = node.get('func', '')
+    name = node.get('name', '')
+    
+    # Fix 1: Corregir lógica && por ||
+    if 'Comprobar cambios estado inicial' in name or 'EstadoInicialL1 != estadoinicial' in func:
+        if '&& (EstadoInicialL3' in func:
+            # Corregir la lógica
+            func_corregida = func.replace(
+                '(EstadoInicialL2 != estadoinicial) && (EstadoInicialL3 != estadoinicial)',
+                '(EstadoInicialL2 != estadoinicial) || (EstadoInicialL3 != estadoinicial)'
+            )
+            if func_corregida != func:
+                node['func'] = func_corregida
+                cambios += 1
+                print(f"  [OK] Corregido: {name}")
+
+if cambios > 0:
+    with open('$FLOWS_FILE', 'w') as f:
+        json.dump(flows, f, separators=(',', ':'))
+    print(f"")
+    print(f"  [OK] {cambios} corrección(es) aplicada(s)")
+else:
+    print("  [!] No se encontraron bugs para corregir")
+PYFIX
+                    
+                    echo ""
+                    echo "  [~] Reiniciando Node-RED..."
+                    sudo systemctl restart nodered
+                    sleep 3
+                    echo "  [OK] Node-RED reiniciado"
+                else
+                    echo "  [X] Corrección cancelada"
+                fi
+                rm -f /tmp/bugs_fixes.txt
+            fi
         fi
         ;;
     0|*)
