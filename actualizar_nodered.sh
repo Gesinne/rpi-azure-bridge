@@ -97,6 +97,11 @@ if [ "$LATEST_VERSION" != "?" ]; then
     fi
 fi
 
+# Backup de flows antes de actualizar
+echo "  [~] Creando backup de flows..."
+cp ~/.node-red/flows.json ~/.node-red/flows.json.bak 2>/dev/null && echo "  [OK] Backup: ~/.node-red/flows.json.bak" || true
+cp ~/.node-red/flows_cred.json ~/.node-red/flows_cred.json.bak 2>/dev/null || true
+
 # Parar Node-RED
 echo ""
 echo "  [~] Parando Node-RED..."
@@ -131,7 +136,7 @@ echo ""
 # Verificar nueva versión
 NEW_VERSION=$(node-red --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "?")
 
-if [ "$NEW_VERSION" != "$CURRENT_VERSION" ] || [ "$FORCE_UPDATE" ]; then
+if [ "$NEW_VERSION" != "$CURRENT_VERSION" ] || [ -n "$FORCE_UPDATE" ]; then
     echo "  [OK] Node-RED actualizado: $CURRENT_VERSION → $NEW_VERSION"
 else
     echo "  [OK] Node-RED reinstalado: $NEW_VERSION"
@@ -156,7 +161,7 @@ if [ "$CONFIRMAR_START" != "n" ] && [ "$CONFIRMAR_START" != "N" ]; then
     fi
     
     # Reiniciar kiosko si existe
-    if systemctl list-unit-files kiosk.service &>/dev/null; then
+    if systemctl list-unit-files | grep -q "kiosk.service"; then
         echo "  [~] Reiniciando kiosko..."
         sudo systemctl restart kiosk.service 2>/dev/null || true
         sleep 1
