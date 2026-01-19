@@ -446,6 +446,7 @@ print('  [OK] Flow actualizado con configuración preservada')
             python3 << PYEOF
 import json
 import sys
+import re
 
 try:
     with open('$FLOWS_FILE', 'r') as f:
@@ -600,6 +601,114 @@ for node in flows:
                 'desc': 'Guarda inicial sin validar rango (debe ser 1760-2640)',
                 'fix_type': 'crear_inicial_validacion'
             })
+    
+    # 11. Direcciones Modbus fuera de rango (registros válidos 0-65535)
+    if node_type == 'modbus-read' or node_type == 'modbus-write':
+        address = node.get('adr', node.get('address', 0))
+        try:
+            addr_val = int(address)
+            if addr_val < 0 or addr_val > 65535:
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'ALTO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': f'Dirección Modbus fuera de rango: {addr_val} (válido: 0-65535)',
+                    'fix_type': 'modbus_address'
+                })
+        except:
+            pass
+    
+    # 12. Valores hardcodeados sospechosos en funciones (como 56112)
+    if node_type == 'function':
+        # Buscar números grandes que podrían ser errores
+        numeros = re.findall(r'\b(\d{4,})\b', func)
+        for num in numeros:
+            num_val = int(num)
+            # Ignorar valores conocidos válidos
+            if num_val in [1760, 2640, 1000, 2000, 3000, 5000, 10000, 65535]:
+                continue
+            # Valores sospechosos fuera de rangos típicos
+            if num_val > 10000 and num_val not in [32768, 65535]:
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'MEDIO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': f'Valor hardcodeado sospechoso: {num_val}',
+                    'fix_type': 'hardcoded_value'
+                })
+                break  # Solo reportar uno por función
+    
+    # 13. División sin verificar divisor cero
+    if node_type == 'function' and '/' in func:
+        if 'divisor' not in func.lower() and '!= 0' not in func and '!== 0' not in func and '> 0' not in func:
+            # Buscar patrones de división
+            if re.search(r'/\s*[a-zA-Z_]\w*', func) and 'Math.' not in func:
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'BAJO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': 'Posible división sin verificar divisor cero',
+                    'fix_type': 'division_zero'
+                })
+    
+    # 14. Uso de eval() - peligroso
+    if node_type == 'function' and 'eval(' in func:
+        bugs.append({
+            'num': len(bugs) + 1,
+            'tipo': 'ALTO',
+            'nodo': name,
+            'id': node_id,
+            'desc': 'Uso de eval() - riesgo de seguridad',
+            'fix_type': 'eval_usage'
+        })
+    
+    # 15. setTimeout/setInterval sin clearTimeout/clearInterval
+    if node_type == 'function':
+        if ('setTimeout(' in func or 'setInterval(' in func):
+            if 'clearTimeout' not in func and 'clearInterval' not in func and 'context.' not in func:
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'MEDIO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': 'setTimeout/setInterval sin clear (posible memory leak)',
+                    'fix_type': 'timer_leak'
+                })
+    
+    # 16. Modbus FC inválido
+    if node_type == 'modbus-read' or node_type == 'modbus-write':
+        fc = node.get('fc', '')
+        valid_fc = ['1', '2', '3', '4', '5', '6', '15', '16', 1, 2, 3, 4, 5, 6, 15, 16]
+        if fc and fc not in valid_fc:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': f'Función Modbus inválida: FC={fc} (válidos: 1-6, 15, 16)',
+                'fix_type': 'modbus_fc'
+            })
+    
+    # 17. Inject con intervalo muy corto (< 1 segundo)
+    if node_type == 'inject':
+        repeat = node.get('repeat', '')
+        if repeat:
+            try:
+                repeat_val = float(repeat)
+                if repeat_val > 0 and repeat_val < 1:
+                    bugs.append({
+                        'num': len(bugs) + 1,
+                        'tipo': 'MEDIO',
+                        'nodo': name,
+                        'id': node_id,
+                        'desc': f'Inject con intervalo muy corto: {repeat_val}s (puede saturar)',
+                        'fix_type': 'inject_interval'
+                    })
+            except:
+                pass
 
 # Guardar bugs en archivo temporal
 with open('/tmp/flow_bugs.json', 'w') as f:
