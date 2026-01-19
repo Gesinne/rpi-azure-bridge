@@ -17,9 +17,11 @@ echo "  1) Optimizar rendimiento (zram + Modbus)"
 echo "  2) Verificar validaciones del Flow"
 echo "  3) Analizar bugs del Flow"
 echo "  4) Revisar el JSON"
+echo "  5) Actualizar software"
+echo "  6) Reparar placas desparametrizadas"
 echo "  0) Salir"
 echo ""
-read -p "  Opción [0-4]: " PATRY_OPT
+read -p "  Opción [0-6]: " PATRY_OPT
 
 case $PATRY_OPT in
     1)
@@ -1692,6 +1694,55 @@ for val in sorted(valores.keys()):
                     echo "  Volviendo..."
                     ;;
             esac
+        fi
+        ;;
+    5)
+        # Actualizar software
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Actualizar software"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        
+        # Detectar directorio del repo
+        REPO_DIR=""
+        for d in ~/rpi-azure-bridge /home/*/rpi-azure-bridge; do
+            if [ -d "$d/.git" ]; then
+                REPO_DIR="$d"
+                break
+            fi
+        done
+        
+        if [ -z "$REPO_DIR" ]; then
+            echo "  [X] No se encontró el repositorio"
+        else
+            echo "  [~] Actualizando desde GitHub..."
+            cd "$REPO_DIR"
+            git fetch --all 2>/dev/null
+            git reset --hard origin/main 2>/dev/null
+            echo "  [OK] Software actualizado"
+            echo ""
+            echo "  [~] Reiniciando Node-RED..."
+            sudo systemctl restart nodered 2>/dev/null || true
+            echo "  [OK] Node-RED reiniciado"
+        fi
+        ;;
+    6)
+        # Reparar placas desparametrizadas
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Reparar placas desparametrizadas"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        
+        REPAIR_SCRIPT="/tmp/gesinne-reparar.sh"
+        curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/firmware.sh" -o "$REPAIR_SCRIPT" 2>/dev/null
+        
+        if [ -f "$REPAIR_SCRIPT" ]; then
+            chmod +x "$REPAIR_SCRIPT"
+            sudo bash "$REPAIR_SCRIPT" reparar
+        else
+            echo "  [X] Error descargando script de reparación"
         fi
         ;;
     0|*)
