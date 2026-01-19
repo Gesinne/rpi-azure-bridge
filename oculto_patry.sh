@@ -1207,9 +1207,10 @@ PYFIX
             echo "  5) Listar todos los nodos function"
             echo "  6) Ver JSON completo (formateado)"
             echo "  7) 🔍 Detectar posibles fallos"
+            echo "  8) 📊 Ver valores hardcodeados"
             echo "  0) Volver"
             echo ""
-            read -p "  Opción [0-7]: " JSON_OPT
+            read -p "  Opción [0-8]: " JSON_OPT
             
             case $JSON_OPT in
                 1)
@@ -1614,6 +1615,74 @@ else:
 
 print('')
 PYCHECK
+                    ;;
+                8)
+                    echo ""
+                    echo "  ┌─────────────────────────────────────────────┐"
+                    echo "  │       📊 VALORES HARDCODEADOS               │"
+                    echo "  └─────────────────────────────────────────────┘"
+                    echo ""
+                    python3 -c "
+import json
+import re
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+valores = {}
+
+for node in flows:
+    if node.get('type') == 'function':
+        func = node.get('func', '')
+        name = node.get('name', 'Sin nombre')
+        
+        # Buscar números de 4+ dígitos
+        numeros = re.findall(r'\b(\d{4,})\b', func)
+        for num in numeros:
+            num_val = int(num)
+            if num_val not in valores:
+                valores[num_val] = []
+            if name not in valores[num_val]:
+                valores[num_val].append(name)
+
+# Ordenar por valor
+print(f'  Total valores encontrados: {len(valores)}')
+print('')
+
+# Valores conocidos
+conocidos = {
+    1760: 'Tensión mínima (176V x10)',
+    2640: 'Tensión máxima (264V x10)',
+    1000: 'Timeout 1 segundo',
+    2000: 'Timeout 2 segundos',
+    3000: 'Timeout 3 segundos',
+    5000: 'Timeout 5 segundos',
+    10000: '10 segundos',
+    32768: '0x8000 - Bit de signo',
+    43981: '0xABCD - Patrón verificación',
+    47818: 'Patrón verificación Modbus',
+    51914: '0xCACA - Patrón verificación',
+    65535: '0xFFFF - Máximo 16 bits',
+    86400: 'Segundos en 24 horas',
+    300000: '5 minutos en ms',
+    600000: '10 minutos en ms',
+}
+
+for val in sorted(valores.keys()):
+    funciones = valores[val]
+    desc = conocidos.get(val, '')
+    
+    if desc:
+        print(f'  {val:>8}  ✓ {desc}')
+    else:
+        print(f'  {val:>8}  ? Desconocido')
+    
+    for f in funciones[:3]:
+        print(f'             └─ {f}')
+    if len(funciones) > 3:
+        print(f'             └─ ... y {len(funciones) - 3} más')
+    print('')
+"
                     ;;
                 0|*)
                     echo "  Volviendo..."
