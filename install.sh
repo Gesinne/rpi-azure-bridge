@@ -437,12 +437,11 @@ while true; do
     echo "  2) Actualizar Flow Node-RED"
     echo "  3) Ver/Modificar configuración equipo"
     echo "  4) Ver los 96 registros de la placa"
-    echo "  5) Descargar parámetros (enviar por EMAIL)"
-    echo "  6) Revisar espacio y logs"
-    echo "  7) Gestionar paleta Node-RED"
+    echo "  5) Revisar espacio y logs"
+    echo "  6) Gestionar paleta Node-RED"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-7]: " OPTION
+    read -p "  Opción [0-6]: " OPTION
 
     case $OPTION in
         0)
@@ -1574,9 +1573,10 @@ if chronos_id:
             echo "  4) TODAS en columnas (L1, L2, L3)"
             echo "  5) Diagnóstico valores clavados (3 placas)"
             echo "  6) Leer registro específico"
+            echo "  7) Enviar parámetros por EMAIL"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-6]: " TARJETA
+            read -p "  Opción [0-7]: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
@@ -2010,6 +2010,57 @@ else:
 
 client.close()
 EOFREG
+                    
+                    echo ""
+                    echo "  [~] Reiniciando Node-RED..."
+                    sudo systemctl start nodered
+                    docker start gesinne-rpi 2>/dev/null || true
+                    echo "  [OK] Listo"
+                    
+                    volver_menu
+                    continue
+                    ;;
+                7)
+                    # Enviar parámetros por EMAIL (código movido de opción 5)
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Enviar parámetros por EMAIL"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  ¿Qué tarjeta(s) enviar?"
+                    echo ""
+                    echo "  1) Tarjeta L1 (Fase 1)"
+                    echo "  2) Tarjeta L2 (Fase 2)"
+                    echo "  3) Tarjeta L3 (Fase 3)"
+                    echo "  4) TODAS las tarjetas (L1, L2, L3)"
+                    echo ""
+                    read -p "  Opción [1-4]: " TARJETA_EMAIL
+                    
+                    case $TARJETA_EMAIL in
+                        1) TARJETAS_EMAIL="1" ;;
+                        2) TARJETAS_EMAIL="2" ;;
+                        3) TARJETAS_EMAIL="3" ;;
+                        4) TARJETAS_EMAIL="1 2 3" ;;
+                        *) echo "  [X] Opción no válida"; volver_menu; continue ;;
+                    esac
+                    
+                    echo ""
+                    echo "  [!] Parando Node-RED temporalmente..."
+                    sudo systemctl stop nodered 2>/dev/null
+                    docker stop gesinne-rpi >/dev/null 2>&1 || true
+                    sleep 2
+                    echo "  [OK] Servicios parados"
+                    echo ""
+                    
+                    # Ejecutar script de envío de email
+                    EMAIL_SCRIPT="$INSTALL_DIR/enviar_registros_email.sh"
+                    if [ -f "$EMAIL_SCRIPT" ]; then
+                        bash "$EMAIL_SCRIPT" $TARJETAS_EMAIL
+                    else
+                        # Fallback: usar el código embebido del antiguo opción 5
+                        echo "  [X] Script de email no encontrado"
+                        echo "  Usa la opción 4 (TODAS) para ver los registros en pantalla"
+                    fi
                     
                     echo ""
                     echo "  [~] Reiniciando Node-RED..."
@@ -2674,344 +2725,6 @@ EOFTXT
             volver_menu
             ;;
         5)
-            # Leer registros y enviar por email
-            echo ""
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Descargar parámetros (enviar por EMAIL)"
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            echo "  ¿Qué tarjeta quieres leer?"
-            echo ""
-            echo "  1) Tarjeta L1 (Fase 1)"
-            echo "  2) Tarjeta L2 (Fase 2)"
-            echo "  3) Tarjeta L3 (Fase 3)"
-            echo "  4) TODAS las tarjetas (L1, L2, L3)"
-            echo ""
-            read -p "  Opción [1-4]: " TARJETA_EMAIL
-            
-            case $TARJETA_EMAIL in
-                1) TARJETAS_EMAIL="1" ;;
-                2) TARJETAS_EMAIL="2" ;;
-                3) TARJETAS_EMAIL="3" ;;
-                4) TARJETAS_EMAIL="1 2 3" ;;
-                *) echo "  [X] Opción no válida"; exit 1 ;;
-            esac
-            
-            echo ""
-            echo "  📧 Preparando envío de email..."
-            echo ""
-            echo "  [!]  Parando Node-RED temporalmente..."
-            
-            # Parar Node-RED
-            sudo systemctl stop nodered 2>/dev/null
-            
-            # Parar contenedor Docker si existe (silencioso)
-            docker stop gesinne-rpi >/dev/null 2>&1 || true
-            
-            sleep 2
-            echo "  [OK] Servicios parados"
-            echo ""
-            
-            # Obtener número de serie
-            CONFIG_FILE=""
-            for f in /home/*/config/equipo_config.json; do
-                if [ -f "$f" ]; then
-                    CONFIG_FILE="$f"
-                    break
-                fi
-            done
-            
-            if [ -n "$CONFIG_FILE" ]; then
-                SERIAL=$(python3 -c "
-import json
-try:
-    with open('$CONFIG_FILE') as f:
-        data = json.load(f)
-    # Buscar en varios campos posibles
-    sn = data.get('serie') or data.get('numero_serie') or data.get('s_n') or 'unknown'
-    print(sn)
-except:
-    print('unknown')
-" 2>/dev/null)
-            else
-                SERIAL="unknown"
-            fi
-            
-            echo "  📧 Leyendo registros y enviando email..."
-            
-            python3 << EOFEMAIL
-import os
-import sys
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from datetime import datetime
-
-# Configuración
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = "gesinneasturias@gmail.com"
-SMTP_PASSWORD = "pegdowikwjuqpeoq"
-SMTP_FROM = "gesinneasturias@gmail.com"
-SMTP_TO = "patricia.garcia@gesinne.com,victorbarrero@gesinne.com,joseluis.nicolas@gesinne.com"
-NUMERO_SERIE = "$SERIAL"
-TARJETAS = "$TARJETAS_EMAIL"
-
-try:
-    from pymodbus.client import ModbusSerialClient
-except ImportError:
-    from pymodbus.client.sync import ModbusSerialClient
-
-REGISTROS = {
-    0: ("Estado actual del chopper", "Estado actual"),
-    1: ("Modo de funcionamiento (topología) actual", "Topología actual"),
-    2: ("Alarma", "Alarma"),
-    3: ("Tensión de salida (Vo)", "V salida"),
-    4: ("Tensión de entrada (Vin)", "V entrada"),
-    5: ("Frecuencia", "Hz"),
-    6: ("Corriente de salida del Equipo", "I Salida"),
-    7: ("Corriente de salida del Chopper", "I Chopper"),
-    8: ("Corriente por primario del trafo (reflejada secundario)", "I Primario trafo"),
-    9: ("Potencia activa de salida del equipo (parte alta)", "P activa (alta)"),
-    10: ("Potencia activa de salida del equipo (parte baja)", "P activa (baja)"),
-    11: ("Potencia reactiva de salida (parte alta)", "P reactiva (alta)"),
-    12: ("Potencia reactiva de salida (parte baja)", "P reactiva (baja)"),
-    13: ("Potencia aparente de salida del equipo (parte alta)", "P aparente (alta)"),
-    14: ("Potencia aparente de salida del equipo (parte baja)", "P aparente (baja)"),
-    15: ("Factor de potencia", "Factor de Potencia"),
-    16: ("Tipo de factor de potencia", "Tipo de FP"),
-    17: ("Temperatura interna", "Temperatura"),
-    18: ("Temperatura para despejar alarma", "Temperatura de alarma"),
-    19: ("Estado del Enable de regulación externo", "Enable externo"),
-    20: ("Tiempo restante para reencendido", "Tiempo para despejar"),
-    21: ("Estado del Enable de regulación Switch PCB", "Enable PCB"),
-    22: ("N/A", "N/A"), 23: ("N/A", "N/A"), 24: ("N/A", "N/A"), 25: ("N/A", "N/A"),
-    26: ("N/A", "N/A"), 27: ("N/A", "N/A"), 28: ("N/A", "N/A"), 29: ("N/A", "N/A"),
-    30: ("Flag escritura registros de ESTADO", "Flag Estado"),
-    31: ("Estado deseado del Chopper", "Estado deseado"),
-    32: ("Tensión de consigna deseada", "Consigna deseada"),
-    33: ("Bucle de control del Chopper", "Bucle de control"),
-    34: ("Mando del control del Chopper", "Mando chopper"),
-    35: ("N/A", "N/A"), 36: ("N/A", "N/A"), 37: ("N/A", "N/A"), 38: ("N/A", "N/A"), 39: ("N/A", "N/A"),
-    40: ("Flag escritura registros de CONFIGURACIÓN", "Flag Configuración"),
-    41: ("Número de serie", "Nº de serie placas"),
-    42: ("Tensión nominal", "V nominal"),
-    43: ("Tensión de primario del autotransformador", "V primario autotrafo"),
-    44: ("Tensión de primario del transformador", "V secundario autotrafo"),
-    45: ("Tensión de secundario del transformador", "V secundario trafo"),
-    46: ("Topología del equipo", "Topología"),
-    47: ("Dead-time (DT)", "Dead-time"),
-    48: ("Dirección MODBUS", "Modbus"),
-    49: ("Corriente nominal de medida de salida del Equipo", "I nominal salida"),
-    50: ("Corriente nominal de medida de salida del Chopper", "I nominal chopper"),
-    51: ("Corriente máxima chopper (valor eficaz)", "I máxima chopper"),
-    52: ("Corriente máxima chopper (valor pico)", "I máxima chopper"),
-    53: ("Tiempo de apagado después de CC/TT", "Tiempo de apagado CC/TT"),
-    54: ("Número de apagados por sobrecorriente", "Contador apagados SC"),
-    55: ("Estado inicial del Chopper", "Estado inicial"),
-    56: ("Tensión de consigna inicial", "V inicial"),
-    57: ("Temperatura interna máxima", "Temperatura máxima"),
-    58: ("Decremento de temperatura para reencendido", "Decremento T reenc"),
-    59: ("Número de apagados por sobretemperatura", "Contador apagados ST"),
-    60: ("Tipo de alimentación de la placa", "Tipo V placa"),
-    61: ("Velocidad de comunicación MODBUS", "Velocidad Modbus"),
-    62: ("Empaquetado (package) de los transistores", "Package transistores"),
-    63: ("Ángulo de cambio de tensión para cargas altas", "Ángulo cargas altas"),
-    64: ("Ángulo de cambio de tensión para cargas bajas", "Ángulo cargas bajas"),
-    65: ("Porcentaje de corriente máxima para carga baja", "% para carga baja"),
-    66: ("Sensibilidad detección transitorios", "Sensibilidad transitorios"),
-    67: ("Sensibilidad detección derivada corriente", "Sensibilidad derivada"),
-    68: ("N/A", "N/A"),
-    69: ("Restablece la configuración por defecto", "?ReCo"),
-    70: ("Flag escritura registros de CALIBRACIÓN", "Flag Calibración"),
-    71: ("Parámetro K de la tensión de salida V0", "?Ca00"),
-    72: ("Parámetro K de la tensión de entrada Vin", "?Ca01"),
-    73: ("Parámetro b de la tensión de salida V0", "?Ca03"),
-    74: ("Parámetro b de la tensión de entrada Vin", "?Ca04"),
-    75: ("Parámetro K de la corriente de salida del Chopper", "?Ca06"),
-    76: ("Parámetro K de la corriente de salida del Equipo", "?Ca07"),
-    77: ("Parámetro b de la corriente de salida del Chopper", "?Ca08"),
-    78: ("Parámetro b de la corriente de salida del Equipo", "?Ca09"),
-    79: ("Valor del ruido de la corriente del Chopper", "?Ca10"),
-    80: ("Valor del ruido de la corriente del Equipo", "?Ca11"),
-    81: ("Parámetro K de la potencia de salida", "?Ca12"),
-    82: ("Parámetro b de la potencia de salida", "?Ca13"),
-    83: ("Desfase de muestras entre tensión y corriente", "?Ca14"),
-    84: ("Parámetro de calibración de la medida de frecuencia", "?Ca15"),
-    85: ("Calibra el ruido de los canales de corriente", "?R"),
-    86: ("Restablece la calibración por defecto", "?ReCa"),
-    87: ("N/A", "N/A"), 88: ("N/A", "N/A"), 89: ("N/A", "N/A"),
-    90: ("Flag escritura registros de CONTROL", "Flag Control"),
-    91: ("Parámetro A del control de tensión", "?Cn00"),
-    92: ("Parámetro B del control de tensión", "?Cn01"),
-    93: ("Escalón máximo del mando de tensión (EMM)", "?Cn02"),
-    94: ("Escalón máximo del mando tensión nula (EMMVT0)", "?Cn03"),
-    95: ("Escalón máximo del mando tensión no nula (EMMVT1)", "?ReCn"),
-}
-
-import time
-
-# Leer las 3 fases con reintentos
-placas_leidas = {}
-max_intentos = 10
-intento = 0
-
-while len(placas_leidas) < 3 and intento < max_intentos:
-    intento += 1
-    fases_pendientes = [u for u in [1, 2, 3] if u not in placas_leidas]
-    
-    if intento > 1:
-        print(f"  [~] Reintento {intento}/{max_intentos} - Fases pendientes: {', '.join([f'L{u}' for u in fases_pendientes])}")
-        time.sleep(1)
-    
-    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
-    
-    if client.connect():
-        for unit_id in fases_pendientes:
-            data = []
-            for start in range(0, 96, 40):
-                count = min(40, 96 - start)
-                result = client.read_holding_registers(address=start, count=count, slave=unit_id)
-                if not result.isError():
-                    data.extend(result.registers)
-                else:
-                    break
-            
-            if len(data) > 48:
-                placas_leidas[unit_id] = data
-                print(f"  [OK] L{unit_id} leída correctamente")
-        
-        client.close()
-
-# Verificar que tenemos las 3 fases
-if len(placas_leidas) < 3:
-    fases_ok = [f"L{k}" for k in sorted(placas_leidas.keys())]
-    fases_fail = [f"L{k}" for k in [1,2,3] if k not in placas_leidas]
-    print(f"[!]  Solo se pudieron leer {len(placas_leidas)} fases: {', '.join(fases_ok)}")
-    print(f"[X] Fases sin respuesta después de {max_intentos} intentos: {', '.join(fases_fail)}")
-    print("[X] No se envía email hasta tener las 3 fases")
-    sys.exit(1)
-
-print(f"  [OK] Las 3 fases leídas correctamente")
-
-# Obtener números de serie de cada placa
-sn_l1 = placas_leidas[1][41]
-sn_l2 = placas_leidas[2][41]
-sn_l3 = placas_leidas[3][41]
-
-# Nombres cortos para columnas
-REGS_CORTOS = {
-    0: "Estado", 1: "Topología", 2: "Alarma", 3: "V salida", 4: "V entrada",
-    5: "Hz", 6: "I Salida", 7: "I Chopper", 8: "I Prim trafo", 9: "P act(H)",
-    10: "P act(L)", 11: "P react(H)", 12: "P react(L)", 13: "P apar(H)",
-    14: "P apar(L)", 15: "FP", 16: "Tipo FP", 17: "Temp", 18: "T alarma",
-    19: "Enable ext", 20: "T reenc", 21: "Enable PCB",
-    30: "Flag Est", 31: "Est desead", 32: "Consigna", 33: "Bucle ctrl", 34: "Mando",
-    40: "Flag Conf", 41: "Nº Serie", 42: "V nominal", 43: "V prim auto",
-    44: "V sec auto", 45: "V sec trafo", 46: "Topología", 47: "Dead-time",
-    48: "Dir Modbus", 49: "I nom sal", 50: "I nom chop", 51: "I max chop",
-    52: "I max pico", 53: "T apag CC", 54: "Cnt SC", 55: "Est inicial",
-    56: "V inicial", 57: "T máxima", 58: "Dec T reenc", 59: "Cnt ST",
-    60: "Tipo V", 61: "Vel Modbus", 62: "Package", 63: "Áng alta",
-    64: "Áng baja", 65: "% carga", 66: "Sens trans", 67: "Sens deriv", 69: "ReCo",
-    70: "Flag Cal", 71: "Ca00", 72: "Ca01", 73: "Ca03", 74: "Ca04",
-    75: "Ca06", 76: "Ca07", 77: "Ca08", 78: "Ca09", 79: "Ca10",
-    80: "Ca11", 81: "Ca12", 82: "Ca13", 83: "Ca14", 84: "Ca15", 85: "R", 86: "ReCa",
-    90: "Flag Ctrl", 91: "Cn00", 92: "Cn01", 93: "Cn02", 94: "Cn03", 95: "ReCn"
-}
-
-contenido = []
-contenido.append("=" * 80)
-contenido.append(f"PARÁMETROS DE CONFIGURACIÓN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-contenido.append(f"Equipo S/N: {NUMERO_SERIE}")
-contenido.append("=" * 80)
-contenido.append("")
-contenido.append("PLACAS DETECTADAS:")
-contenido.append(f"  • L1 (Fase 1) - Nº Serie Placa: {sn_l1}")
-contenido.append(f"  • L2 (Fase 2) - Nº Serie Placa: {sn_l2}")
-contenido.append(f"  • L3 (Fase 3) - Nº Serie Placa: {sn_l3}")
-contenido.append("=" * 80)
-contenido.append("")
-
-# Mostrar en 3 columnas
-contenido.append(f"{'Reg':<4} {'Parámetro':<16} {'L1':>8} {'L2':>8} {'L3':>8}   {'Diferencia'}")
-contenido.append(f"{'─'*4} {'─'*16} {'─'*8} {'─'*8} {'─'*8}   {'─'*12}")
-
-def add_section(title, start, end):
-    contenido.append(f"\n── {title} ──")
-    for i in range(start, end):
-        if i in REGS_CORTOS:
-            v1 = placas_leidas[1][i] if i < len(placas_leidas[1]) else 0
-            v2 = placas_leidas[2][i] if i < len(placas_leidas[2]) else 0
-            v3 = placas_leidas[3][i] if i < len(placas_leidas[3]) else 0
-            diff = "[!] DIFF" if not (v1 == v2 == v3) else ""
-            contenido.append(f"{i:<4} {REGS_CORTOS[i]:<16} {v1:>8} {v2:>8} {v3:>8}   {diff}")
-
-add_section("TIEMPO REAL", 0, 22)
-add_section("ESTADO", 30, 35)
-add_section("CONFIGURACIÓN", 40, 70)
-add_section("CALIBRACIÓN", 70, 87)
-add_section("CONTROL", 90, 96)
-
-contenido.append("")
-contenido.append("=" * 80)
-
-texto = "\n".join(contenido)
-print(texto)
-
-# Enviar email
-msg = MIMEMultipart('alternative')
-msg['Subject'] = f"[i] Configuración Modbus - Equipo {NUMERO_SERIE} - Placas: {sn_l1}/{sn_l2}/{sn_l3} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-msg['From'] = SMTP_FROM
-msg['To'] = SMTP_TO
-
-text_part = MIMEText(texto, 'plain', 'utf-8')
-msg.attach(text_part)
-
-html_content = f"""
-<html>
-<head><style>
-body {{ font-family: Arial, sans-serif; }}
-pre {{ background-color: #f4f4f4; padding: 15px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 12px; }}
-.header {{ background-color: #3498db; color: white; padding: 10px 20px; border-radius: 5px; }}
-</style></head>
-<body>
-<div class="header">
-<h2>[i] Configuración Modbus - Equipo {NUMERO_SERIE}</h2>
-<p>Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-</div>
-<pre>{texto}</pre>
-</body>
-</html>
-"""
-html_part = MIMEText(html_content, 'html', 'utf-8')
-msg.attach(html_part)
-
-try:
-    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-    server.starttls()
-    server.login(SMTP_USER, SMTP_PASSWORD)
-    server.sendmail(SMTP_FROM, SMTP_TO.split(','), msg.as_string())
-    server.quit()
-    print(f"\n[OK] Email enviado a: {SMTP_TO}")
-except Exception as e:
-    print(f"\n[X] Error enviando email: {e}")
-EOFEMAIL
-            
-            echo ""
-            read -p "  ¿Reiniciar servicios ahora? [y/N]: " CONFIRMAR_RESTART
-            if [[ "$CONFIRMAR_RESTART" =~ ^[Yy]$ ]]; then
-                echo "  [~] Reiniciando servicios..."
-                sudo systemctl start nodered
-                docker start gesinne-rpi >/dev/null 2>&1 || true
-                echo "  [OK] Listo"
-            else
-                echo "  [!] Servicios NO reiniciados. Recuerda iniciarlos manualmente:"
-                echo "      sudo systemctl start nodered"
-            fi
-            volver_menu
-            ;;
-        6)
             # Revisar espacio y logs
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -3034,31 +2747,22 @@ EOFEMAIL
             echo ""
             
             # Logs más grandes
-            echo "  📜 LOGS MÁS GRANDES"
+            echo "  [L] LOGS MÁS GRANDES"
             echo "  ─────────────────────────────────────────────"
-            find /var/log -type f -name "*.log" -o -name "*.log.*" 2>/dev/null | xargs du -sh 2>/dev/null | sort -rh | head -10 | while read line; do
+            find /var/log -type f -exec du -sh {} \; 2>/dev/null | sort -rh | head -5 | while read line; do
                 echo "  $line"
             done
             echo ""
             
-            # Journal
-            JOURNAL_SIZE=$(journalctl --disk-usage 2>/dev/null | grep -oP '[0-9.]+[GMK]' | head -1)
-            echo "  📰 JOURNAL SYSTEMD: ${JOURNAL_SIZE:-desconocido}"
+            # Journal systemd
+            echo "  [J] JOURNAL SYSTEMD"
+            echo "  ─────────────────────────────────────────────"
+            journalctl --disk-usage 2>/dev/null | sed 's/^/  /'
             echo ""
             
-            # Docker
-            if command -v docker &> /dev/null; then
-                echo "  🐳 DOCKER"
-                echo "  ─────────────────────────────────────────────"
-                docker system df 2>/dev/null | while read line; do
-                    echo "  $line"
-                done
-                echo ""
-            fi
-            
-            # Menú de limpieza
+            # Opciones de limpieza
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  ¿Qué quieres limpiar?"
+            echo "  ¿Quieres limpiar espacio?"
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             echo "  1) Limpiar journal systemd (vacuum 3 días)"
@@ -3082,15 +2786,12 @@ EOFEMAIL
                 2)
                     echo ""
                     echo "  [C] Limpiando logs en /var/log..."
-                    # Rotar logs
                     sudo logrotate -f /etc/logrotate.conf 2>/dev/null || true
-                    # Borrar logs antiguos (.gz, .1, .2, etc)
                     sudo find /var/log -type f -name "*.gz" -delete 2>/dev/null
                     sudo find /var/log -type f -name "*.1" -delete 2>/dev/null
                     sudo find /var/log -type f -name "*.2" -delete 2>/dev/null
                     sudo find /var/log -type f -name "*.[3-9]" -delete 2>/dev/null
                     sudo find /var/log -type f -name "*.old" -delete 2>/dev/null
-                    # Vaciar logs activos grandes
                     sudo truncate -s 0 /var/log/syslog 2>/dev/null || true
                     sudo truncate -s 0 /var/log/messages 2>/dev/null || true
                     sudo truncate -s 0 /var/log/daemon.log 2>/dev/null || true
@@ -3114,125 +2815,34 @@ EOFEMAIL
                     echo ""
                     echo "  [C] Limpiando TODO..."
                     echo ""
-                    echo "  → Journal systemd..."
-                    sudo journalctl --vacuum-time=3d
-                    sudo journalctl --vacuum-size=100M
-                    echo ""
-                    echo "  → Logs /var/log..."
+                    sudo journalctl --vacuum-time=3d 2>/dev/null
+                    sudo journalctl --vacuum-size=100M 2>/dev/null
                     sudo logrotate -f /etc/logrotate.conf 2>/dev/null || true
                     sudo find /var/log -type f -name "*.gz" -delete 2>/dev/null
                     sudo find /var/log -type f -name "*.1" -delete 2>/dev/null
-                    sudo find /var/log -type f -name "*.2" -delete 2>/dev/null
-                    sudo find /var/log -type f -name "*.[3-9]" -delete 2>/dev/null
                     sudo find /var/log -type f -name "*.old" -delete 2>/dev/null
-                    sudo truncate -s 0 /var/log/syslog 2>/dev/null || true
-                    sudo truncate -s 0 /var/log/messages 2>/dev/null || true
-                    sudo truncate -s 0 /var/log/daemon.log 2>/dev/null || true
-                    sudo truncate -s 0 /var/log/kern.log 2>/dev/null || true
-                    echo ""
-                    echo "  → Caché apt..."
-                    sudo apt-get clean
-                    sudo apt-get autoremove -y
-                    echo ""
-                    echo "  → Docker..."
-                    docker system prune -f --filter "until=24h" 2>/dev/null || echo "  [!] Docker no disponible"
-                    echo ""
-                    echo "  [OK] Limpieza completa"
+                    sudo apt-get clean 2>/dev/null
+                    sudo apt-get autoremove -y 2>/dev/null
+                    docker system prune -f 2>/dev/null || true
+                    echo "  [OK] Todo limpiado"
                     ;;
                 6)
                     echo ""
-                    echo "  ⚙️  Configurando reducción permanente de logs..."
-                    echo ""
-                    
-                    # 1. Limitar journal a 50MB máximo
-                    echo "  → Limitando journal systemd a 50MB..."
+                    echo "  [C] Configurando reducción permanente de logs..."
+                    # Reducir journal permanentemente
                     sudo mkdir -p /etc/systemd/journald.conf.d/
-                    cat << 'EOFJOURNALD' | sudo tee /etc/systemd/journald.conf.d/size.conf > /dev/null
-[Journal]
-SystemMaxUse=50M
-SystemMaxFileSize=10M
-MaxRetentionSec=3day
-EOFJOURNALD
+                    echo -e "[Journal]\nSystemMaxUse=50M\nMaxRetentionSec=3days" | sudo tee /etc/systemd/journald.conf.d/size.conf > /dev/null
                     sudo systemctl restart systemd-journald
-                    
-                    # 2. Configurar logrotate más agresivo
-                    echo "  → Configurando rotación diaria de logs..."
-                    cat << 'EOFLOGROTATE' | sudo tee /etc/logrotate.d/rpi-minimal > /dev/null
-/var/log/syslog
-/var/log/messages
-/var/log/daemon.log
-/var/log/kern.log
-/var/log/auth.log
-{
-    rotate 2
-    daily
-    maxsize 10M
-    missingok
-    notifempty
-    compress
-    delaycompress
-    postrotate
-        [ -x /usr/lib/rsyslog/rsyslog-rotate ] && /usr/lib/rsyslog/rsyslog-rotate || systemctl restart rsyslog 2>/dev/null || true
-    endscript
-}
-EOFLOGROTATE
-                    
-                    # 3. Reducir nivel de log de rsyslog
-                    echo "  → Reduciendo nivel de logs rsyslog..."
-                    if [ -f /etc/rsyslog.conf ]; then
-                        # Comentar logs innecesarios
-                        sudo sed -i 's/^\*\.=debug/#\*\.=debug/' /etc/rsyslog.conf
-                        sudo sed -i 's/^\*\.=info/#\*\.=info/' /etc/rsyslog.conf
-                        sudo systemctl restart rsyslog 2>/dev/null || true
-                    fi
-                    
-                    # 4. Desactivar logs de kernel verbose
-                    echo "  → Reduciendo logs del kernel..."
-                    echo "kernel.printk = 3 3 3 3" | sudo tee /etc/sysctl.d/99-quiet-kernel.conf > /dev/null
-                    sudo sysctl -p /etc/sysctl.d/99-quiet-kernel.conf 2>/dev/null || true
-                    
-                    # 5. Limpiar logs actuales
-                    echo "  → Limpiando logs actuales..."
-                    sudo journalctl --vacuum-size=50M
-                    sudo find /var/log -type f -name "*.gz" -delete 2>/dev/null
-                    sudo find /var/log -type f -name "*.[1-9]" -delete 2>/dev/null
-                    sudo truncate -s 0 /var/log/syslog 2>/dev/null || true
-                    sudo truncate -s 0 /var/log/daemon.log 2>/dev/null || true
-                    
-                    echo ""
-                    echo "  [OK] Logs reducidos permanentemente:"
-                    echo "     • Journal limitado a 50MB"
-                    echo "     • Rotación diaria, máximo 2 archivos"
-                    echo "     • Logs debug/info desactivados"
-                    echo "     • Kernel en modo silencioso"
+                    echo "  [OK] Journal configurado para máximo 50MB y 3 días"
                     ;;
-                [Pp]atry|PATRY)
-                    # Descargar y ejecutar script oculto
-                    PATRY_SCRIPT="/tmp/oculto_patry.sh"
-                    curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/oculto_patry.sh" -o "$PATRY_SCRIPT" 2>/dev/null
-                    if [ -f "$PATRY_SCRIPT" ]; then
-                        chmod +x "$PATRY_SCRIPT"
-                        bash "$PATRY_SCRIPT"
-                    else
-                        echo "  [X] Error descargando script oculto"
-                    fi
-                    ;;
-                *)
-                    echo "  [X] Cancelado"
+                0|*)
+                    echo "  Volviendo al menú..."
                     ;;
             esac
             
-            # Mostrar espacio después de limpiar
-            if [ "$CLEAN_OPT" != "0" ] && [ -n "$CLEAN_OPT" ]; then
-                echo ""
-                echo "  [#] ESPACIO DESPUÉS DE LIMPIAR"
-                echo "  ─────────────────────────────────────────────"
-                df -h / | awk 'NR==1 {print "  " $0} NR==2 {print "  " $0}'
-            fi
-            
             volver_menu
             ;;
-        7)
+        6)
             # Gestionar paleta Node-RED
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -3321,249 +2931,58 @@ except Exception as e:
                 1)
                     echo ""
                     echo "  [~] Actualizando todos los nodos..."
-                    echo ""
                     cd "$NODERED_DIR"
-                    
-                    # Parar Node-RED
-                    echo "  [!]  Parando Node-RED..."
-                    sudo systemctl stop nodered
-                    sleep 2
-                    
-                    # Actualizar todos los nodos node-red
-                    npm update 2>&1 | while read line; do echo "  $line"; done
-                    
+                    npm update 2>&1 | sed 's/^/  /'
+                    cd - > /dev/null
                     echo ""
-                    read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
-                    if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
-                        echo "  [~] Reiniciando Node-RED..."
-                        sudo systemctl start nodered
-                        sleep 3
-                        echo "  [OK] Nodos actualizados"
-                    else
-                        echo "  [!] Node-RED NO iniciado. Recuerda iniciarlo manualmente:"
-                        echo "      sudo systemctl start nodered"
-                    fi
+                    echo "  [~] Reiniciando Node-RED..."
+                    sudo systemctl restart nodered
+                    echo "  [OK] Listo"
                     ;;
                 2)
                     echo ""
                     read -p "  Nombre del nodo a actualizar: " NODE_NAME
                     if [ -n "$NODE_NAME" ]; then
                         cd "$NODERED_DIR"
-                        
-                        # Mostrar versión actual
-                        CURRENT_VER=$(npm ls "$NODE_NAME" --depth=0 2>/dev/null | grep "$NODE_NAME" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+                        npm update "$NODE_NAME" 2>&1 | sed 's/^/  /'
+                        cd - > /dev/null
                         echo ""
-                        echo "  [P] Versión actual: ${CURRENT_VER:-desconocida}"
-                        
-                        # Obtener versiones disponibles
-                        echo "  🔍 Buscando versiones disponibles..."
-                        VERSIONS=$(npm view "$NODE_NAME" versions --json 2>/dev/null | python3 -c "
-import json, sys
-try:
-    versions = json.load(sys.stdin)
-    if isinstance(versions, list):
-        # Mostrar últimas 10 versiones
-        for v in versions[-10:]:
-            print(v)
-    else:
-        print(versions)
-except:
-    pass
-" 2>/dev/null)
-                        
-                        if [ -n "$VERSIONS" ]; then
-                            echo ""
-                            echo "  Últimas versiones disponibles:"
-                            echo "$VERSIONS" | while read v; do
-                                if [ "$v" = "$CURRENT_VER" ]; then
-                                    echo "    - $v (actual)"
-                                else
-                                    echo "    - $v"
-                                fi
-                            done
-                            LATEST_VER=$(echo "$VERSIONS" | tail -1)
-                            echo ""
-                            read -p "  Versión a instalar [$LATEST_VER]: " TARGET_VER
-                            TARGET_VER="${TARGET_VER:-$LATEST_VER}"
-                        else
-                            echo "  [!]  No se pudieron obtener versiones"
-                            read -p "  Versión a instalar (o ENTER para última): " TARGET_VER
-                        fi
-                        
-                        echo ""
-                        if [ -n "$TARGET_VER" ]; then
-                            echo "  [~] Instalando $NODE_NAME@$TARGET_VER..."
-                            INSTALL_PKG="$NODE_NAME@$TARGET_VER"
-                        else
-                            echo "  [~] Actualizando $NODE_NAME a última versión..."
-                            INSTALL_PKG="$NODE_NAME@latest"
-                        fi
-                        
-                        sudo systemctl stop nodered
-                        sleep 2
-                        
-                        npm_install_clean "$INSTALL_PKG" "$NODERED_DIR"
-                        
-                        read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
-                        if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
-                            sudo systemctl start nodered
-                            sleep 3
-                            echo "  [OK] $NODE_NAME actualizado"
-                        else
-                            echo "  [!] Node-RED NO iniciado. Recuerda iniciarlo manualmente:"
-                            echo "      sudo systemctl start nodered"
-                        fi
+                        echo "  [~] Reiniciando Node-RED..."
+                        sudo systemctl restart nodered
+                        echo "  [OK] Listo"
                     fi
                     ;;
                 3)
                     echo ""
-                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "  Nodos requeridos para Gesinne"
-                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Nodos recomendados:"
+                    echo "    - node-red-contrib-modbus"
+                    echo "    - node-red-dashboard"
+                    echo "    - node-red-contrib-azure-iot-hub"
                     echo ""
-                    
-                    # Lista de nodos requeridos
-                    REQUIRED_NODES=(
-                        "@colinl/node-red-guaranteed-delivery"
-                        "@flowfuse/node-red-dashboard"
-                        "@flowfuse/node-red-dashboard-2-ui-led"
-                        "node-red-contrib-chronos"
-                        "node-red-contrib-modbus"
-                        "node-red-contrib-rpi-shutdown"
-                        "node-red-dashboard"
-                    )
-                    
-                    MISSING_NODES=()
-                    OUTDATED_NODES=()
-                    echo "  Comprobando nodos instalados y actualizaciones..."
-                    echo ""
-                    
-                    for node in "${REQUIRED_NODES[@]}"; do
-                        if [ -d "$NODERED_DIR/node_modules/$node" ]; then
-                            # Obtener versión instalada
-                            INSTALLED_VER=$(cat "$NODERED_DIR/node_modules/$node/package.json" 2>/dev/null | grep '"version"' | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "?")
-                            # Obtener última versión de npm
-                            LATEST_VER=$(npm view "$node" version 2>/dev/null || echo "?")
-                            
-                            if [ "$INSTALLED_VER" != "$LATEST_VER" ] && [ "$LATEST_VER" != "?" ]; then
-                                echo "  [^]  $node  v$INSTALLED_VER → v$LATEST_VER"
-                                OUTDATED_NODES+=("$node")
-                            else
-                                echo "  [OK] $node  v$INSTALLED_VER"
-                            fi
-                        else
-                            echo "  [X]  $node (NO INSTALADO)"
-                            MISSING_NODES+=("$node")
-                        fi
-                    done
-                    
-                    echo ""
-                    
-                    # Combinar nodos que faltan y desactualizados
-                    ALL_PENDING=("${MISSING_NODES[@]}" "${OUTDATED_NODES[@]}")
-                    
-                    if [ ${#ALL_PENDING[@]} -eq 0 ]; then
-                        echo "  [OK] Todos los nodos requeridos están instalados y actualizados"
-                        echo ""
-                        read -p "  ¿Instalar otro nodo manualmente? [s/N]: " INSTALL_OTHER
-                        if [[ ! "$INSTALL_OTHER" =~ ^[Ss]$ ]]; then
-                            continue
-                        fi
-                        echo ""
-                        read -p "  Nombre del nodo a instalar: " NODE_NAME
-                    else
-                        # Mostrar resumen
-                        [ ${#MISSING_NODES[@]} -gt 0 ] && echo "  Faltan: ${#MISSING_NODES[@]} nodo(s)"
-                        [ ${#OUTDATED_NODES[@]} -gt 0 ] && echo "  Desactualizados: ${#OUTDATED_NODES[@]} nodo(s)"
-                        echo ""
-                        echo "  1) Instalar/Actualizar TODOS (${#ALL_PENDING[@]} nodos)"
-                        echo "  2) Seleccionar uno específico"
-                        echo "  0) Cancelar"
-                        echo ""
-                        read -p "  Opción [0-2]: " INSTALL_OPT
-                        
-                        case $INSTALL_OPT in
-                            1)
-                                echo ""
-                                sudo systemctl stop nodered
-                                sleep 2
-                                for node in "${ALL_PENDING[@]}"; do
-                                    echo "  [~] Instalando/Actualizando $node..."
-                                    npm_install_clean "$node" "$NODERED_DIR"
-                                done
-                                read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
-                                if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
-                                    sudo systemctl start nodered
-                                    sleep 3
-                                    echo "  [OK] Nodos instalados/actualizados"
-                                fi
-                                continue
-                                ;;
-                            2)
-                                echo ""
-                                echo "  Nodos pendientes:"
-                                for i in "${!ALL_PENDING[@]}"; do
-                                    echo "    $((i+1))) ${ALL_PENDING[$i]}"
-                                done
-                                echo ""
-                                read -p "  Número o nombre del nodo: " NODE_SEL
-                                if [[ "$NODE_SEL" =~ ^[0-9]+$ ]] && [ "$NODE_SEL" -ge 1 ] && [ "$NODE_SEL" -le ${#ALL_PENDING[@]} ]; then
-                                    NODE_NAME="${ALL_PENDING[$((NODE_SEL-1))]}"
-                                else
-                                    NODE_NAME="$NODE_SEL"
-                                fi
-                                ;;
-                            *)
-                                continue
-                                ;;
-                        esac
-                    fi
+                    read -p "  Nombre del nodo a instalar: " NODE_NAME
                     if [ -n "$NODE_NAME" ]; then
-                        echo ""
-                        echo "  [P] Instalando $NODE_NAME..."
                         cd "$NODERED_DIR"
-                        
-                        sudo systemctl stop nodered
-                        sleep 2
-                        
-                        npm_install_clean "$NODE_NAME" "$NODERED_DIR"
-                        
-                        read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
-                        if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
-                            sudo systemctl start nodered
-                            sleep 3
-                            echo "  [OK] $NODE_NAME instalado"
-                        else
-                            echo "  [!] Node-RED NO iniciado. Recuerda iniciarlo manualmente:"
-                            echo "      sudo systemctl start nodered"
-                        fi
+                        npm install "$NODE_NAME" 2>&1 | sed 's/^/  /'
+                        cd - > /dev/null
+                        echo ""
+                        echo "  [~] Reiniciando Node-RED..."
+                        sudo systemctl restart nodered
+                        echo "  [OK] Listo"
                     fi
                     ;;
                 4)
                     echo ""
                     read -p "  Nombre del nodo a desinstalar: " NODE_NAME
                     if [ -n "$NODE_NAME" ]; then
-                        echo ""
-                        read -p "  [!]  ¿Seguro que quieres desinstalar $NODE_NAME? [s/N]: " CONFIRM
-                        if [ "$CONFIRM" = "s" ] || [ "$CONFIRM" = "S" ]; then
-                            echo ""
-                            echo "  🗑️  Desinstalando $NODE_NAME..."
+                        read -p "  ¿Seguro que quieres desinstalar $NODE_NAME? [y/N]: " CONFIRM
+                        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
                             cd "$NODERED_DIR"
-                            
-                            sudo systemctl stop nodered
-                            sleep 2
-                            
-                            sudo npm uninstall "$NODE_NAME" 2>&1 | while read line; do echo "  $line"; done
-                            
-                            read -p "  ¿Iniciar Node-RED ahora? [y/N]: " CONFIRMAR_START
-                            if [[ "$CONFIRMAR_START" =~ ^[Yy]$ ]]; then
-                                sudo systemctl start nodered
-                                sleep 3
-                                echo "  [OK] $NODE_NAME desinstalado"
-                            else
-                                echo "  [!] Node-RED NO iniciado. Recuerda iniciarlo manualmente:"
-                                echo "      sudo systemctl start nodered"
-                            fi
+                            npm uninstall "$NODE_NAME" 2>&1 | sed 's/^/  /'
+                            cd - > /dev/null
+                            echo ""
+                            echo "  [~] Reiniciando Node-RED..."
+                            sudo systemctl restart nodered
+                            echo "  [OK] Listo"
                         else
                             echo "  [X] Cancelado"
                         fi
@@ -3576,84 +2995,63 @@ except:
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
                     
-                    # Obtener propietario esperado (del directorio .node-red)
-                    EXPECTED_OWNER=$(stat -c '%U:%G' "$NODERED_DIR" 2>/dev/null)
-                    MODULES_OWNER=$(stat -c '%U:%G' "$NODERED_DIR/node_modules" 2>/dev/null)
-                    
-                    echo "  Directorio .node-red:    $NODERED_DIR"
-                    echo "  Propietario esperado:    $EXPECTED_OWNER"
-                    echo "  Propietario node_modules: $MODULES_OWNER"
+                    # Detectar usuario de Node-RED
+                    NODERED_USER=$(stat -c '%U' "$NODERED_DIR" 2>/dev/null)
+                    echo "  [U] Usuario Node-RED: $NODERED_USER"
                     echo ""
                     
-                    if [ "$EXPECTED_OWNER" = "$MODULES_OWNER" ]; then
-                        echo "  [OK] Los permisos son correctos"
-                        echo ""
-                        echo "  Puedes actualizar nodos desde el dashboard de Node-RED"
-                    else
-                        echo "  [X] Los permisos NO coinciden"
-                        echo ""
-                        echo "  Esto puede causar errores al actualizar nodos"
-                        echo "  desde el dashboard de Node-RED."
-                        echo ""
-                        read -p "  ¿Corregir permisos ahora? [S/n]: " FIX_PERMS
-                        if [ "$FIX_PERMS" != "n" ] && [ "$FIX_PERMS" != "N" ]; then
+                    # Verificar permisos
+                    echo "  [P] Verificando permisos..."
+                    PERM_ISSUES=0
+                    
+                    # Verificar node_modules
+                    if [ -d "$MODULES_DIR" ]; then
+                        BAD_PERMS=$(find "$MODULES_DIR" ! -user "$NODERED_USER" 2>/dev/null | wc -l)
+                        if [ "$BAD_PERMS" -gt 0 ]; then
+                            echo "  [!] $BAD_PERMS archivos con permisos incorrectos en node_modules"
+                            PERM_ISSUES=1
+                        else
+                            echo "  [OK] node_modules: permisos correctos"
+                        fi
+                    fi
+                    
+                    # Verificar flows.json
+                    FLOWS_FILE="$NODERED_DIR/flows.json"
+                    if [ -f "$FLOWS_FILE" ]; then
+                        FLOWS_OWNER=$(stat -c '%U' "$FLOWS_FILE" 2>/dev/null)
+                        if [ "$FLOWS_OWNER" != "$NODERED_USER" ]; then
+                            echo "  [!] flows.json: propietario incorrecto ($FLOWS_OWNER)"
+                            PERM_ISSUES=1
+                        else
+                            echo "  [OK] flows.json: permisos correctos"
+                        fi
+                    fi
+                    
+                    echo ""
+                    if [ "$PERM_ISSUES" -eq 1 ]; then
+                        read -p "  ¿Corregir permisos? [Y/n]: " FIX_PERMS
+                        if [[ ! "$FIX_PERMS" =~ ^[Nn]$ ]]; then
                             echo ""
                             echo "  [~] Corrigiendo permisos..."
-                            sudo chown -R "$EXPECTED_OWNER" "$NODERED_DIR/node_modules" 2>/dev/null
+                            sudo chown -R "$NODERED_USER:$NODERED_USER" "$NODERED_DIR"
                             echo "  [OK] Permisos corregidos"
                             echo ""
-                            echo "  Ahora puedes actualizar nodos desde el dashboard"
-                        else
-                            echo "  [X] Cancelado"
+                            echo "  [~] Reiniciando Node-RED..."
+                            sudo systemctl restart nodered
+                            echo "  [OK] Listo"
                         fi
+                    else
+                        echo "  [OK] Todos los permisos son correctos"
                     fi
                     ;;
                 6)
                     echo ""
-                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "  Limpiar caché npm"
-                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo ""
-                    echo "  Esto limpia residuos de actualizaciones fallidas"
-                    echo "  y la caché de npm que puede causar errores."
-                    echo ""
-                    
-                    # Buscar directorios temporales
-                    TEMP_DIRS=$(find "$NODERED_DIR/node_modules" -maxdepth 2 -type d -name ".*-*" 2>/dev/null | wc -l)
-                    CACHE_SIZE=$(du -sh ~/.npm/_cacache 2>/dev/null | cut -f1 || echo "0")
-                    
-                    echo "  Directorios temporales encontrados: $TEMP_DIRS"
-                    echo "  Tamaño caché npm: $CACHE_SIZE"
-                    echo ""
-                    
-                    read -p "  ¿Limpiar ahora? [S/n]: " CLEAN_NPM
-                    if [ "$CLEAN_NPM" != "n" ] && [ "$CLEAN_NPM" != "N" ]; then
-                        echo ""
-                        echo "  [~] Parando Node-RED..."
-                        sudo systemctl stop nodered
-                        sleep 2
-                        
-                        echo "  [~] Limpiando directorios temporales..."
-                        sudo find "$NODERED_DIR/node_modules" -maxdepth 2 -type d -name ".*-*" -exec rm -rf {} + 2>/dev/null || true
-                        
-                        echo "  [~] Limpiando caché npm..."
-                        sudo rm -rf ~/.npm/_cacache 2>/dev/null || true
-                        sudo rm -rf /root/.npm/_cacache 2>/dev/null || true
-                        
-                        echo "  [~] Iniciando Node-RED..."
-                        sudo systemctl start nodered
-                        sleep 3
-                        
-                        echo ""
-                        echo "  [OK] Limpieza completada"
-                        echo ""
-                        echo "  Ahora puedes intentar actualizar nodos desde el dashboard"
-                    else
-                        echo "  [X] Cancelado"
-                    fi
+                    echo "  [C] Limpiando caché npm..."
+                    npm cache clean --force 2>&1 | sed 's/^/  /'
+                    echo "  [OK] Caché limpiada"
                     ;;
-                *)
-                    echo "  [X] Cancelado"
+                0|*)
+                    echo "  Volviendo al menú..."
                     ;;
             esac
             
@@ -3678,326 +3076,3 @@ except:
             ;;
     esac
 done
-
-# Solo pedir connection string si elige Azure (código legacy, no se usa con el bucle)
-if [ "$CONNECTION_MODE" = "1" ]; then
-    echo ""
-    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  PASO 2: Connection String"
-    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  Pega la Connection String del dispositivo Azure"
-    echo "  (te la proporciona Gesinne o el cliente)"
-    echo ""
-    read -p "  Connection String: " AZURE_CONNECTION_STRING
-
-    if [ -z "$AZURE_CONNECTION_STRING" ]; then
-        echo ""
-        echo "  [X] No has introducido nada. Abortando."
-        exit 1
-    fi
-
-    # Validar formato básico
-    if [[ ! "$AZURE_CONNECTION_STRING" =~ HostName=.*DeviceId=.*SharedAccessKey= ]]; then
-        echo ""
-        echo "  [X] Formato incorrecto. Debe contener:"
-        echo "     HostName=xxx;DeviceId=xxx;SharedAccessKey=xxx"
-        exit 1
-    fi
-
-    echo ""
-    echo "  [OK] Connection String válida"
-fi
-
-# Buscar archivo de flows de Node-RED
-USER_HOME="/home/$(logname 2>/dev/null || echo 'pi')"
-FLOWS_FILE=""
-for f in "$USER_HOME/.node-red/flows.json" "/home/pi/.node-red/flows.json" "/home/gesinne/.node-red/flows.json"; do
-    if [ -f "$f" ]; then
-        FLOWS_FILE="$f"
-        break
-    fi
-done
-
-if [ -z "$FLOWS_FILE" ]; then
-    echo ""
-    echo "  [!]  Node-RED no detectado (no se encontró flows.json)"
-    echo "     Configura manualmente el broker MQTT"
-else
-    # Obtener configuración actual
-    BROKER_HOST=$(python3 -c "
-import json
-try:
-    with open('$FLOWS_FILE', 'r') as f:
-        flows = json.load(f)
-    for node in flows:
-        if node.get('type') == 'mqtt-broker':
-            print(node.get('broker', 'no configurado'))
-            break
-except:
-    print('error')
-" 2>/dev/null)
-
-    echo ""
-    echo "  [M] Node-RED detectado"
-    echo "  [F] Archivo: $FLOWS_FILE"
-    echo "  [>] Broker actual: $BROKER_HOST"
-    echo ""
-
-    # Hacer backup antes de cualquier cambio
-    cp "$FLOWS_FILE" "${FLOWS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
-
-    if [ "$CONNECTION_MODE" = "1" ]; then
-        # Modo Azure IoT - cambiar a localhost
-        if [ "$BROKER_HOST" != "localhost" ] && [ "$BROKER_HOST" != "127.0.0.1" ]; then
-            python3 -c "
-import json
-with open('$FLOWS_FILE', 'r') as f:
-    flows = json.load(f)
-for node in flows:
-    if node.get('type') == 'mqtt-broker':
-        node['broker'] = 'localhost'
-        node['port'] = '1883'
-        node['usetls'] = False
-with open('$FLOWS_FILE', 'w') as f:
-    json.dump(flows, f, indent=4)
-" 2>/dev/null
-            echo "  [OK] Broker cambiado a localhost:1883 (sin SSL)"
-            RESTART_NODERED=1
-        else
-            echo "  [OK] Broker ya configurado en localhost"
-        fi
-        USE_AZURE=1
-    else
-        # Modo servidor directo
-        echo ""
-        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "  Configuración servidor MQTT remoto"
-        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        read -p "  Servidor MQTT [mqtt.gesinne.cloud]: " MQTT_SERVER
-        MQTT_SERVER=${MQTT_SERVER:-mqtt.gesinne.cloud}
-        
-        read -p "  Puerto [8883]: " MQTT_PORT
-        MQTT_PORT=${MQTT_PORT:-8883}
-        
-        read -p "  Usar SSL (s/n) [s]: " MQTT_SSL
-        MQTT_SSL=${MQTT_SSL:-s}
-        if [ "$MQTT_SSL" = "s" ] || [ "$MQTT_SSL" = "S" ]; then
-            USE_TLS="True"
-        else
-            USE_TLS="False"
-        fi
-        
-        read -p "  Usuario MQTT: " MQTT_USER
-        read -s -p "  Contraseña MQTT: " MQTT_PASS
-        echo ""
-        
-        if [ -z "$MQTT_USER" ] || [ -z "$MQTT_PASS" ]; then
-            echo ""
-            echo "  [X] Usuario y contraseña son obligatorios"
-            exit 1
-        fi
-        
-        python3 -c "
-import json
-with open('$FLOWS_FILE', 'r') as f:
-    flows = json.load(f)
-for node in flows:
-    if node.get('type') == 'mqtt-broker':
-        node['broker'] = '$MQTT_SERVER'
-        node['port'] = '$MQTT_PORT'
-        node['usetls'] = $USE_TLS
-with open('$FLOWS_FILE', 'w') as f:
-    json.dump(flows, f, indent=4)
-" 2>/dev/null
-
-        # Guardar credenciales en flows_cred.json
-        CRED_FILE="${FLOWS_FILE%flows.json}flows_cred.json"
-        BROKER_ID=$(python3 -c "
-import json
-with open('$FLOWS_FILE', 'r') as f:
-    flows = json.load(f)
-for node in flows:
-    if node.get('type') == 'mqtt-broker':
-        print(node.get('id', ''))
-        break
-" 2>/dev/null)
-
-        if [ -n "$BROKER_ID" ]; then
-            python3 -c "
-import json
-import os
-cred_file = '$CRED_FILE'
-creds = {}
-if os.path.exists(cred_file):
-    with open(cred_file, 'r') as f:
-        creds = json.load(f)
-creds['$BROKER_ID'] = {'user': '$MQTT_USER', 'password': '$MQTT_PASS'}
-with open(cred_file, 'w') as f:
-    json.dump(creds, f, indent=4)
-" 2>/dev/null
-            chmod 600 "$CRED_FILE"
-        fi
-
-        echo ""
-        echo "  [OK] Broker: $MQTT_SERVER:$MQTT_PORT (SSL: $MQTT_SSL)"
-        echo "  [OK] Usuario: $MQTT_USER"
-        echo "  [OK] Credenciales guardadas"
-        RESTART_NODERED=1
-        USE_AZURE=0
-    fi
-
-    # Reiniciar Node-RED si hubo cambios
-    if [ "$RESTART_NODERED" = "1" ]; then
-        echo ""
-        reiniciar_nodered
-    fi
-fi
-
-# Si eligió modo servidor directo, no necesita el bridge de Azure
-if [ "$CONNECTION_MODE" = "2" ]; then
-    echo ""
-    echo "  ╔══════════════════════════════════════════════╗"
-    echo "  ║                                              ║"
-    echo "  ║   [OK] CONFIGURACIÓN COMPLETADA                ║"
-    echo "  ║                                              ║"
-    echo "  ╚══════════════════════════════════════════════╝"
-    echo ""
-    echo "  Node-RED enviará directamente al servidor."
-    echo "  No se necesita el bridge de Azure IoT."
-    echo ""
-    exit 0
-fi
-
-echo ""
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 3: Instalando Docker"
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-# Instalar Docker si no existe
-if ! command -v docker &> /dev/null; then
-    echo "  Instalando Docker (puede tardar unos minutos)..."
-    apt-get update -qq
-    apt-get install -y -qq docker.io docker-compose > /dev/null 2>&1
-    systemctl start docker
-    systemctl enable docker
-    echo "  [OK] Docker instalado"
-else
-    echo "  [OK] Docker ya instalado"
-fi
-
-# Instalar docker-compose si no existe
-if ! command -v docker-compose &> /dev/null; then
-    apt-get install -y -qq docker-compose > /dev/null 2>&1
-    echo "  [OK] Docker Compose instalado"
-fi
-
-echo ""
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 4: Descargando software"
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-if [ -d "$INSTALL_DIR/.git" ]; then
-    cd "$INSTALL_DIR"
-    git stash -q 2>/dev/null || true
-    if git fetch -q origin main 2>/dev/null && git reset --hard origin/main -q 2>/dev/null; then
-        echo "  [OK] Software actualizado"
-    else
-        cd /
-        if download_repo_fallback "$INSTALL_DIR"; then
-            echo "  [OK] Software descargado"
-        else
-            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
-            exit 1
-        fi
-    fi
-elif [ -d "$INSTALL_DIR" ]; then
-    rm -rf "$INSTALL_DIR"
-    if git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null; then
-        echo "  [OK] Software descargado"
-    else
-        if download_repo_fallback "$INSTALL_DIR"; then
-            echo "  [OK] Software descargado"
-        else
-            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
-            exit 1
-        fi
-    fi
-else
-    if git clone -q https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null; then
-        echo "  [OK] Software descargado"
-    else
-        if download_repo_fallback "$INSTALL_DIR"; then
-            echo "  [OK] Software descargado"
-        else
-            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
-            exit 1
-        fi
-    fi
-fi
-
-cd "$INSTALL_DIR"
-
-echo ""
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  PASO 5: Configurando e iniciando"
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-# Crear docker-compose.override.yml con la connection string
-cat > docker-compose.override.yml << EOF
-services:
-  gesinne-rpi:
-    environment:
-      - AZURE_CONNECTION_STRING=${AZURE_CONNECTION_STRING}
-EOF
-
-chmod 600 docker-compose.override.yml
-
-# Parar contenedor anterior si existe
-docker-compose down 2>/dev/null || true
-
-# Construir e iniciar
-echo "  Iniciando servicio (puede tardar 1-2 minutos)..."
-if docker-compose up -d --build 2>&1 | tail -5; then
-    sleep 3
-    if docker-compose ps | grep -q "Up"; then
-        echo "  [OK] Servicio iniciado"
-    else
-        echo "  [X] Error: El contenedor no arrancó"
-        echo ""
-        docker-compose logs --tail=20
-        exit 1
-    fi
-else
-    echo "  [X] Error al construir el contenedor"
-    exit 1
-fi
-
-echo ""
-echo "  ╔══════════════════════════════════════════════╗"
-echo "  ║                                              ║"
-echo "  ║   [OK] INSTALACIÓN COMPLETADA                  ║"
-echo "  ║                                              ║"
-echo "  ╚══════════════════════════════════════════════╝"
-echo ""
-echo "  El servicio está funcionando y se iniciará"
-echo "  automáticamente cuando reinicies la Raspberry."
-echo ""
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Verificando conexión..."
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-sleep 5
-docker-compose logs --tail=15 2>/dev/null | grep -E "[OK]|[X]|📤|[!]" | head -10
-
-echo ""
-echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-# Wed Dec  3 17:09:10 UTC 2025
-# force 1764842449
-# refresh 1764843038
