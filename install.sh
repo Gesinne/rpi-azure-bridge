@@ -1923,14 +1923,15 @@ EOFDIAG
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
                     echo "  ¿Qué placa?"
-                    echo "  1) L1   2) L2   3) L3"
+                    echo "  1) L1   2) L2   3) L3   4) TODAS"
                     echo ""
-                    read -p "  Placa [1-3]: " REG_PLACA
+                    read -p "  Placa [1-4]: " REG_PLACA
                     
                     case $REG_PLACA in
-                        1) REG_UNIT=1; REG_FASE="L1" ;;
-                        2) REG_UNIT=2; REG_FASE="L2" ;;
-                        3) REG_UNIT=3; REG_FASE="L3" ;;
+                        1) REG_UNITS="1"; REG_FASES="L1" ;;
+                        2) REG_UNITS="2"; REG_FASES="L2" ;;
+                        3) REG_UNITS="3"; REG_FASES="L3" ;;
+                        4) REG_UNITS="1 2 3"; REG_FASES="L1 L2 L3" ;;
                         *) echo "  [X] Placa no válida"; volver_menu; continue ;;
                     esac
                     
@@ -1987,26 +1988,61 @@ if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
     sys.exit(1)
 
-unit_id = $REG_UNIT
+unit_ids = [int(x) for x in "$REG_UNITS".split()]
+fases = "$REG_FASES".split()
 reg_num = $REG_NUM
-fase = "$REG_FASE"
 
-print(f"  [M] Leyendo registro {reg_num} de placa {fase}...")
+print(f"  [M] Leyendo registro {reg_num}...")
 print("")
 
-result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
-
-if result.isError():
-    print(f"  [X] Error leyendo registro {reg_num}")
+if len(unit_ids) == 1:
+    # Una sola placa
+    result = client.read_holding_registers(address=reg_num, count=1, slave=unit_ids[0])
+    if result.isError():
+        print(f"  [X] Error leyendo registro {reg_num}")
+    else:
+        valor = result.registers[0]
+        print(f"  ┌─────────────────────────────────────────────┐")
+        print(f"  │  Placa: {fases[0]}                               │")
+        print(f"  │  Registro: {reg_num:<5}                         │")
+        print(f"  │  Valor decimal: {valor:<10}                │")
+        print(f"  │  Valor hexadecimal: 0x{valor:04X}                 │")
+        print(f"  │  Valor binario: {valor:016b}  │")
+        print(f"  └─────────────────────────────────────────────┘")
 else:
-    valor = result.registers[0]
-    print(f"  ┌─────────────────────────────────────────────┐")
-    print(f"  │  Placa: {fase}                               │")
-    print(f"  │  Registro: {reg_num:<5}                         │")
-    print(f"  │  Valor decimal: {valor:<10}                │")
-    print(f"  │  Valor hexadecimal: 0x{valor:04X}                 │")
-    print(f"  │  Valor binario: {valor:016b}  │")
-    print(f"  └─────────────────────────────────────────────┘")
+    # Todas las placas - mostrar en columnas
+    valores = {}
+    for unit_id, fase in zip(unit_ids, fases):
+        result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
+        if result.isError():
+            valores[fase] = None
+        else:
+            valores[fase] = result.registers[0]
+    
+    print(f"  ┌─────────────────────────────────────────────────────────┐")
+    print(f"  │  Registro: {reg_num:<5}                                      │")
+    print(f"  ├─────────────────────────────────────────────────────────┤")
+    print(f"  │  Placa      │    L1    │    L2    │    L3    │  DIFF   │")
+    print(f"  ├─────────────┼──────────┼──────────┼──────────┼─────────┤")
+    
+    v1 = valores.get('L1')
+    v2 = valores.get('L2')
+    v3 = valores.get('L3')
+    
+    def fmt(v):
+        return f"{v:>8}" if v is not None else "   ERR  "
+    
+    # Detectar diferencias
+    vals = [v for v in [v1, v2, v3] if v is not None]
+    diff = "  [!]  " if len(set(vals)) > 1 else "       "
+    
+    print(f"  │  Decimal    │{fmt(v1)}  │{fmt(v2)}  │{fmt(v3)}  │{diff}│")
+    
+    def fmt_hex(v):
+        return f"  0x{v:04X}  " if v is not None else "   ERR  "
+    print(f"  │  Hexadecimal│{fmt_hex(v1)}│{fmt_hex(v2)}│{fmt_hex(v3)}│       │")
+    
+    print(f"  └─────────────┴──────────┴──────────┴──────────┴─────────┘")
 
 client.close()
 EOFREG
