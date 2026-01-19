@@ -2015,9 +2015,9 @@ NOMBRES_REG = {
     78: "b I equipo", 79: "Ruido I chopper", 80: "Ruido I equipo", 81: "K potencia",
     82: "b potencia", 83: "Desfase V-I", 84: "Cal frecuencia", 85: "Cal ruido", 86: "ReCa",
     90: "Flag Control", 91: "A control V", 92: "B control V", 93: "EMM", 94: "EMMVT0", 95: "EMMVT1",
-    96: "ReCn", 100: "Reg 100", 101: "Reg 101", 102: "Reg 102", 103: "Reg 103",
-    104: "Reg 104", 105: "Reg 105", 106: "Reg 106", 107: "Reg 107",
-    110: "Reg 110", 111: "Reg 111"
+    96: "ReCn", 100: "Versión FW", 101: "Tipo FW", 102: "Microprocesador",
+    103: "FLASH restaurada", 104: "Frec PWM", 105: "Mando apagado (MA)",
+    106: "Mando mínimo", 107: "Mando máximo", 110: "Flag RESET FW", 111: "RESET FW"
 }
 
 nombre_reg = NOMBRES_REG.get(reg_num, "Desconocido")
