@@ -436,7 +436,7 @@ while true; do
     echo "  1) Modo de conexión (Azure IoT / Servidor Remoto)"
     echo "  2) Actualizar Flow Node-RED"
     echo "  3) Ver/Modificar configuración equipo"
-    echo "  4) Ver los 96 registros de la placa"
+    echo "  4) Ver/Modificar registros de la placa"
     echo "  5) Revisar espacio y logs"
     echo "  6) Gestionar paleta Node-RED"
     echo "  0) Salir"
