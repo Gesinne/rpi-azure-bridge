@@ -2259,20 +2259,33 @@ for unit_id in [1, 2, 3]:
     fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
     print(f"  [M] Leyendo tarjeta {fase}...", end=" ", flush=True)
     
-    data = []
+    data = [None] * 112
     max_retries = 3
+    success = False
+    
     for retry in range(max_retries):
-        data = []
-        success = True
-        for start in range(0, 112, 40):
-            count = min(40, 112 - start)
+        # Leer registros 0-95 (existen todos)
+        temp_data = []
+        ok = True
+        for start in range(0, 96, 40):
+            count = min(40, 96 - start)
             result = client.read_holding_registers(address=start, count=count, slave=unit_id)
             if result.isError():
-                success = False
+                ok = False
                 break
-            data.extend(result.registers)
+            temp_data.extend(result.registers)
         
-        if success and len(data) >= 112:
+        if ok and len(temp_data) >= 96:
+            for i in range(96):
+                data[i] = temp_data[i]
+            
+            # Leer registros 100-111 (INFO FW) - lectura separada
+            result = client.read_holding_registers(address=100, count=12, slave=unit_id)
+            if not result.isError():
+                for i, val in enumerate(result.registers):
+                    data[100 + i] = val
+            
+            success = True
             print("[OK]")
             break
         else:
@@ -2282,7 +2295,7 @@ for unit_id in [1, 2, 3]:
             else:
                 print("[X] sin respuesta")
     
-    data_all[unit_id] = data if len(data) >= 112 else None
+    data_all[unit_id] = data if success else None
 
 client.close()
 
@@ -2297,7 +2310,7 @@ if placas_fail:
         print("  [X] No hay datos para mostrar")
         sys.exit(1)
 
-# Rellenar placas sin datos con None para mostrar "---"
+# Rellenar placas sin datos con lista de None para mostrar "---"
 for u in placas_fail:
     data_all[u] = [None] * 112
 
