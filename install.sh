@@ -1988,15 +1988,41 @@ if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
     sys.exit(1)
 
+import time
+
 unit_ids = [int(x) for x in "$REG_UNITS".split()]
 fases = "$REG_FASES".split()
 reg_num = $REG_NUM
 
-print(f"  [M] Leyendo registro {reg_num}...")
-print("")
+# Diccionario de nombres de registros
+NOMBRES_REG = {
+    0: "Estado actual", 1: "Topología actual", 2: "Alarma", 3: "V salida", 4: "V entrada",
+    5: "Frecuencia", 6: "I Salida", 7: "I Chopper", 8: "I Primario trafo",
+    9: "P activa (H)", 10: "P activa (L)", 11: "P reactiva (H)", 12: "P reactiva (L)",
+    13: "P aparente (H)", 14: "P aparente (L)", 15: "Factor Potencia", 16: "Tipo FP",
+    17: "Temperatura", 18: "T alarma", 19: "Enable externo", 20: "T reencendido", 21: "Enable PCB",
+    30: "Flag Estado", 31: "Estado deseado", 32: "Consigna deseada", 33: "Bucle control", 34: "Mando",
+    40: "Flag Config", 41: "Nº Serie placa", 42: "V nominal", 43: "V prim autotrafo",
+    44: "V sec autotrafo", 45: "V sec trafo", 46: "Topología", 47: "Dead-time",
+    48: "Dir Modbus", 49: "I nom salida", 50: "I nom chopper", 51: "I max chopper",
+    52: "I max pico", 53: "T apagado CC", 54: "Cnt apagados SC", 55: "Estado inicial",
+    56: "V consigna inicial", 57: "T máxima", 58: "Dec T reenc", 59: "Cnt apagados ST",
+    60: "Tipo alimentación", 61: "Vel Modbus", 62: "Package transistores",
+    63: "Ángulo cargas altas", 64: "Ángulo cargas bajas", 65: "% carga baja",
+    66: "Sens transitorios", 67: "Sens derivada", 69: "ReCo",
+    70: "Flag Calibración", 71: "K V salida", 72: "K V entrada", 73: "b V salida",
+    74: "b V entrada", 75: "K I chopper", 76: "K I equipo", 77: "b I chopper",
+    78: "b I equipo", 79: "Ruido I chopper", 80: "Ruido I equipo", 81: "K potencia",
+    82: "b potencia", 83: "Desfase V-I", 84: "Cal frecuencia", 85: "Cal ruido", 86: "ReCa",
+    90: "Flag Control", 91: "A control V", 92: "B control V", 93: "EMM", 94: "EMMVT0", 95: "EMMVT1"
+}
+
+nombre_reg = NOMBRES_REG.get(reg_num, "Desconocido")
 
 if len(unit_ids) == 1:
     # Una sola placa
+    print(f"  [M] Leyendo registro {reg_num} ({nombre_reg}) de placa {fases[0]}...")
+    print("")
     result = client.read_holding_registers(address=reg_num, count=1, slave=unit_ids[0])
     if result.isError():
         print(f"  [X] Error leyendo registro {reg_num}")
@@ -2004,44 +2030,69 @@ if len(unit_ids) == 1:
         valor = result.registers[0]
         print(f"  ┌─────────────────────────────────────────────┐")
         print(f"  │  Placa: {fases[0]}                               │")
-        print(f"  │  Registro: {reg_num:<5}                         │")
+        print(f"  │  Registro: {reg_num:<5} ({nombre_reg[:20]:<20}) │")
         print(f"  │  Valor decimal: {valor:<10}                │")
         print(f"  │  Valor hexadecimal: 0x{valor:04X}                 │")
         print(f"  │  Valor binario: {valor:016b}  │")
         print(f"  └─────────────────────────────────────────────┘")
 else:
-    # Todas las placas - mostrar en columnas
-    valores = {}
-    for unit_id, fase in zip(unit_ids, fases):
-        result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
-        if result.isError():
-            valores[fase] = None
-        else:
-            valores[fase] = result.registers[0]
+    # Todas las placas - leer con reintentos hasta tener las 3
+    print(f"  [M] Leyendo registro {reg_num} ({nombre_reg}) de las 3 placas...")
+    print("")
     
-    print(f"  ┌─────────────────────────────────────────────────────────┐")
-    print(f"  │  Registro: {reg_num:<5}                                      │")
-    print(f"  ├─────────────────────────────────────────────────────────┤")
-    print(f"  │  Placa      │    L1    │    L2    │    L3    │  DIFF   │")
-    print(f"  ├─────────────┼──────────┼──────────┼──────────┼─────────┤")
+    valores = {}
+    max_intentos = 5
+    
+    for intento in range(1, max_intentos + 1):
+        fases_pendientes = [f for f in fases if f not in valores or valores[f] is None]
+        
+        if not fases_pendientes:
+            break
+        
+        if intento > 1:
+            print(f"  [~] Reintento {intento}/{max_intentos} - Pendientes: {', '.join(fases_pendientes)}")
+            time.sleep(0.5)
+        
+        for unit_id, fase in zip(unit_ids, fases):
+            if fase in valores and valores[fase] is not None:
+                continue
+            
+            result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
+            if not result.isError():
+                valores[fase] = result.registers[0]
+                print(f"  [OK] {fase}: {result.registers[0]}")
+            else:
+                valores[fase] = None
+    
+    print("")
     
     v1 = valores.get('L1')
     v2 = valores.get('L2')
     v3 = valores.get('L3')
     
+    # Verificar si tenemos las 3
+    leidas = sum(1 for v in [v1, v2, v3] if v is not None)
+    if leidas < 3:
+        print(f"  [!] Solo se pudieron leer {leidas}/3 placas")
+        print("")
+    
     def fmt(v):
         return f"{v:>8}" if v is not None else "   ERR  "
+    
+    def fmt_hex(v):
+        return f"  0x{v:04X}  " if v is not None else "   ERR  "
     
     # Detectar diferencias
     vals = [v for v in [v1, v2, v3] if v is not None]
     diff = "  [!]  " if len(set(vals)) > 1 else "       "
     
+    print(f"  ┌─────────────────────────────────────────────────────────┐")
+    print(f"  │  Registro: {reg_num:<5} - {nombre_reg[:35]:<35}  │")
+    print(f"  ├─────────────────────────────────────────────────────────┤")
+    print(f"  │  Formato    │    L1    │    L2    │    L3    │  DIFF   │")
+    print(f"  ├─────────────┼──────────┼──────────┼──────────┼─────────┤")
     print(f"  │  Decimal    │{fmt(v1)}  │{fmt(v2)}  │{fmt(v3)}  │{diff}│")
-    
-    def fmt_hex(v):
-        return f"  0x{v:04X}  " if v is not None else "   ERR  "
     print(f"  │  Hexadecimal│{fmt_hex(v1)}│{fmt_hex(v2)}│{fmt_hex(v3)}│       │")
-    
     print(f"  └─────────────┴──────────┴──────────┴──────────┴─────────┘")
 
 client.close()
