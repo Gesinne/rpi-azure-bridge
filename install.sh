@@ -2279,11 +2279,17 @@ for unit_id in [1, 2, 3]:
             for i in range(96):
                 data[i] = temp_data[i]
             
-            # Leer registros 100-111 (INFO FW) - lectura separada
-            result = client.read_holding_registers(address=100, count=12, slave=unit_id)
+            # Leer registros 100-107 (INFO FW)
+            result = client.read_holding_registers(address=100, count=8, slave=unit_id)
             if not result.isError():
                 for i, val in enumerate(result.registers):
                     data[100 + i] = val
+            
+            # Leer registros 110-111 (RESET)
+            result = client.read_holding_registers(address=110, count=2, slave=unit_id)
+            if not result.isError():
+                data[110] = result.registers[0]
+                data[111] = result.registers[1]
             
             success = True
             print("[OK]")
