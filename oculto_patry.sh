@@ -12,9 +12,10 @@ echo ""
 echo "  1) Optimizar rendimiento (zram + Modbus)"
 echo "  2) Verificar validaciones del Flow"
 echo "  3) Analizar bugs del Flow"
+echo "  4) Revisar el JSON"
 echo "  0) Salir"
 echo ""
-read -p "  Opción [0-3]: " PATRY_OPT
+read -p "  Opción [0-4]: " PATRY_OPT
 
 case $PATRY_OPT in
     1)
@@ -1091,6 +1092,438 @@ PYFIX
             fi
             
             rm -f /tmp/flow_bugs.json
+        fi
+        ;;
+    4)
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Revisar el JSON (flows.json)"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        
+        FLOWS_FILE=""
+        for f in /home/*/.node-red/flows.json; do
+            if [ -f "$f" ]; then
+                FLOWS_FILE="$f"
+                break
+            fi
+        done
+        
+        if [ -z "$FLOWS_FILE" ]; then
+            echo "  [X] No se encontró flows.json"
+        else
+            echo "  [F] Archivo: $FLOWS_FILE"
+            FILE_SIZE=$(du -h "$FLOWS_FILE" | cut -f1)
+            echo "  [S] Tamaño: $FILE_SIZE"
+            echo ""
+            echo "  ¿Qué quieres ver?"
+            echo ""
+            echo "  1) Resumen general (nodos por tipo)"
+            echo "  2) Buscar nodo por nombre"
+            echo "  3) Ver configuración MQTT"
+            echo "  4) Ver configuración Modbus"
+            echo "  5) Listar todos los nodos function"
+            echo "  6) Ver JSON completo (formateado)"
+            echo "  7) 🔍 Detectar posibles fallos"
+            echo "  0) Volver"
+            echo ""
+            read -p "  Opción [0-7]: " JSON_OPT
+            
+            case $JSON_OPT in
+                1)
+                    echo ""
+                    echo "  ┌─────────────────────────────────────────────┐"
+                    echo "  │          RESUMEN DE NODOS                   │"
+                    echo "  └─────────────────────────────────────────────┘"
+                    echo ""
+                    python3 -c "
+import json
+from collections import Counter
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+tipos = Counter(node.get('type', 'unknown') for node in flows)
+total = len(flows)
+
+print(f'  Total de nodos: {total}')
+print('')
+for tipo, count in sorted(tipos.items(), key=lambda x: -x[1])[:20]:
+    bar = '█' * min(count, 30)
+    print(f'  {tipo:25} {count:4}  {bar}')
+if len(tipos) > 20:
+    print(f'  ... y {len(tipos) - 20} tipos más')
+"
+                    ;;
+                2)
+                    echo ""
+                    read -p "  Nombre a buscar: " SEARCH_NAME
+                    echo ""
+                    python3 -c "
+import json
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+search = '$SEARCH_NAME'.lower()
+found = 0
+
+for node in flows:
+    name = node.get('name', '')
+    if name and search in name.lower():
+        found += 1
+        print(f\"  [{node.get('type', '?'):15}] {name}\")
+        print(f\"      ID: {node.get('id', '?')}\")
+        if node.get('func'):
+            lines = len(node['func'].split('\\n'))
+            print(f\"      Código: {lines} líneas\")
+        print('')
+
+if found == 0:
+    print(f'  No se encontraron nodos con \"{search}\"')
+else:
+    print(f'  Total encontrados: {found}')
+"
+                    ;;
+                3)
+                    echo ""
+                    echo "  ┌─────────────────────────────────────────────┐"
+                    echo "  │          CONFIGURACIÓN MQTT                 │"
+                    echo "  └─────────────────────────────────────────────┘"
+                    echo ""
+                    python3 -c "
+import json
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+for node in flows:
+    if node.get('type') == 'mqtt-broker':
+        print(f\"  Broker:     {node.get('broker', '?')}\")
+        print(f\"  Puerto:     {node.get('port', '?')}\")
+        print(f\"  Client ID:  {node.get('clientid', '?')}\")
+        print(f\"  TLS:        {node.get('tls', '?')}\")
+        print(f\"  ID:         {node.get('id', '?')}\")
+        print('')
+    elif node.get('type') == 'mqtt out':
+        print(f\"  [MQTT OUT] {node.get('name', 'Sin nombre')}\")
+        print(f\"      Topic: {node.get('topic', '?')}\")
+        print(f\"      QoS:   {node.get('qos', '?')}\")
+        print('')
+    elif node.get('type') == 'mqtt in':
+        print(f\"  [MQTT IN] {node.get('name', 'Sin nombre')}\")
+        print(f\"      Topic: {node.get('topic', '?')}\")
+        print(f\"      QoS:   {node.get('qos', '?')}\")
+        print('')
+"
+                    ;;
+                4)
+                    echo ""
+                    echo "  ┌─────────────────────────────────────────────┐"
+                    echo "  │          CONFIGURACIÓN MODBUS               │"
+                    echo "  └─────────────────────────────────────────────┘"
+                    echo ""
+                    python3 -c "
+import json
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+for node in flows:
+    if node.get('type') == 'modbus-client':
+        print('  [MODBUS CLIENT]')
+        print(f\"      Puerto serial:         {node.get('serialPort', '?')}\")
+        print(f\"      Baud rate:             {node.get('serialBaudrate', '?')}\")
+        print(f\"      Client Timeout:        {node.get('clientTimeout', '?')}ms\")
+        print(f\"      Reconnect Timeout:     {node.get('reconnectTimeout', '?')}ms\")
+        print(f\"      Command Delay:         {node.get('commandDelay', '?')}ms\")
+        print(f\"      Serial Conn Delay:     {node.get('serialConnectionDelay', '?')}ms\")
+        print(f\"      ID:                    {node.get('id', '?')}\")
+        print('')
+    elif node.get('type') == 'modbus-read':
+        print(f\"  [MODBUS READ] {node.get('name', 'Sin nombre')}\")
+        print(f\"      Address:  {node.get('adr', '?')}\")
+        print(f\"      Quantity: {node.get('quantity', '?')}\")
+        print(f\"      FC:       {node.get('fc', '?')}\")
+        print('')
+    elif node.get('type') == 'modbus-write':
+        print(f\"  [MODBUS WRITE] {node.get('name', 'Sin nombre')}\")
+        print(f\"      Address:  {node.get('adr', '?')}\")
+        print(f\"      Quantity: {node.get('quantity', '?')}\")
+        print(f\"      FC:       {node.get('fc', '?')}\")
+        print('')
+"
+                    ;;
+                5)
+                    echo ""
+                    echo "  ┌─────────────────────────────────────────────┐"
+                    echo "  │          NODOS FUNCTION                     │"
+                    echo "  └─────────────────────────────────────────────┘"
+                    echo ""
+                    python3 -c "
+import json
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+functions = []
+for node in flows:
+    if node.get('type') == 'function':
+        name = node.get('name', 'Sin nombre')
+        func = node.get('func', '')
+        lines = len(func.split('\\n')) if func else 0
+        functions.append((name, lines, node.get('id', '?')))
+
+functions.sort(key=lambda x: -x[1])
+
+print(f'  Total funciones: {len(functions)}')
+print('')
+for name, lines, nid in functions:
+    print(f'  {lines:4} líneas  │  {name}')
+"
+                    ;;
+                6)
+                    echo ""
+                    echo "  [~] Mostrando JSON formateado (primeras 100 líneas)..."
+                    echo ""
+                    python3 -c "
+import json
+
+with open('$FLOWS_FILE', 'r') as f:
+    flows = json.load(f)
+
+formatted = json.dumps(flows, indent=2, ensure_ascii=False)
+lines = formatted.split('\\n')[:100]
+for line in lines:
+    print(line)
+if len(formatted.split('\\n')) > 100:
+    print('...')
+    print(f'  [!] Mostrando 100 de {len(formatted.split(chr(10)))} líneas')
+    print('')
+    print('  Para ver el archivo completo:')
+    print(f'  cat \"$FLOWS_FILE\" | python3 -m json.tool | less')
+"
+                    ;;
+                7)
+                    echo ""
+                    echo "  ┌─────────────────────────────────────────────┐"
+                    echo "  │       🔍 DETECTAR POSIBLES FALLOS           │"
+                    echo "  └─────────────────────────────────────────────┘"
+                    echo ""
+                    python3 << 'PYCHECK'
+import json
+import sys
+
+try:
+    with open('$FLOWS_FILE', 'r') as f:
+        content = f.read()
+except Exception as e:
+    print(f'  [X] Error leyendo archivo: {e}')
+    sys.exit(1)
+
+# 1. Validar JSON
+print('  [1/7] Validando sintaxis JSON...')
+try:
+    flows = json.loads(content)
+    print('  [OK] JSON válido')
+except json.JSONDecodeError as e:
+    print(f'  [X] JSON INVÁLIDO: {e}')
+    print(f'      Línea: {e.lineno}, Columna: {e.colno}')
+    sys.exit(1)
+
+print('')
+problemas = []
+
+# 2. Recopilar IDs
+print('  [2/7] Analizando estructura de nodos...')
+all_ids = set()
+node_by_id = {}
+for node in flows:
+    nid = node.get('id')
+    if nid:
+        if nid in all_ids:
+            problemas.append(('ALTO', f"ID duplicado: {nid}"))
+        all_ids.add(nid)
+        node_by_id[nid] = node
+print(f'  [OK] {len(all_ids)} nodos encontrados')
+
+# 3. Verificar conexiones (wires)
+print('')
+print('  [3/7] Verificando conexiones (wires)...')
+wires_rotos = 0
+for node in flows:
+    wires = node.get('wires', [])
+    for output in wires:
+        for target_id in output:
+            if target_id not in all_ids:
+                wires_rotos += 1
+                problemas.append(('MEDIO', f"Conexión rota en '{node.get('name', node.get('id'))}' -> {target_id}"))
+if wires_rotos == 0:
+    print('  [OK] Todas las conexiones válidas')
+else:
+    print(f'  [!] {wires_rotos} conexiones rotas')
+
+# 4. Nodos huérfanos (sin conexiones entrantes ni salientes, excepto tabs/subflows)
+print('')
+print('  [4/7] Buscando nodos huérfanos...')
+excluir_tipos = {'tab', 'subflow', 'mqtt-broker', 'modbus-client', 'comment', 'ui_tab', 'ui_group', 'ui_base', 'ui_spacer'}
+conectados = set()
+for node in flows:
+    wires = node.get('wires', [])
+    for output in wires:
+        for target_id in output:
+            conectados.add(target_id)
+            conectados.add(node.get('id'))
+
+huerfanos = []
+for node in flows:
+    nid = node.get('id')
+    ntype = node.get('type', '')
+    if ntype not in excluir_tipos and nid not in conectados:
+        # Verificar si es un nodo de entrada (inject, mqtt in, etc.)
+        if ntype not in {'inject', 'mqtt in', 'http in', 'websocket in', 'tcp in', 'udp in', 'modbus-read'}:
+            huerfanos.append(node)
+
+if not huerfanos:
+    print('  [OK] No hay nodos huérfanos')
+else:
+    print(f'  [!] {len(huerfanos)} nodos sin conexiones:')
+    for h in huerfanos[:5]:
+        problemas.append(('BAJO', f"Nodo huérfano: [{h.get('type')}] {h.get('name', 'Sin nombre')}"))
+    if len(huerfanos) > 5:
+        print(f'      ... y {len(huerfanos) - 5} más')
+
+# 5. Funciones con errores potenciales
+print('')
+print('  [5/7] Analizando funciones JavaScript...')
+func_problemas = 0
+for node in flows:
+    if node.get('type') == 'function':
+        func = node.get('func', '')
+        name = node.get('name', 'Sin nombre')
+        
+        # Función vacía
+        if not func.strip():
+            problemas.append(('MEDIO', f"Función vacía: {name}"))
+            func_problemas += 1
+        
+        # return sin msg
+        if 'return;' in func and 'return msg' not in func and 'return null' not in func:
+            problemas.append(('BAJO', f"Función con 'return;' sin valor: {name}"))
+            func_problemas += 1
+        
+        # console.log en producción
+        if 'console.log' in func:
+            problemas.append(('BAJO', f"console.log en producción: {name}"))
+            func_problemas += 1
+        
+        # Variables no declaradas comunes
+        if 'undeclared' in func.lower() or 'undefined' in func and 'typeof' not in func:
+            pass  # Ignorar, puede ser intencional
+
+if func_problemas == 0:
+    print('  [OK] Funciones sin problemas obvios')
+else:
+    print(f'  [!] {func_problemas} problemas en funciones')
+
+# 6. Configuración crítica
+print('')
+print('  [6/7] Verificando configuración crítica...')
+mqtt_ok = False
+modbus_ok = False
+for node in flows:
+    if node.get('type') == 'mqtt-broker':
+        broker = node.get('broker', '')
+        if broker:
+            mqtt_ok = True
+            if not broker.startswith(('mqtt', 'localhost', '127.0.0.1', '57.129')):
+                problemas.append(('MEDIO', f"Broker MQTT sospechoso: {broker}"))
+    
+    if node.get('type') == 'modbus-client':
+        modbus_ok = True
+        timeout = node.get('clientTimeout', 0)
+        if isinstance(timeout, int) and timeout < 500:
+            problemas.append(('ALTO', f"Timeout Modbus muy bajo: {timeout}ms"))
+        serial = node.get('serialPort', '')
+        if not serial:
+            problemas.append(('ALTO', 'Puerto serial Modbus no configurado'))
+
+if mqtt_ok:
+    print('  [OK] MQTT configurado')
+else:
+    problemas.append(('MEDIO', 'No hay broker MQTT configurado'))
+    print('  [!] No hay broker MQTT')
+
+if modbus_ok:
+    print('  [OK] Modbus configurado')
+else:
+    print('  [~] No hay cliente Modbus (puede ser normal)')
+
+# 7. Subflows sin definición
+print('')
+print('  [7/7] Verificando subflows...')
+subflow_defs = set()
+subflow_uses = set()
+for node in flows:
+    if node.get('type') == 'subflow':
+        subflow_defs.add(node.get('id'))
+    elif node.get('type', '').startswith('subflow:'):
+        subflow_id = node.get('type').replace('subflow:', '')
+        subflow_uses.add(subflow_id)
+
+missing_subflows = subflow_uses - subflow_defs
+if missing_subflows:
+    for sf in missing_subflows:
+        problemas.append(('ALTO', f"Subflow usado pero no definido: {sf}"))
+    print(f'  [X] {len(missing_subflows)} subflows sin definición')
+else:
+    print('  [OK] Todos los subflows definidos')
+
+# === RESUMEN ===
+print('')
+print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+print('  RESUMEN DE PROBLEMAS')
+print('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+print('')
+
+if not problemas:
+    print('  ✅ No se encontraron problemas')
+else:
+    altos = [p for p in problemas if p[0] == 'ALTO']
+    medios = [p for p in problemas if p[0] == 'MEDIO']
+    bajos = [p for p in problemas if p[0] == 'BAJO']
+    
+    print(f'  🔴 Críticos: {len(altos)}')
+    print(f'  🟡 Medios:   {len(medios)}')
+    print(f'  🟢 Bajos:    {len(bajos)}')
+    print('')
+    
+    if altos:
+        print('  ─── CRÍTICOS ───')
+        for _, desc in altos:
+            print(f'  🔴 {desc}')
+        print('')
+    
+    if medios:
+        print('  ─── MEDIOS ───')
+        for _, desc in medios:
+            print(f'  🟡 {desc}')
+        print('')
+    
+    if bajos:
+        print('  ─── BAJOS ───')
+        for _, desc in bajos[:10]:
+            print(f'  🟢 {desc}')
+        if len(bajos) > 10:
+            print(f'  ... y {len(bajos) - 10} más')
+
+print('')
+PYCHECK
+                    ;;
+                0|*)
+                    echo "  Volviendo..."
+                    ;;
+            esac
         fi
         ;;
     0|*)
