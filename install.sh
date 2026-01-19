@@ -1562,7 +1562,7 @@ if chronos_id:
         4)
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Ver los 96 registros de la placa"
+            echo "  Ver los 112 registros de la placa"
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             echo "  ¿Qué tarjeta quieres leer?"
@@ -1723,8 +1723,8 @@ data_lectura1 = {}
 for unit_id in [1, 2, 3]:
     fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
     data = []
-    for start in range(0, 96, 40):
-        count = min(40, 96 - start)
+    for start in range(0, 112, 40):
+        count = min(40, 112 - start)
         result = client.read_holding_registers(address=start, count=count, slave=unit_id)
         if not result.isError():
             data.extend(result.registers)
@@ -1745,8 +1745,8 @@ data_lectura2 = {}
 for unit_id in [1, 2, 3]:
     fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
     data = []
-    for start in range(0, 96, 40):
-        count = min(40, 96 - start)
+    for start in range(0, 112, 40):
+        count = min(40, 112 - start)
         result = client.read_holding_registers(address=start, count=count, slave=unit_id)
         if not result.isError():
             data.extend(result.registers)
@@ -2264,15 +2264,15 @@ for unit_id in [1, 2, 3]:
     for retry in range(max_retries):
         data = []
         success = True
-        for start in range(0, 96, 40):
-            count = min(40, 96 - start)
+        for start in range(0, 112, 40):
+            count = min(40, 112 - start)
             result = client.read_holding_registers(address=start, count=count, slave=unit_id)
             if result.isError():
                 success = False
                 break
             data.extend(result.registers)
         
-        if success and len(data) >= 96:
+        if success and len(data) >= 112:
             print("[OK]")
             break
         else:
@@ -2282,7 +2282,7 @@ for unit_id in [1, 2, 3]:
             else:
                 print("[X] sin respuesta")
     
-    data_all[unit_id] = data if len(data) >= 96 else None
+    data_all[unit_id] = data if len(data) >= 112 else None
 
 client.close()
 
@@ -2299,7 +2299,7 @@ if placas_fail:
 
 # Rellenar placas sin datos con None para mostrar "---"
 for u in placas_fail:
-    data_all[u] = [None] * 96
+    data_all[u] = [None] * 112
 
 print("")
 
@@ -2321,7 +2321,10 @@ regs = {
     70: "Flag Cal", 71: "Ca00", 72: "Ca01", 73: "Ca03", 74: "Ca04",
     75: "Ca06", 76: "Ca07", 77: "Ca08", 78: "Ca09", 79: "Ca10",
     80: "Ca11", 81: "Ca12", 82: "Ca13", 83: "Ca14", 84: "Ca15", 85: "R", 86: "ReCa",
-    90: "Flag Ctrl", 91: "Cn00", 92: "Cn01", 93: "Cn02", 94: "Cn03", 95: "ReCn"
+    90: "Flag Ctrl", 91: "Cn00", 92: "Cn01", 93: "Cn02", 94: "Cn03", 95: "ReCn", 96: "Cn05",
+    100: "Versión FW", 101: "Tipo FW", 102: "Microproc", 103: "FLASH rest",
+    104: "Frec PWM", 105: "Mando apag", 106: "Mando mín", 107: "Mando máx",
+    110: "Flag Reset", 111: "RESET FW"
 }
 
 # Imprimir en columnas
@@ -2354,7 +2357,8 @@ print_section("TIEMPO REAL", 0, 22)
 print_section("ESTADO", 30, 35)
 print_section("CONFIGURACIÓN", 40, 70)
 print_section("CALIBRACIÓN", 70, 87)
-print_section("CONTROL", 90, 96)
+print_section("CONTROL", 90, 97)
+print_section("INFO FW", 100, 112)
 
 print("")
 EOFCOL
@@ -2630,7 +2634,7 @@ try:
         # CONTROL (90-95)
         if len(data) > 90:
             print_header("REGISTROS DE CONTROL ?Cn (90-95)")
-            for i in range(90, 96):
+            for i in range(90, 112):
                 if i in regs and i < len(data):
                     desc, nombre = regs[i]
                     print(f"  {i:3d} | {nombre:24s} | {data[i]:10d} | {desc}")
@@ -2674,8 +2678,8 @@ except ImportError:
 client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
 if client.connect():
     data = []
-    for start in range(0, 96, 40):
-        count = min(40, 96 - start)
+    for start in range(0, 112, 40):
+        count = min(40, 112 - start)
         result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
         if not result.isError():
             data.extend(result.registers)
