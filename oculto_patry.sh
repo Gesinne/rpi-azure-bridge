@@ -1282,8 +1282,19 @@ for node in flows:
         print(f\"  [{node.get('type', '?'):15}] {name}\")
         print(f\"      ID: {node.get('id', '?')}\")
         if node.get('func'):
-            lines = len(node['func'].split('\\n'))
-            print(f\"      Código: {lines} líneas\")
+            func_code = node['func']
+            lines = func_code.split('\\n')
+            print(f\"      Código: {len(lines)} líneas\")
+            print('')
+            print('  ┌─── CÓDIGO ───────────────────────────────────┐')
+            for i, line in enumerate(lines[:50], 1):
+                # Truncar líneas muy largas
+                if len(line) > 60:
+                    line = line[:57] + '...'
+                print(f'  │ {i:3}: {line}')
+            if len(lines) > 50:
+                print(f'  │ ... ({len(lines) - 50} líneas más)')
+            print('  └─────────────────────────────────────────────┘')
         print('')
 
 if found == 0:
