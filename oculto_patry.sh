@@ -620,39 +620,11 @@ for node in flows:
             pass
     
     # 12. Valores hardcodeados sospechosos en funciones (como 56112)
-    if node_type == 'function':
-        # Buscar números grandes que podrían ser errores
-        numeros = re.findall(r'\b(\d{4,})\b', func)
-        for num in numeros:
-            num_val = int(num)
-            # Ignorar valores conocidos válidos
-            if num_val in [1760, 2640, 1000, 2000, 3000, 5000, 10000, 65535]:
-                continue
-            # Valores sospechosos fuera de rangos típicos
-            if num_val > 10000 and num_val not in [32768, 65535]:
-                bugs.append({
-                    'num': len(bugs) + 1,
-                    'tipo': 'MEDIO',
-                    'nodo': name,
-                    'id': node_id,
-                    'desc': f'Valor hardcodeado sospechoso: {num_val}',
-                    'fix_type': 'hardcoded_value'
-                })
-                break  # Solo reportar uno por función
+    # NOTA: Desactivado por generar muchos falsos positivos
+    # Valores comunes válidos: 43981 (0xABCD), 47818, 51914 (0xCACA), 86400 (24h), 300000 (5min)
     
-    # 13. División sin verificar divisor cero
-    if node_type == 'function' and '/' in func:
-        if 'divisor' not in func.lower() and '!= 0' not in func and '!== 0' not in func and '> 0' not in func:
-            # Buscar patrones de división
-            if re.search(r'/\s*[a-zA-Z_]\w*', func) and 'Math.' not in func:
-                bugs.append({
-                    'num': len(bugs) + 1,
-                    'tipo': 'BAJO',
-                    'nodo': name,
-                    'id': node_id,
-                    'desc': 'Posible división sin verificar divisor cero',
-                    'fix_type': 'division_zero'
-                })
+    # 13. División sin verificar divisor cero - SOLO casos claros
+    # NOTA: Desactivado por generar muchos falsos positivos (/ en URLs, comentarios, etc.)
     
     # 14. Uso de eval() - peligroso
     if node_type == 'function' and 'eval(' in func:
