@@ -503,7 +503,19 @@ for node in flows:
                 'fix_type': 'array_length'
             })
     
-    # 4. MQTT con QoS 0
+    # 4. return; sin valor (debería ser return null;)
+    if node_type == 'function' and 'return;' in func:
+        if 'return msg' not in func and 'return null' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'BAJO',
+                'nodo': name,
+                'id': node_id,
+                'desc': "Función con 'return;' sin valor (debería ser 'return null;')",
+                'fix_type': 'return_null'
+            })
+    
+    # 5. MQTT con QoS 0
     if node_type == 'mqtt out':
         qos = node.get('qos', '0')
         if qos == '0' or qos == 0:
@@ -662,6 +674,13 @@ for bug in bugs:
                 node['qos'] = '1'
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - QoS cambiado a 1")
+            
+            elif fix_type == 'return_null':
+                func = node.get('func', '')
+                func = func.replace('return;', 'return null;')
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - 'return;' cambiado a 'return null;'")
             
             elif fix_type == 'parse_nan':
                 func = node.get('func', '')
@@ -893,6 +912,13 @@ for node in flows:
             node['qos'] = '1'
             cambios += 1
             print(f"  [OK] Corregido: {bug['nodo']} - QoS cambiado a 1")
+        
+        elif fix_type == 'return_null':
+            func = node.get('func', '')
+            func = func.replace('return;', 'return null;')
+            node['func'] = func
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - 'return;' cambiado a 'return null;'")
         
         elif fix_type == 'parse_nan':
             func = node.get('func', '')
