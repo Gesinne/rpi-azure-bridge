@@ -1310,12 +1310,14 @@ if len(formatted.split('\\n')) > 100:
                     echo "  │       🔍 DETECTAR POSIBLES FALLOS           │"
                     echo "  └─────────────────────────────────────────────┘"
                     echo ""
-                    python3 << 'PYCHECK'
+                    python3 - "$FLOWS_FILE" << 'PYCHECK'
 import json
 import sys
 
+flows_file = sys.argv[1]
+
 try:
-    with open('$FLOWS_FILE', 'r') as f:
+    with open(flows_file, 'r') as f:
         content = f.read()
 except Exception as e:
     print(f'  [X] Error leyendo archivo: {e}')
