@@ -4,6 +4,10 @@
 # Uso: bash oculto_patry.sh
 #
 
+# Auto-actualizar desde Git
+cd "$(dirname "$0")" 2>/dev/null || cd ~/rpi-azure-bridge 2>/dev/null
+git pull --quiet 2>/dev/null
+
 echo ""
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  🔐 Modo Patry - Opciones Ocultas"
