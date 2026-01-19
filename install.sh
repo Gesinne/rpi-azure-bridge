@@ -1575,9 +1575,10 @@ if chronos_id:
             echo "  3) Tarjeta L3 (Fase 3)"
             echo "  4) TODAS en columnas (L1, L2, L3)"
             echo "  5) Diagnóstico valores clavados (3 placas)"
+            echo "  6) Leer registro específico"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-5]: " TARJETA
+            read -p "  Opción [0-6]: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
@@ -1912,6 +1913,111 @@ EOFDIAG
                         echo "  [!] Servicios NO reiniciados. Recuerda iniciarlos manualmente:"
                         echo "      sudo systemctl start nodered"
                     fi
+                    
+                    volver_menu
+                    continue
+                    ;;
+                6)
+                    # Leer registro específico
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Leer registro específico"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  ¿Qué placa?"
+                    echo "  1) L1   2) L2   3) L3"
+                    echo ""
+                    read -p "  Placa [1-3]: " REG_PLACA
+                    
+                    case $REG_PLACA in
+                        1) REG_UNIT=1; REG_FASE="L1" ;;
+                        2) REG_UNIT=2; REG_FASE="L2" ;;
+                        3) REG_UNIT=3; REG_FASE="L3" ;;
+                        *) echo "  [X] Placa no válida"; volver_menu; continue ;;
+                    esac
+                    
+                    echo ""
+                    read -p "  Número de registro [0-200]: " REG_NUM
+                    
+                    if ! [[ "$REG_NUM" =~ ^[0-9]+$ ]] || [ "$REG_NUM" -gt 200 ]; then
+                        echo "  [X] Registro no válido"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    echo ""
+                    echo "  [!] Parando Node-RED temporalmente..."
+                    sudo systemctl stop nodered 2>/dev/null
+                    docker stop gesinne-rpi >/dev/null 2>&1 || true
+                    sleep 2
+                    echo "  [OK] Servicios parados"
+                    echo ""
+                    
+                    python3 << EOFREG
+import sys
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+# Detectar puerto serie
+import os
+port = None
+for p in ['/dev/ttyAMA0', '/dev/serial0', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyS0']:
+    if os.path.exists(p):
+        port = p
+        break
+
+if not port:
+    print("  [X] No se encontró puerto serie")
+    sys.exit(1)
+
+client = ModbusSerialClient(
+    port=port,
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+unit_id = $REG_UNIT
+reg_num = $REG_NUM
+fase = "$REG_FASE"
+
+print(f"  [M] Leyendo registro {reg_num} de placa {fase}...")
+print("")
+
+result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
+
+if result.isError():
+    print(f"  [X] Error leyendo registro {reg_num}")
+else:
+    valor = result.registers[0]
+    print(f"  ┌─────────────────────────────────────────────┐")
+    print(f"  │  Placa: {fase}                               │")
+    print(f"  │  Registro: {reg_num:<5}                         │")
+    print(f"  │  Valor decimal: {valor:<10}                │")
+    print(f"  │  Valor hexadecimal: 0x{valor:04X}                 │")
+    print(f"  │  Valor binario: {valor:016b}  │")
+    print(f"  └─────────────────────────────────────────────┘")
+
+client.close()
+EOFREG
+                    
+                    echo ""
+                    echo "  [~] Reiniciando Node-RED..."
+                    sudo systemctl start nodered
+                    docker start gesinne-rpi 2>/dev/null || true
+                    echo "  [OK] Listo"
                     
                     volver_menu
                     continue
