@@ -2014,7 +2014,10 @@ NOMBRES_REG = {
     74: "b V entrada", 75: "K I chopper", 76: "K I equipo", 77: "b I chopper",
     78: "b I equipo", 79: "Ruido I chopper", 80: "Ruido I equipo", 81: "K potencia",
     82: "b potencia", 83: "Desfase V-I", 84: "Cal frecuencia", 85: "Cal ruido", 86: "ReCa",
-    90: "Flag Control", 91: "A control V", 92: "B control V", 93: "EMM", 94: "EMMVT0", 95: "EMMVT1"
+    90: "Flag Control", 91: "A control V", 92: "B control V", 93: "EMM", 94: "EMMVT0", 95: "EMMVT1",
+    96: "ReCn", 100: "Reg 100", 101: "Reg 101", 102: "Reg 102", 103: "Reg 103",
+    104: "Reg 104", 105: "Reg 105", 106: "Reg 106", 107: "Reg 107",
+    110: "Reg 110", 111: "Reg 111"
 }
 
 nombre_reg = NOMBRES_REG.get(reg_num, "Desconocido")
