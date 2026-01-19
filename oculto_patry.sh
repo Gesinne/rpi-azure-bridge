@@ -638,17 +638,7 @@ for node in flows:
         })
     
     # 15. setTimeout/setInterval sin clearTimeout/clearInterval
-    if node_type == 'function':
-        if ('setTimeout(' in func or 'setInterval(' in func):
-            if 'clearTimeout' not in func and 'clearInterval' not in func and 'context.' not in func:
-                bugs.append({
-                    'num': len(bugs) + 1,
-                    'tipo': 'MEDIO',
-                    'nodo': name,
-                    'id': node_id,
-                    'desc': 'setTimeout/setInterval sin clear (posible memory leak)',
-                    'fix_type': 'timer_leak'
-                })
+    # NOTA: Desactivado - patrón común en Node-RED para animaciones/blink
     
     # 16. Modbus FC inválido
     if node_type == 'modbus-read' or node_type == 'modbus-write':
@@ -665,22 +655,7 @@ for node in flows:
             })
     
     # 17. Inject con intervalo muy corto (< 1 segundo)
-    if node_type == 'inject':
-        repeat = node.get('repeat', '')
-        if repeat:
-            try:
-                repeat_val = float(repeat)
-                if repeat_val > 0 and repeat_val < 1:
-                    bugs.append({
-                        'num': len(bugs) + 1,
-                        'tipo': 'MEDIO',
-                        'nodo': name,
-                        'id': node_id,
-                        'desc': f'Inject con intervalo muy corto: {repeat_val}s (puede saturar)',
-                        'fix_type': 'inject_interval'
-                    })
-            except:
-                pass
+    # NOTA: Desactivado - 0.5s es común para lecturas Modbus rápidas
 
 # Guardar bugs en archivo temporal
 with open('/tmp/flow_bugs.json', 'w') as f:
