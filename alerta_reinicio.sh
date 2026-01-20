@@ -25,11 +25,11 @@ VENTANA_MINUTOS=5  # Tolerancia de +/- 5 minutos
 # Email
 SMTP_TO="patricia.garcia@gesinne.com,victorbarrero@gesinne.com,joseluis.nicolas@gesinne.com"
 
-# Obtener número de serie del equipo
-if [ -f /home/pi/.node-red/settings.js ]; then
-    SERIAL=$(grep -oP 'serialNumber:\s*"\K[^"]+' /home/pi/.node-red/settings.js 2>/dev/null || echo "DESCONOCIDO")
-elif [ -f /home/gesinne/.node-red/settings.js ]; then
-    SERIAL=$(grep -oP 'serialNumber:\s*"\K[^"]+' /home/gesinne/.node-red/settings.js 2>/dev/null || echo "DESCONOCIDO")
+# Obtener número de serie del equipo desde equipo_config.json
+if [ -f /home/gesinne/config/equipo_config.json ]; then
+    SERIAL=$(python3 -c "import json; print(json.load(open('/home/gesinne/config/equipo_config.json')).get('serie', 'DESCONOCIDO'))" 2>/dev/null || echo "DESCONOCIDO")
+elif [ -f /home/pi/config/equipo_config.json ]; then
+    SERIAL=$(python3 -c "import json; print(json.load(open('/home/pi/config/equipo_config.json')).get('serie', 'DESCONOCIDO'))" 2>/dev/null || echo "DESCONOCIDO")
 else
     SERIAL="DESCONOCIDO"
 fi
