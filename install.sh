@@ -1587,9 +1587,10 @@ if chronos_id:
             echo "  5) Diagnóstico valores clavados (3 placas)"
             echo "  6) Leer registro específico"
             echo "  7) Enviar parámetros por EMAIL"
+            echo "  8) Escribir registro"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-7]: " TARJETA
+            read -p "  Opción [0-8]: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
@@ -2164,6 +2165,178 @@ EOFREG
                         echo "  [X] Script de email no encontrado"
                         echo "  Usa la opción 4 (TODAS) para ver los registros en pantalla"
                     fi
+                    
+                    echo ""
+                    echo "  [~] Reiniciando Node-RED..."
+                    sudo systemctl start nodered
+                    docker start gesinne-rpi 2>/dev/null || true
+                    echo "  [OK] Listo"
+                    
+                    volver_menu
+                    continue
+                    ;;
+                8)
+                    # Escribir registro
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Escribir registro"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  ¿Qué placa?"
+                    echo "  1) L1   2) L2   3) L3   4) TODAS"
+                    echo ""
+                    read -p "  Placa [1-4]: " WRITE_PLACA
+                    
+                    case $WRITE_PLACA in
+                        1) WRITE_UNITS="1"; WRITE_FASES="L1" ;;
+                        2) WRITE_UNITS="2"; WRITE_FASES="L2" ;;
+                        3) WRITE_UNITS="3"; WRITE_FASES="L3" ;;
+                        4) WRITE_UNITS="1 2 3"; WRITE_FASES="L1 L2 L3" ;;
+                        *) echo "  [X] Placa no válida"; volver_menu; continue ;;
+                    esac
+                    
+                    echo ""
+                    read -p "  Número de registro [0-111]: " WRITE_REG
+                    
+                    if ! [[ "$WRITE_REG" =~ ^[0-9]+$ ]] || [ "$WRITE_REG" -gt 111 ]; then
+                        echo "  [X] Registro no válido"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    echo ""
+                    read -p "  Valor a escribir: " WRITE_VAL
+                    
+                    if ! [[ "$WRITE_VAL" =~ ^[0-9]+$ ]]; then
+                        echo "  [X] Valor no válido (debe ser numérico)"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    echo ""
+                    echo "  ⚠️  CONFIRMACIÓN"
+                    echo "  ────────────────────────────────────────"
+                    echo "  Placa(s): $WRITE_FASES"
+                    echo "  Registro: $WRITE_REG"
+                    echo "  Valor: $WRITE_VAL"
+                    echo "  ────────────────────────────────────────"
+                    echo ""
+                    read -p "  ¿Confirmar escritura? (s/N): " CONFIRM_WRITE
+                    
+                    if [[ ! "$CONFIRM_WRITE" =~ ^[sS]$ ]]; then
+                        echo "  [X] Escritura cancelada"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    echo ""
+                    echo "  [!] Parando Node-RED temporalmente..."
+                    sudo systemctl stop nodered 2>/dev/null
+                    docker stop gesinne-rpi >/dev/null 2>&1 || true
+                    sleep 2
+                    echo "  [OK] Servicios parados"
+                    echo ""
+                    
+                    python3 << EOFWRITE
+import sys
+import time
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+import os
+port = None
+for p in ['/dev/ttyAMA0', '/dev/serial0', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyS0']:
+    if os.path.exists(p):
+        port = p
+        break
+
+if not port:
+    print("  [X] No se encontró puerto serie")
+    sys.exit(1)
+
+client = ModbusSerialClient(
+    port=port,
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+unit_ids = [int(x) for x in "$WRITE_UNITS".split()]
+fases = "$WRITE_FASES".split()
+reg_num = $WRITE_REG
+valor = $WRITE_VAL
+
+for unit_id, fase in zip(unit_ids, fases):
+    print(f"  [M] Escribiendo en {fase}...")
+    
+    # Si es registro 56, primero poner en bypass (reg 31 = 0)
+    estado_anterior_31 = None
+    if reg_num == 56:
+        # Leer estado actual del registro 31
+        reg31_result = client.read_holding_registers(address=31, count=1, slave=unit_id)
+        if not reg31_result.isError():
+            estado_anterior_31 = reg31_result.registers[0]
+            print(f"      Estado anterior reg 31: {estado_anterior_31}")
+        
+        # Poner en bypass
+        bypass_result = client.write_register(address=31, value=0, slave=unit_id)
+        if bypass_result.isError():
+            print(f"  [X] Error poniendo en bypass {fase}")
+            continue
+        print(f"      Bypass aplicado (reg 31 = 0)")
+        time.sleep(0.1)
+    
+    # Leer valor actual
+    read_result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
+    valor_anterior = None
+    if not read_result.isError():
+        valor_anterior = read_result.registers[0]
+        print(f"      Valor anterior: {valor_anterior}")
+    
+    # Escribir nuevo valor
+    write_result = client.write_register(address=reg_num, value=valor, slave=unit_id)
+    
+    if write_result.isError():
+        print(f"  [X] Error escribiendo en {fase}: {write_result}")
+        # Restaurar bypass si falló
+        if estado_anterior_31 is not None:
+            client.write_register(address=31, value=estado_anterior_31, slave=unit_id)
+        continue
+    
+    # Verificar escritura
+    verify_result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
+    if not verify_result.isError():
+        valor_verificado = verify_result.registers[0]
+        if valor_verificado == valor:
+            print(f"  [OK] {fase}: Escrito correctamente (verificado: {valor_verificado})")
+        else:
+            print(f"  [!] {fase}: Verificación fallida (esperado {valor}, leído {valor_verificado})")
+    
+    # Restaurar estado anterior del registro 31
+    if estado_anterior_31 is not None:
+        time.sleep(0.1)
+        restore_result = client.write_register(address=31, value=estado_anterior_31, slave=unit_id)
+        if not restore_result.isError():
+            print(f"      Estado restaurado (reg 31 = {estado_anterior_31})")
+        else:
+            print(f"  [!] No se pudo restaurar reg 31")
+
+client.close()
+print("")
+print("  [OK] Escritura completada")
+EOFWRITE
                     
                     echo ""
                     echo "  [~] Reiniciando Node-RED..."
