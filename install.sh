@@ -118,6 +118,19 @@ if [ -f "$CONFIG_FILE" ]; then
     grep -q "^hdmi_blanking=0" "$CONFIG_FILE" 2>/dev/null || echo "hdmi_blanking=0" | sudo tee -a "$CONFIG_FILE" > /dev/null 2>&1 || true
 fi
 
+# Instalar alerta de reinicio no programado
+ALERTA_SCRIPT="/usr/local/bin/alerta_reinicio.sh"
+if [ ! -f "$ALERTA_SCRIPT" ]; then
+    curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/alerta_reinicio.sh" -o "$ALERTA_SCRIPT" 2>/dev/null
+    if [ -f "$ALERTA_SCRIPT" ]; then
+        chmod +x "$ALERTA_SCRIPT"
+        # Añadir al crontab si no existe
+        if ! crontab -l 2>/dev/null | grep -q "alerta_reinicio"; then
+            (crontab -l 2>/dev/null; echo "@reboot $ALERTA_SCRIPT >> /var/log/alerta_reinicio.log 2>&1") | crontab -
+        fi
+    fi
+fi
+
 # Detectar si ya está instalado
 INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
 OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
