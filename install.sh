@@ -2290,13 +2290,16 @@ for unit_id, fase in zip(unit_ids, fases):
             estado_anterior_31 = reg31_result.registers[0]
             print(f"      Estado anterior reg 31: {estado_anterior_31}")
         
-        # Poner en bypass
-        bypass_result = client.write_register(address=31, value=0, slave=unit_id)
-        if bypass_result.isError():
-            print(f"  [X] Error poniendo en bypass {fase}")
-            continue
-        print(f"      Bypass aplicado (reg 31 = 0)")
-        time.sleep(0.1)
+        # Solo poner en bypass si no está ya en 0
+        if estado_anterior_31 != 0:
+            bypass_result = client.write_register(address=31, value=0, slave=unit_id)
+            if bypass_result.isError():
+                print(f"  [X] Error poniendo en bypass {fase}")
+                continue
+            print(f"      Bypass aplicado (reg 31 = 0)")
+            time.sleep(0.1)
+        else:
+            print(f"      Ya está en bypass (reg 31 = 0)")
     
     # Leer valor actual
     read_result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
