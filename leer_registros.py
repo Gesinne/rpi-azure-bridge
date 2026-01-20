@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Leer registros Modbus de las tarjetas L1, L2, L3 y enviar por email
+Leer y escribir registros Modbus de las tarjetas L1, L2, L3
+
+Uso:
+  Leer:    python3 leer_registros.py [tarjetas]           # Ej: python3 leer_registros.py "1 2 3"
+  Escribir: python3 leer_registros.py write <tarjeta> <registro> <valor>
+            python3 leer_registros.py write 1 46 2       # Escribe valor 2 en registro 46 de L1
 """
 import os
 import sys
@@ -11,7 +16,7 @@ from datetime import datetime
 SERIAL_PORT = "/dev/ttyAMA0"
 SERIAL_BAUDRATE = 115200
 
-# Mapa de registros completo (96 registros)
+# Mapa de registros completo (112 registros)
 REGISTROS = {
     0: ("Estado actual del chopper", "Estado actual"),
     1: ("Modo de funcionamiento (topología) actual", "Topología actual"),
@@ -97,14 +102,31 @@ REGISTROS = {
     93: ("Escalón máximo del mando de tensión (EMM)", "?Cn02"),
     94: ("Escalón máximo del mando tensión nula (EMMVT0)", "?Cn03"),
     95: ("Escalón máximo del mando tensión no nula (EMMVT1)", "?ReCn"),
+    96: ("Parámetro Cn05", "Cn05"),
+    97: ("N/A", "N/A"), 98: ("N/A", "N/A"), 99: ("N/A", "N/A"),
+    100: ("Versión del firmware", "Versión FW"),
+    101: ("Tipo de firmware", "Tipo FW"),
+    102: ("Tipo de microprocesador", "Microproc"),
+    103: ("FLASH restante", "FLASH rest"),
+    104: ("Frecuencia PWM", "Frec PWM"),
+    105: ("Mando de apagado", "Mando apag"),
+    106: ("Mando mínimo", "Mando mín"),
+    107: ("Mando máximo", "Mando máx"),
+    108: ("N/A", "N/A"), 109: ("N/A", "N/A"),
+    110: ("Flag de reset", "Flag Reset"),
+    111: ("Reset del firmware", "RESET FW"),
 }
+
+
+# Número total de registros a leer
+TOTAL_REGISTROS = 112
 
 
 def leer_tarjeta(client, unit_id):
     """Lee todos los registros de una tarjeta"""
     data = []
-    for start in range(0, 96, 40):
-        count = min(40, 96 - start)
+    for start in range(0, TOTAL_REGISTROS, 40):
+        count = min(40, TOTAL_REGISTROS - start)
         result = client.read_holding_registers(address=start, count=count, slave=unit_id)
         if not result.isError():
             data.extend(result.registers)
@@ -225,7 +247,153 @@ def obtener_json_configuracion(tarjetas="1 2 3"):
     return config_data
 
 
+def escribir_registro(unit_id, registro, valor, bypass_automatico=True):
+    """Escribe un valor en un registro específico de una tarjeta
+    
+    Args:
+        unit_id: ID de la tarjeta (1, 2 o 3)
+        registro: Número de registro (0-95)
+        valor: Valor a escribir
+        bypass_automatico: Si True, pone el equipo en bypass (reg 31=0) antes de escribir reg 56
+    """
+    try:
+        from pymodbus.client import ModbusSerialClient
+    except ImportError:
+        from pymodbus.client.sync import ModbusSerialClient
+    
+    client = ModbusSerialClient(
+        port=SERIAL_PORT,
+        baudrate=SERIAL_BAUDRATE,
+        bytesize=8,
+        parity='N',
+        stopbits=1,
+        timeout=1
+    )
+    
+    resultado = {
+        "success": False,
+        "unit_id": unit_id,
+        "registro": registro,
+        "valor": valor,
+        "timestamp": datetime.now().isoformat(),
+        "mensaje": "",
+        "bypass_aplicado": False
+    }
+    
+    if registro not in REGISTROS:
+        resultado["mensaje"] = f"Registro {registro} no válido (0-95)"
+        return resultado
+    
+    desc, nombre = REGISTROS[registro]
+    resultado["nombre_registro"] = nombre
+    resultado["descripcion"] = desc
+    
+    if client.connect():
+        estado_anterior_reg31 = None
+        
+        # Si es registro 56 (V inicial), primero poner en bypass (registro 31 = 0)
+        if registro == 56 and bypass_automatico:
+            # Leer estado actual del registro 31
+            reg31_result = client.read_holding_registers(address=31, count=1, slave=unit_id)
+            if not reg31_result.isError():
+                estado_anterior_reg31 = reg31_result.registers[0]
+                resultado["estado_deseado_anterior"] = estado_anterior_reg31
+            
+            # Poner en bypass: registro 31 = 0
+            bypass_result = client.write_register(address=31, value=0, slave=unit_id)
+            if bypass_result.isError():
+                resultado["mensaje"] = f"Error al poner en bypass (reg 31=0): {bypass_result}"
+                client.close()
+                return resultado
+            resultado["bypass_aplicado"] = True
+            
+            # Pequeña pausa para que el equipo procese el cambio
+            import time
+            time.sleep(0.1)
+        
+        # Leer valor actual antes de escribir
+        read_result = client.read_holding_registers(address=registro, count=1, slave=unit_id)
+        if not read_result.isError():
+            resultado["valor_anterior"] = read_result.registers[0]
+        
+        # Escribir el nuevo valor
+        write_result = client.write_register(address=registro, value=valor, slave=unit_id)
+        
+        if not write_result.isError():
+            resultado["success"] = True
+            resultado["mensaje"] = f"Registro {registro} ({nombre}) escrito correctamente en L{unit_id}"
+            
+            # Verificar escritura leyendo de nuevo
+            verify_result = client.read_holding_registers(address=registro, count=1, slave=unit_id)
+            if not verify_result.isError():
+                resultado["valor_verificado"] = verify_result.registers[0]
+                if verify_result.registers[0] != valor:
+                    resultado["success"] = False
+                    resultado["mensaje"] = f"Verificación fallida: esperado {valor}, leído {verify_result.registers[0]}"
+            
+            # Restaurar estado anterior del registro 31 si se aplicó bypass
+            if resultado["bypass_aplicado"] and estado_anterior_reg31 is not None:
+                import time
+                time.sleep(0.1)
+                restore_result = client.write_register(address=31, value=estado_anterior_reg31, slave=unit_id)
+                if not restore_result.isError():
+                    resultado["estado_restaurado"] = estado_anterior_reg31
+                    resultado["mensaje"] += f" (estado restaurado a {estado_anterior_reg31})"
+                else:
+                    resultado["mensaje"] += f" (AVISO: no se pudo restaurar estado anterior)"
+        else:
+            resultado["mensaje"] = f"Error al escribir: {write_result}"
+            # Intentar restaurar bypass aunque falle la escritura
+            if resultado["bypass_aplicado"] and estado_anterior_reg31 is not None:
+                client.write_register(address=31, value=estado_anterior_reg31, slave=unit_id)
+        
+        client.close()
+    else:
+        resultado["mensaje"] = "Error: No se pudo conectar al puerto serie"
+    
+    return resultado
+
+
+def escribir_multiples_registros(unit_id, registros_valores):
+    """Escribe múltiples registros en una tarjeta
+    
+    Args:
+        unit_id: ID de la tarjeta (1, 2 o 3)
+        registros_valores: dict {registro: valor, ...}
+    """
+    resultados = []
+    for registro, valor in registros_valores.items():
+        resultado = escribir_registro(unit_id, int(registro), int(valor))
+        resultados.append(resultado)
+    return resultados
+
+
 if __name__ == "__main__":
-    # Si se ejecuta directamente, mostrar por pantalla
-    tarjetas = sys.argv[1] if len(sys.argv) > 1 else "1 2 3"
-    print(leer_todas_tarjetas(tarjetas))
+    if len(sys.argv) > 1 and sys.argv[1] == "write":
+        # Modo escritura: python3 leer_registros.py write <tarjeta> <registro> <valor>
+        if len(sys.argv) < 5:
+            print("Uso: python3 leer_registros.py write <tarjeta> <registro> <valor>")
+            print("Ejemplo: python3 leer_registros.py write 1 46 2")
+            sys.exit(1)
+        
+        unit_id = int(sys.argv[2])
+        registro = int(sys.argv[3])
+        valor = int(sys.argv[4])
+        
+        print(f"Escribiendo valor {valor} en registro {registro} de L{unit_id}...")
+        resultado = escribir_registro(unit_id, registro, valor)
+        
+        if resultado["success"]:
+            print(f"✓ {resultado['mensaje']}")
+            if "valor_anterior" in resultado:
+                print(f"  Valor anterior: {resultado['valor_anterior']}")
+            if "valor_verificado" in resultado:
+                print(f"  Valor verificado: {resultado['valor_verificado']}")
+        else:
+            print(f"✗ Error: {resultado['mensaje']}")
+        
+        print(json.dumps(resultado, indent=2))
+    else:
+        # Modo lectura (comportamiento original)
+        tarjetas = sys.argv[1] if len(sys.argv) > 1 else "1 2 3"
+        print(leer_todas_tarjetas(tarjetas))
