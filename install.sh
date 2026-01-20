@@ -2382,6 +2382,9 @@ EOFWRITE
                     echo "  Diagnóstico de configuración (límites)"
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
+                    read -p "  Valor a probar para reg 56 (V inicial) [ej: 2350]: " VALOR_TEST
+                    VALOR_TEST=${VALOR_TEST:-0}
+                    echo ""
                     echo "  [!] Parando Node-RED temporalmente..."
                     sudo systemctl stop nodered 2>/dev/null
                     docker stop gesinne-rpi >/dev/null 2>&1 || true
@@ -2634,12 +2637,8 @@ def compruebaConfig(CConf, verbose=True):
 print("  Leyendo configuración de las 3 placas...")
 print("")
 
-# Pedir valor a probar
-valor_test = input("  Valor a probar para reg 56 (V inicial) [ej: 2350]: ").strip()
-if valor_test:
-    valor_test = int(valor_test)
-else:
-    valor_test = None
+# Valor a probar (pasado desde shell)
+valor_test = $VALOR_TEST if $VALOR_TEST > 0 else None
 
 for unit_id in [1, 2, 3]:
     fase = f"L{unit_id}"
