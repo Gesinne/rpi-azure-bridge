@@ -1588,9 +1588,10 @@ if chronos_id:
             echo "  6) Leer registro específico"
             echo "  7) Enviar parámetros por EMAIL"
             echo "  8) Escribir registro"
+            echo "  9) Diagnóstico configuración (límites)"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-8]: " TARJETA
+            read -p "  Opción [0-9]: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
@@ -2364,6 +2365,139 @@ client.close()
 print("")
 print("  [OK] Escritura completada")
 EOFWRITE
+                    
+                    echo ""
+                    echo "  [~] Reiniciando Node-RED..."
+                    sudo systemctl start nodered
+                    docker start gesinne-rpi 2>/dev/null || true
+                    echo "  [OK] Listo"
+                    
+                    volver_menu
+                    continue
+                    ;;
+                9)
+                    # Diagnóstico de configuración - verificar límites
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Diagnóstico de configuración (límites)"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  [!] Parando Node-RED temporalmente..."
+                    sudo systemctl stop nodered 2>/dev/null
+                    docker stop gesinne-rpi >/dev/null 2>&1 || true
+                    sleep 2
+                    echo "  [OK] Servicios parados"
+                    echo ""
+                    
+                    python3 << EOFDIAG
+import sys
+import time
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+import os
+port = None
+for p in ['/dev/ttyAMA0', '/dev/serial0', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyS0']:
+    if os.path.exists(p):
+        port = p
+        break
+
+if not port:
+    print("  [X] No se encontró puerto serie")
+    sys.exit(1)
+
+client = ModbusSerialClient(
+    port=port,
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+# Límites de configuración según compruebaConfig()
+LIMITES = {
+    41: ("Nº Serie", 0, 65535, None),
+    42: ("V nominal", 1920, 2800, None),
+    43: ("V prim autotrafo", 0, 65535, None),
+    44: ("V sec autotrafo", 0, 65535, None),
+    45: ("V sec trafo", 0, 65535, None),
+    46: ("Topología", 0, 4, None),
+    47: ("Dead-time", 3, 22, None),
+    48: ("Dir Modbus", 1, 3, None),
+    49: ("I nom salida", 0, 65535, None),
+    50: ("I nom chopper", 0, 65535, None),
+    51: ("I max chopper", 0, 65535, None),
+    52: ("I max pico", 0, 65535, None),
+    53: ("T apagado CC", 0, 65535, None),
+    54: ("Cnt apagados SC", 0, 65535, None),
+    55: ("Estado inicial", 0, 2, None),
+    56: ("V inicial", 1920, 2800, None),
+    57: ("T máxima", 0, 550, None),
+    58: ("Dec T reenc", 0, 65535, None),
+    59: ("Cnt apagados ST", 0, 65535, None),
+    60: ("Tipo alimentación", 0, 1, None),
+    61: ("Vel Modbus", 0, 2, None),
+    62: ("Package transistores", 0, 1, None),
+    63: ("Ángulo cargas altas", 0, 179, None),
+    64: ("Ángulo cargas bajas", 0, 179, None),
+    65: ("% carga baja", 0, 100, None),
+    66: ("Sens transitorios", 0, 4, None),
+    67: ("Sens derivada", 0, 65535, None),
+}
+
+print("  Leyendo configuración de las 3 placas...")
+print("")
+
+for unit_id in [1, 2, 3]:
+    fase = f"L{unit_id}"
+    print(f"  ══════════════════════════════════════════════")
+    print(f"  PLACA {fase}")
+    print(f"  ══════════════════════════════════════════════")
+    
+    errores = []
+    
+    for reg, (nombre, min_val, max_val, _) in LIMITES.items():
+        result = client.read_holding_registers(address=reg, count=1, slave=unit_id)
+        if result.isError():
+            print(f"  [X] Reg {reg:2d} ({nombre}): Error de lectura")
+            continue
+        
+        valor = result.registers[0]
+        
+        if min_val <= valor <= max_val:
+            estado = "OK"
+        else:
+            estado = f"FUERA DE LÍMITES [{min_val}-{max_val}]"
+            errores.append((reg, nombre, valor, min_val, max_val))
+        
+        if estado != "OK":
+            print(f"  [!] Reg {reg:2d} ({nombre:20s}): {valor:6d}  ← {estado}")
+    
+    if errores:
+        print("")
+        print(f"  ⚠️  {len(errores)} PARÁMETROS FUERA DE LÍMITES:")
+        for reg, nombre, valor, min_v, max_v in errores:
+            print(f"      Reg {reg}: {nombre} = {valor} (debe ser {min_v}-{max_v})")
+    else:
+        print(f"  [OK] Todos los parámetros dentro de límites")
+    
+    print("")
+    time.sleep(0.2)
+
+client.close()
+print("  [OK] Diagnóstico completado")
+EOFDIAG
                     
                     echo ""
                     echo "  [~] Reiniciando Node-RED..."
