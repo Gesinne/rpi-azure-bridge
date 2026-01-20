@@ -50,6 +50,27 @@ IP_LOCAL=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "desconocida")
 KERNEL=$(uname -r)
 TEMP=$(vcgencmd measure_temp 2>/dev/null | cut -d= -f2 || echo "N/A")
 
+# Detectar tipo de conexión
+CONEXION="Desconocida"
+if ip link show eth0 2>/dev/null | grep -q "state UP"; then
+    CONEXION="Cable Ethernet (eth0)"
+elif ip link show wlan0 2>/dev/null | grep -q "state UP"; then
+    SSID=$(iwgetid -r 2>/dev/null || echo "")
+    if [ -n "$SSID" ]; then
+        CONEXION="WiFi ($SSID)"
+    else
+        CONEXION="WiFi"
+    fi
+elif ip link show usb0 2>/dev/null | grep -q "state UP"; then
+    CONEXION="USB/Router 4G (usb0)"
+else
+    # Buscar cualquier interfaz activa
+    IFACE=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
+    if [ -n "$IFACE" ]; then
+        CONEXION="$IFACE"
+    fi
+fi
+
 # Intentar obtener última razón de apagado
 LAST_SHUTDOWN=""
 if [ -f /var/log/syslog ]; then
@@ -77,6 +98,7 @@ IP_LOCAL = "$IP_LOCAL"
 KERNEL = "$KERNEL"
 TEMP = "$TEMP"
 LAST_BOOT = "$LAST_BOOT"
+CONEXION = "$CONEXION"
 
 msg = MIMEMultipart('alternative')
 msg['Subject'] = f"⚠️ REINICIO NO PROGRAMADO - Equipo {SERIAL} - {HORA_ACTUAL}"
@@ -114,6 +136,7 @@ th {{ background-color: #3498db; color: white; }}
 <tr><td><b>IP Local</b></td><td>{IP_LOCAL}</td></tr>
 <tr><td><b>Kernel</b></td><td>{KERNEL}</td></tr>
 <tr><td><b>Temperatura</b></td><td>{TEMP}</td></tr>
+<tr><td><b>Tipo Conexión</b></td><td>{CONEXION}</td></tr>
 </table>
 
 <p style="margin-top: 20px; color: #666; font-size: 12px;">
@@ -133,6 +156,7 @@ Hora programada: {HORA_PROGRAMADA}
 IP: {IP_LOCAL}
 Kernel: {KERNEL}
 Temperatura: {TEMP}
+Conexión: {CONEXION}
 """
 
 msg.attach(MIMEText(text, 'plain', 'utf-8'))
