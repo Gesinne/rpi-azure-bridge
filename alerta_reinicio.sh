@@ -2,6 +2,22 @@
 # Script para alertar de reinicios fuera de horario programado
 # Se ejecuta al inicio del sistema via cron @reboot
 
+# Esperar a que la red esté disponible (máximo 60 segundos)
+MAX_WAIT=60
+WAITED=0
+while [ $WAITED -lt $MAX_WAIT ]; do
+    if ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
+        break
+    fi
+    sleep 5
+    WAITED=$((WAITED + 5))
+done
+
+if [ $WAITED -ge $MAX_WAIT ]; then
+    echo "[$(date)] [X] No hay conexión a internet después de ${MAX_WAIT}s"
+    exit 1
+fi
+
 # Configuración
 HORA_PROGRAMADA="23:30"
 VENTANA_MINUTOS=5  # Tolerancia de +/- 5 minutos
