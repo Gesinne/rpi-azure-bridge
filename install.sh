@@ -2425,78 +2425,265 @@ if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
     sys.exit(1)
 
-# Límites de configuración según compruebaConfig()
-LIMITES = {
-    41: ("Nº Serie", 0, 65535, None),
-    42: ("V nominal", 1920, 2800, None),
-    43: ("V prim autotrafo", 0, 65535, None),
-    44: ("V sec autotrafo", 0, 65535, None),
-    45: ("V sec trafo", 0, 65535, None),
-    46: ("Topología", 0, 4, None),
-    47: ("Dead-time", 3, 22, None),
-    48: ("Dir Modbus", 1, 3, None),
-    49: ("I nom salida", 0, 65535, None),
-    50: ("I nom chopper", 0, 65535, None),
-    51: ("I max chopper", 0, 65535, None),
-    52: ("I max pico", 0, 65535, None),
-    53: ("T apagado CC", 0, 65535, None),
-    54: ("Cnt apagados SC", 0, 65535, None),
-    55: ("Estado inicial", 0, 2, None),
-    56: ("V inicial", 1920, 2800, None),
-    57: ("T máxima", 0, 550, None),
-    58: ("Dec T reenc", 0, 65535, None),
-    59: ("Cnt apagados ST", 0, 65535, None),
-    60: ("Tipo alimentación", 0, 1, None),
-    61: ("Vel Modbus", 0, 2, None),
-    62: ("Package transistores", 0, 1, None),
-    63: ("Ángulo cargas altas", 0, 179, None),
-    64: ("Ángulo cargas bajas", 0, 179, None),
-    65: ("% carga baja", 0, 100, None),
-    66: ("Sens transitorios", 0, 4, None),
-    67: ("Sens derivada", 0, 65535, None),
+# Constantes del firmware
+WORDS_CFG = 29
+FW_VERSION = 1401
+MAX_TENSION = 2800
+MIN_TENSION = 1100
+CONSIGNA_MIN = 80
+CONSIGNA_MAX = 120
+AUTOTRAFOP_MAX = 2800
+AUTOTRAFOP_MIN = 800
+TRAFOP_MAX = 3600
+TRAFOP_MIN = 1000
+TRAFOS_MAX = 1000
+TRAFOS_MIN = 60
+DT_MAX = 250
+DT_MIN = 3
+MODBUSAddressMax = 3
+MODBUSAddressMin = 1
+I_NOM_EMAX = 2500
+I_NOM_EMIN = 30
+I_NOM_CMAX = 250
+I_NOM_CMIN = 15
+FACTOR_I_MAX = 20
+LIMITEI_MIN = 1
+tiempo_apagado_CC_MAX = 300
+tiempo_apagado_CC_MIN = 1
+TempMaxH = 700
+TempMaxL = 450
+DecrementoTempMax = 120
+DecrementoTempMin = 50
+anguloCambio_MAX = 179
+anguloCambio_MIN = 0
+porcentajeCARGABAJA_MAX = 50
+porcentajeCARGABAJA_MIN = 1
+SDD_MAX = 6
+SDD_MIN = 0
+
+# Mapeo registro Modbus -> índice CConf
+REG_TO_CCONF = {
+    41: 0,   # Nº Serie -> CConf[0] (pero firmware usa WORDS_CFG=29)
+    42: 3,   # V nominal
+    43: 4,   # V prim autotrafo
+    44: 5,   # V sec autotrafo  
+    45: 6,   # V sec trafo
+    46: 7,   # Topología
+    47: 8,   # Dead-time
+    48: 9,   # Dir Modbus
+    49: 10,  # I nom salida
+    50: 11,  # I nom chopper
+    51: 12,  # I max chopper
+    52: 13,  # I max pico
+    53: 14,  # T apagado CC
+    54: 15,  # Cnt apagados SC
+    55: 16,  # Estado inicial
+    56: 17,  # V inicial (consigna)
+    57: 18,  # T máxima
+    58: 19,  # Dec T reenc
+    59: 20,  # Cnt apagados ST
+    60: 21,  # Tipo alimentación
+    61: 22,  # Vel Modbus
+    62: 23,  # Package transistores
+    63: 24,  # Ángulo cargas altas
+    64: 25,  # Ángulo cargas bajas
+    65: 26,  # % carga baja
+    66: 27,  # Sens transitorios
+    67: 28,  # Sens derivada
 }
+
+def leer_config(client, unit_id):
+    """Lee todos los registros de configuración y construye CConf"""
+    CConf = [0] * 29
+    CConf[0] = WORDS_CFG  # Constante del firmware
+    CConf[1] = FW_VERSION  # Constante del firmware
+    CConf[2] = 0  # Reservado
+    
+    for reg, idx in REG_TO_CCONF.items():
+        if idx in [0, 1, 2]:  # Ya asignados
+            continue
+        result = client.read_holding_registers(address=reg, count=1, slave=unit_id)
+        if not result.isError():
+            CConf[idx] = result.registers[0]
+    return CConf
+
+def VerificaTensionConsigna(tension, CConf):
+    aux = (CConf[3] * CONSIGNA_MIN) // 100
+    aux2 = (CConf[3] * CONSIGNA_MAX) // 100
+    if tension > MAX_TENSION or tension > aux2 or tension < aux:
+        return False
+    return True
+
+def compruebaConfig(CConf, verbose=True):
+    """Simula compruebaConfig() del firmware"""
+    errores = []
+    
+    # Línea 67: CConf[0] == WORDS_CFG
+    if CConf[0] != WORDS_CFG:
+        errores.append(f"CConf[0]={CConf[0]} != WORDS_CFG={WORDS_CFG}")
+    
+    # Línea 68: CConf[1] == FW_VERSION
+    if CConf[1] != FW_VERSION:
+        errores.append(f"CConf[1]={CConf[1]} != FW_VERSION={FW_VERSION}")
+    
+    # Línea 70: V nominal en rango
+    if CConf[3] > MAX_TENSION or CConf[3] < MIN_TENSION:
+        errores.append(f"CConf[3] (Vnominal)={CConf[3]} fuera de [{MIN_TENSION}-{MAX_TENSION}]")
+    
+    # Línea 71: V nominal múltiplo de 50
+    if CConf[3] % 50:
+        errores.append(f"CConf[3] (Vnominal)={CConf[3]} no es múltiplo de 50")
+    
+    # Línea 72: V prim autotrafo
+    if CConf[4] > AUTOTRAFOP_MAX or CConf[4] < AUTOTRAFOP_MIN:
+        errores.append(f"CConf[4] (Vprim autotrafo)={CConf[4]} fuera de [{AUTOTRAFOP_MIN}-{AUTOTRAFOP_MAX}]")
+    
+    # Línea 73: V sec autotrafo
+    if CConf[5] > TRAFOP_MAX or CConf[5] < TRAFOP_MIN:
+        errores.append(f"CConf[5] (Vsec autotrafo)={CConf[5]} fuera de [{TRAFOP_MIN}-{TRAFOP_MAX}]")
+    
+    # Línea 74: V sec trafo
+    if CConf[6] > TRAFOS_MAX or CConf[6] < TRAFOS_MIN:
+        errores.append(f"CConf[6] (Vsec trafo)={CConf[6]} fuera de [{TRAFOS_MIN}-{TRAFOS_MAX}]")
+    
+    # Línea 75: Topología
+    if CConf[7] < 0 or CConf[7] > 4:
+        errores.append(f"CConf[7] (Topología)={CConf[7]} fuera de [0-4]")
+    
+    # Línea 76: Dead-time
+    if CConf[8] > DT_MAX or CConf[8] < DT_MIN:
+        errores.append(f"CConf[8] (Dead-time)={CConf[8]} fuera de [{DT_MIN}-{DT_MAX}]")
+    
+    # Línea 77: Dir Modbus
+    if CConf[9] > MODBUSAddressMax or CConf[9] < MODBUSAddressMin:
+        errores.append(f"CConf[9] (Dir Modbus)={CConf[9]} fuera de [{MODBUSAddressMin}-{MODBUSAddressMax}]")
+    
+    # Línea 78: I nom salida
+    if CConf[10] > I_NOM_EMAX or CConf[10] < I_NOM_EMIN:
+        errores.append(f"CConf[10] (I nom salida)={CConf[10]} fuera de [{I_NOM_EMIN}-{I_NOM_EMAX}]")
+    
+    # Línea 79: I nom chopper
+    if CConf[11] > I_NOM_CMAX or CConf[11] < I_NOM_CMIN:
+        errores.append(f"CConf[11] (I nom chopper)={CConf[11]} fuera de [{I_NOM_CMIN}-{I_NOM_CMAX}]")
+    
+    # Línea 82: I max chopper
+    aux = CConf[11] * FACTOR_I_MAX
+    if CConf[12] > aux or CConf[12] < (LIMITEI_MIN * 10):
+        errores.append(f"CConf[12] (I max chopper)={CConf[12]} fuera de [10-{aux}]")
+    
+    # Línea 83: I max pico
+    if CConf[13] > aux or CConf[13] < (LIMITEI_MIN * 10):
+        errores.append(f"CConf[13] (I max pico)={CConf[13]} fuera de [10-{aux}]")
+    
+    # Línea 84: T apagado CC
+    if CConf[14] > tiempo_apagado_CC_MAX or CConf[14] < tiempo_apagado_CC_MIN:
+        errores.append(f"CConf[14] (T apagado CC)={CConf[14]} fuera de [{tiempo_apagado_CC_MIN}-{tiempo_apagado_CC_MAX}]")
+    
+    # Línea 86: Estado inicial
+    if CConf[16] != 0 and CConf[16] != 2:
+        errores.append(f"CConf[16] (Estado inicial)={CConf[16]} debe ser 0 o 2")
+    
+    # Línea 87: V inicial (consigna) - VerificaTensionConsigna
+    if not VerificaTensionConsigna(CConf[17], CConf):
+        vmin = (CConf[3] * CONSIGNA_MIN) // 100
+        vmax = (CConf[3] * CONSIGNA_MAX) // 100
+        errores.append(f"CConf[17] (V inicial)={CConf[17]} fuera de rango consigna [{vmin}-{vmax}]")
+    
+    # Línea 88: T máxima
+    if CConf[18] > TempMaxH or CConf[18] < TempMaxL:
+        errores.append(f"CConf[18] (T máxima)={CConf[18]} fuera de [{TempMaxL}-{TempMaxH}]")
+    
+    # Línea 89: Dec T reenc
+    if CConf[19] > DecrementoTempMax or CConf[19] < DecrementoTempMin:
+        errores.append(f"CConf[19] (Dec T reenc)={CConf[19]} fuera de [{DecrementoTempMin}-{DecrementoTempMax}]")
+    
+    # Línea 91: Tipo alimentación
+    if CConf[21] != 0 and CConf[21] != 1:
+        errores.append(f"CConf[21] (Tipo alimentación)={CConf[21]} debe ser 0 o 1")
+    
+    # Línea 92: Vel Modbus
+    if CConf[22] not in [0, 1, 2]:
+        errores.append(f"CConf[22] (Vel Modbus)={CConf[22]} debe ser 0, 1 o 2")
+    
+    # Línea 93: Package transistores
+    if CConf[23] != 0 and CConf[23] != 1:
+        errores.append(f"CConf[23] (Package transistores)={CConf[23]} debe ser 0 o 1")
+    
+    # Línea 94: Ángulo cargas altas
+    if CConf[24] > anguloCambio_MAX or CConf[24] < anguloCambio_MIN:
+        errores.append(f"CConf[24] (Ángulo cargas altas)={CConf[24]} fuera de [{anguloCambio_MIN}-{anguloCambio_MAX}]")
+    
+    # Línea 95: Ángulo cargas bajas
+    if CConf[25] > anguloCambio_MAX or CConf[25] < anguloCambio_MIN:
+        errores.append(f"CConf[25] (Ángulo cargas bajas)={CConf[25]} fuera de [{anguloCambio_MIN}-{anguloCambio_MAX}]")
+    
+    # Línea 96: % carga baja
+    if CConf[26] > porcentajeCARGABAJA_MAX or CConf[26] < porcentajeCARGABAJA_MIN:
+        errores.append(f"CConf[26] (% carga baja)={CConf[26]} fuera de [{porcentajeCARGABAJA_MIN}-{porcentajeCARGABAJA_MAX}]")
+    
+    # Línea 97: Sens transitorios
+    if CConf[27] > 4:
+        errores.append(f"CConf[27] (Sens transitorios)={CConf[27]} debe ser <= 4")
+    
+    # Línea 98: Sens derivada
+    if CConf[28] > SDD_MAX or CConf[28] < SDD_MIN:
+        errores.append(f"CConf[28] (Sens derivada)={CConf[28]} fuera de [{SDD_MIN}-{SDD_MAX}]")
+    
+    return errores
 
 print("  Leyendo configuración de las 3 placas...")
 print("")
 
+# Pedir valor a probar
+valor_test = input("  Valor a probar para reg 56 (V inicial) [ej: 2350]: ").strip()
+if valor_test:
+    valor_test = int(valor_test)
+else:
+    valor_test = None
+
 for unit_id in [1, 2, 3]:
     fase = f"L{unit_id}"
-    print(f"  ══════════════════════════════════════════════")
+    print(f"\n  ══════════════════════════════════════════════")
     print(f"  PLACA {fase}")
     print(f"  ══════════════════════════════════════════════")
     
-    errores = []
+    CConf = leer_config(client, unit_id)
     
-    for reg, (nombre, min_val, max_val, _) in LIMITES.items():
-        result = client.read_holding_registers(address=reg, count=1, slave=unit_id)
-        if result.isError():
-            print(f"  [X] Reg {reg:2d} ({nombre}): Error de lectura")
-            continue
-        
-        valor = result.registers[0]
-        
-        if min_val <= valor <= max_val:
-            estado = "OK"
-        else:
-            estado = f"FUERA DE LÍMITES [{min_val}-{max_val}]"
-            errores.append((reg, nombre, valor, min_val, max_val))
-        
-        if estado != "OK":
-            print(f"  [!] Reg {reg:2d} ({nombre:20s}): {valor:6d}  ← {estado}")
+    print(f"\n  Valores actuales:")
+    print(f"    Reg 42 (V nominal):  {CConf[3]} dV ({CConf[3]/10:.0f}V)")
+    print(f"    Reg 56 (V inicial):  {CConf[17]} dV ({CConf[17]/10:.0f}V)")
     
+    vmin = (CConf[3] * CONSIGNA_MIN) // 100
+    vmax = (CConf[3] * CONSIGNA_MAX) // 100
+    print(f"    Rango V inicial:     [{vmin}-{vmax}] dV ({vmin/10:.0f}V-{vmax/10:.0f}V)")
+    
+    # Test 1: Configuración actual
+    print(f"\n  TEST 1: Validación con valores actuales")
+    errores = compruebaConfig(CConf)
     if errores:
-        print("")
-        print(f"  ⚠️  {len(errores)} PARÁMETROS FUERA DE LÍMITES:")
-        for reg, nombre, valor, min_v, max_v in errores:
-            print(f"      Reg {reg}: {nombre} = {valor} (debe ser {min_v}-{max_v})")
+        print(f"  [X] FALLO - {len(errores)} errores:")
+        for e in errores:
+            print(f"      - {e}")
     else:
-        print(f"  [OK] Todos los parámetros dentro de límites")
+        print(f"  [OK] Configuración actual válida")
     
-    print("")
+    # Test 2: Con valor de prueba
+    if valor_test:
+        print(f"\n  TEST 2: Validación con V inicial = {valor_test}")
+        CConf_test = CConf.copy()
+        CConf_test[17] = valor_test
+        errores = compruebaConfig(CConf_test)
+        if errores:
+            print(f"  [X] FALLO - {len(errores)} errores:")
+            for e in errores:
+                print(f"      - {e}")
+        else:
+            print(f"  [OK] Valor {valor_test} pasaría la validación")
+    
     time.sleep(0.2)
 
 client.close()
-print("  [OK] Diagnóstico completado")
+print("\n  [OK] Diagnóstico completado")
 EOFDIAG
                     
                     echo ""
