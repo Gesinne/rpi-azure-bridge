@@ -2281,6 +2281,20 @@ valor = $WRITE_VAL
 for unit_id, fase in zip(unit_ids, fases):
     print(f"  [M] Escribiendo en {fase}...")
     
+    # Si es registro de configuración (40-69), activar flag de escritura (reg 40 = 47818)
+    if 40 <= reg_num <= 69:
+        # Leer valor actual del flag
+        flag_read = client.read_holding_registers(address=40, count=1, slave=unit_id)
+        if not flag_read.isError() and flag_read.registers[0] == 47818:
+            print(f"      Flag configuración ya activo (reg 40 = 47818)")
+        else:
+            flag_result = client.write_register(address=40, value=47818, slave=unit_id)
+            if flag_result.isError():
+                print(f"  [X] Error activando flag de configuración en {fase}")
+                continue
+            print(f"      Flag configuración activado (reg 40 = 47818)")
+            time.sleep(0.1)
+    
     # Si es registro 56, primero poner en bypass (reg 31 = 0)
     estado_anterior_31 = None
     if reg_num == 56:
