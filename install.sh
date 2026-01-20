@@ -2281,9 +2281,26 @@ valor = $WRITE_VAL
 for unit_id, fase in zip(unit_ids, fases):
     print(f"  [M] Escribiendo en {fase}...")
     
-    # Si es registro de configuración (40-69), activar flag de escritura (reg 40 = 47818)
-    if 40 <= reg_num <= 69:
-        # Leer valor actual del flag
+    # Si es registro 56: bypass → flag → escribir
+    estado_anterior_31 = None
+    if reg_num == 56:
+        # 1. Primero poner en bypass (reg 31 = 0)
+        reg31_result = client.read_holding_registers(address=31, count=1, slave=unit_id)
+        if not reg31_result.isError():
+            estado_anterior_31 = reg31_result.registers[0]
+            print(f"      Estado anterior reg 31: {estado_anterior_31}")
+        
+        if estado_anterior_31 != 0:
+            bypass_result = client.write_register(address=31, value=0, slave=unit_id)
+            if bypass_result.isError():
+                print(f"  [X] Error poniendo en bypass {fase}")
+                continue
+            print(f"      Bypass aplicado (reg 31 = 0)")
+            time.sleep(0.1)
+        else:
+            print(f"      Ya está en bypass (reg 31 = 0)")
+        
+        # 2. Luego activar flag de configuración (reg 40 = 47818)
         flag_read = client.read_holding_registers(address=40, count=1, slave=unit_id)
         if not flag_read.isError() and flag_read.registers[0] == 47818:
             print(f"      Flag configuración ya activo (reg 40 = 47818)")
@@ -2295,25 +2312,18 @@ for unit_id, fase in zip(unit_ids, fases):
             print(f"      Flag configuración activado (reg 40 = 47818)")
             time.sleep(0.1)
     
-    # Si es registro 56, primero poner en bypass (reg 31 = 0)
-    estado_anterior_31 = None
-    if reg_num == 56:
-        # Leer estado actual del registro 31
-        reg31_result = client.read_holding_registers(address=31, count=1, slave=unit_id)
-        if not reg31_result.isError():
-            estado_anterior_31 = reg31_result.registers[0]
-            print(f"      Estado anterior reg 31: {estado_anterior_31}")
-        
-        # Solo poner en bypass si no está ya en 0
-        if estado_anterior_31 != 0:
-            bypass_result = client.write_register(address=31, value=0, slave=unit_id)
-            if bypass_result.isError():
-                print(f"  [X] Error poniendo en bypass {fase}")
-                continue
-            print(f"      Bypass aplicado (reg 31 = 0)")
-            time.sleep(0.1)
+    # Para otros registros de configuración (40-69), solo activar flag
+    elif 40 <= reg_num <= 69:
+        flag_read = client.read_holding_registers(address=40, count=1, slave=unit_id)
+        if not flag_read.isError() and flag_read.registers[0] == 47818:
+            print(f"      Flag configuración ya activo (reg 40 = 47818)")
         else:
-            print(f"      Ya está en bypass (reg 31 = 0)")
+            flag_result = client.write_register(address=40, value=47818, slave=unit_id)
+            if flag_result.isError():
+                print(f"  [X] Error activando flag de configuración en {fase}")
+                continue
+            print(f"      Flag configuración activado (reg 40 = 47818)")
+            time.sleep(0.1)
     
     # Leer valor actual
     read_result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
