@@ -88,13 +88,21 @@ if [ "$1" != "--updated" ]; then
     
     # Copiar y configurar script de alerta de reinicio
     if [ -f "$INSTALL_DIR/alerta_reinicio.sh" ]; then
-        cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
-        chmod +x /usr/local/bin/alerta_reinicio.sh
-        
-        # Añadir a crontab @reboot si no existe
-        CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
-        (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
-        echo "  [OK] Script alerta_reinicio.sh instalado"
+        if [ -f /usr/local/bin/alerta_reinicio.sh ] && crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
+            # Ya instalado, solo actualizar el script
+            cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
+            chmod +x /usr/local/bin/alerta_reinicio.sh
+            echo "  [OK] Script alerta_reinicio.sh actualizado (ya estaba instalado)"
+        else
+            # Primera instalación
+            cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
+            chmod +x /usr/local/bin/alerta_reinicio.sh
+            
+            # Añadir a crontab @reboot si no existe
+            CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
+            (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
+            echo "  [OK] Script alerta_reinicio.sh instalado"
+        fi
     fi
     
     # Ejecutar el script del repo con marca de actualizado
