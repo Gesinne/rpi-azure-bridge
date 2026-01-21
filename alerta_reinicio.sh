@@ -18,6 +18,9 @@ if [ $WAITED -ge $MAX_WAIT ]; then
     exit 1
 fi
 
+# Esperar un poco más para asegurar que el sistema de archivos esté listo
+sleep 5
+
 # Configuración
 HORA_PROGRAMADA="23:30"
 VENTANA_MINUTOS=5  # Tolerancia de +/- 5 minutos
@@ -26,13 +29,34 @@ VENTANA_MINUTOS=5  # Tolerancia de +/- 5 minutos
 SMTP_TO="patricia.garcia@gesinne.com,victorbarrero@gesinne.com,joseluis.nicolas@gesinne.com"
 
 # Obtener número de serie del equipo desde equipo_config.json
-if [ -f /home/gesinne/config/equipo_config.json ]; then
-    SERIAL=$(python3 -c "import json; print(json.load(open('/home/gesinne/config/equipo_config.json')).get('serie', 'DESCONOCIDO'))" 2>/dev/null || echo "DESCONOCIDO")
-elif [ -f /home/pi/config/equipo_config.json ]; then
-    SERIAL=$(python3 -c "import json; print(json.load(open('/home/pi/config/equipo_config.json')).get('serie', 'DESCONOCIDO'))" 2>/dev/null || echo "DESCONOCIDO")
-else
-    SERIAL="DESCONOCIDO"
+# Intentar varias veces por si el sistema de archivos no está listo
+SERIAL="DESCONOCIDO"
+for i in 1 2 3; do
+    if [ -f /home/gesinne/config/equipo_config.json ]; then
+        SERIAL=$(python3 -c "import json; print(json.load(open('/home/gesinne/config/equipo_config.json')).get('serie', 'DESCONOCIDO'))" 2>/dev/null)
+        if [ -n "$SERIAL" ] && [ "$SERIAL" != "DESCONOCIDO" ]; then
+            break
+        fi
+    elif [ -f /home/pi/config/equipo_config.json ]; then
+        SERIAL=$(python3 -c "import json; print(json.load(open('/home/pi/config/equipo_config.json')).get('serie', 'DESCONOCIDO'))" 2>/dev/null)
+        if [ -n "$SERIAL" ] && [ "$SERIAL" != "DESCONOCIDO" ]; then
+            break
+        fi
+    fi
+    sleep 2
+done
+
+# Si sigue sin encontrar, intentar con cat y grep como fallback
+if [ "$SERIAL" = "DESCONOCIDO" ] || [ -z "$SERIAL" ]; then
+    if [ -f /home/gesinne/config/equipo_config.json ]; then
+        SERIAL=$(grep -o '"serie"[[:space:]]*:[[:space:]]*"[^"]*"' /home/gesinne/config/equipo_config.json 2>/dev/null | cut -d'"' -f4)
+    elif [ -f /home/pi/config/equipo_config.json ]; then
+        SERIAL=$(grep -o '"serie"[[:space:]]*:[[:space:]]*"[^"]*"' /home/pi/config/equipo_config.json 2>/dev/null | cut -d'"' -f4)
+    fi
 fi
+
+# Valor por defecto si todo falla
+SERIAL=${SERIAL:-DESCONOCIDO}
 
 # Obtener hora actual
 HORA_ACTUAL=$(date +%H:%M)
