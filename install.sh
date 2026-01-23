@@ -2757,14 +2757,7 @@ EOFDIAG
                     echo "  ═══════════════════════════════════════════════"
                     echo ""
                     
-                    echo "  [!] Parando Node-RED..."
-                    sudo systemctl stop nodered 2>/dev/null
-                    docker stop gesinne-rpi >/dev/null 2>&1 || true
-                    sleep 2
-                    echo "  [OK] Servicios parados"
-                    echo ""
-                    
-                    # Ejecutar oscilación en Python
+                    # Ejecutar oscilación en Python (sin parar Node-RED)
                     python3 << EOFOSCILA
 import sys
 import time
@@ -2859,10 +2852,6 @@ print("")
 print(f"  [OK] Oscilación detenida tras {ciclo} ciclos")
 client.close()
 EOFOSCILA
-                    
-                    echo ""
-                    echo "  [!] Node-RED NO se reinicia automáticamente (modo prueba)"
-                    echo "  Para reiniciar manualmente: sudo systemctl start nodered"
                     
                     volver_menu
                     continue
