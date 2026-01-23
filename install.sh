@@ -2861,7 +2861,8 @@ for unit_id in [1, 2, 3]:
     else:
         print(f"      Valor anterior: no se pudo leer (sin respuesta)")
     
-    # Activar flag de escritura (reg 30 = 43981) con reintentos
+    # Intentar activar flag de escritura (reg 30 = 43981)
+    # Si falla, intentar escribir de todos modos
     flag_ok = False
     for intento in range(MAX_REINTENTOS):
         flag_result = client.write_register(address=30, value=FLAG_ESCRITURA, slave=unit_id)
@@ -2870,10 +2871,10 @@ for unit_id in [1, 2, 3]:
             break
         time.sleep(0.2)
     
-    if not flag_ok:
-        print(f"  [X] Error activando flag escritura en {fase} (sin respuesta tras {MAX_REINTENTOS} intentos)")
-        continue
-    print(f"      Flag escritura activado (reg 30 = {FLAG_ESCRITURA})")
+    if flag_ok:
+        print(f"      Flag escritura activado (reg 30 = {FLAG_ESCRITURA})")
+    else:
+        print(f"      [!] Flag no respondió, intentando escribir de todos modos...")
     time.sleep(0.1)
     
     # Escribir nuevo valor con reintentos
