@@ -2715,55 +2715,61 @@ EOFDIAG
                     continue
                     ;;
                 10)
-                    # Cambiar tensión de consigna (reg 32) en las 3 placas - MODO CONTINUO
+                    # Cambiar tensión de consigna (reg 32) en las 3 placas - MODO OSCILACIÓN
                     echo ""
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo "  Cambiar tensión de consigna (Registro 32)"
+                    echo "  MODO OSCILACIÓN CONTINUA"
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
-                    echo "  Este registro controla la tensión de consigna en tiempo real."
-                    echo "  El valor se escribe en las 3 placas (L1, L2, L3)."
+                    echo "  Este modo alterna entre dos valores de tensión continuamente."
                     echo "  Unidad: deciVoltios (ej: 2200 = 220V, 2300 = 230V)"
                     echo ""
+                    
+                    # Pedir valor 1
+                    read -p "  Valor 1 en dV (ej: 2200): " VALOR_1
+                    if [ -z "$VALOR_1" ] || ! [[ "$VALOR_1" =~ ^[0-9]+$ ]]; then
+                        echo "  [X] Valor no válido"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    # Pedir valor 2
+                    read -p "  Valor 2 en dV (ej: 2300): " VALOR_2
+                    if [ -z "$VALOR_2" ] || ! [[ "$VALOR_2" =~ ^[0-9]+$ ]]; then
+                        echo "  [X] Valor no válido"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    # Pedir intervalo
+                    read -p "  Intervalo en segundos entre cambios [5]: " INTERVALO
+                    INTERVALO=${INTERVALO:-5}
+                    if ! [[ "$INTERVALO" =~ ^[0-9]+$ ]]; then
+                        INTERVALO=5
+                    fi
+                    
+                    echo ""
+                    echo "  ═══════════════════════════════════════════════"
+                    echo "  Oscilando entre $VALOR_1 dV y $VALOR_2 dV"
+                    echo "  Intervalo: $INTERVALO segundos"
+                    echo "  Pulsa Ctrl+C para detener"
+                    echo "  ═══════════════════════════════════════════════"
+                    echo ""
+                    
                     echo "  [!] Parando Node-RED..."
                     sudo systemctl stop nodered 2>/dev/null
                     docker stop gesinne-rpi >/dev/null 2>&1 || true
                     sleep 2
                     echo "  [OK] Servicios parados"
                     echo ""
-                    echo "  ═══════════════════════════════════════════════"
-                    echo "  MODO CONTINUO - Escribe 'salir' o Enter vacío para terminar"
-                    echo "  ═══════════════════════════════════════════════"
-                    echo ""
                     
-                    # Bucle continuo para cambiar valores
-                    while true; do
-                        read -p "  Nuevo valor en dV (ej: 2200) [salir]: " NUEVO_VALOR_CONSIGNA
-                        
-                        # Salir si está vacío o es "salir"
-                        if [ -z "$NUEVO_VALOR_CONSIGNA" ] || [[ "$NUEVO_VALOR_CONSIGNA" =~ ^[sS]alir$ ]]; then
-                            echo ""
-                            echo "  [~] Saliendo del modo continuo..."
-                            break
-                        fi
-                        
-                        # Validar numérico
-                        if ! [[ "$NUEVO_VALOR_CONSIGNA" =~ ^[0-9]+$ ]]; then
-                            echo "  [X] Valor no válido (debe ser numérico)"
-                            continue
-                        fi
-                        
-                        # Validar rango
-                        if [ "$NUEVO_VALOR_CONSIGNA" -lt 1100 ] || [ "$NUEVO_VALOR_CONSIGNA" -gt 2800 ]; then
-                            echo "  [X] Valor $NUEVO_VALOR_CONSIGNA fuera de rango (1100-2800 dV)"
-                            continue
-                        fi
-                        
-                        echo "  [M] Escribiendo $NUEVO_VALOR_CONSIGNA dV ($(echo "scale=1; $NUEVO_VALOR_CONSIGNA/10" | bc) V) en L1, L2, L3..."
-                    
-                    python3 << EOFCONSIGNA
+                    # Ejecutar oscilación en Python
+                    python3 << EOFOSCILA
 import sys
 import time
+import signal
+
 try:
     from pymodbus.client import ModbusSerialClient
 except ImportError:
@@ -2774,6 +2780,16 @@ except ImportError:
         sys.exit(1)
 
 import os
+
+# Manejar Ctrl+C
+running = True
+def signal_handler(sig, frame):
+    global running
+    running = False
+    print("\n  [~] Deteniendo oscilación...")
+
+signal.signal(signal.SIGINT, signal_handler)
+
 port = None
 for p in ['/dev/ttyAMA0', '/dev/serial0', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyS0']:
     if os.path.exists(p):
@@ -2784,128 +2800,65 @@ if not port:
     print("  [X] No se encontró puerto serie")
     sys.exit(1)
 
-# Probar diferentes baudrates
-BAUDRATES = [115200, 57600, 9600]
-client = None
-connected_baudrate = None
+client = ModbusSerialClient(
+    port=port,
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
 
-for baudrate in BAUDRATES:
-    try:
-        client = ModbusSerialClient(
-            port=port,
-            baudrate=baudrate,
-            bytesize=8,
-            parity='N',
-            stopbits=1,
-            timeout=1
-        )
-        if client.connect():
-            # Probar lectura para verificar comunicación
-            test = client.read_holding_registers(address=0, count=1, slave=1)
-            if not test.isError():
-                connected_baudrate = baudrate
-                break
-            client.close()
-    except:
-        pass
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
 
-if not connected_baudrate:
-    # Usar 115200 por defecto si no se pudo detectar
-    client = ModbusSerialClient(
-        port=port,
-        baudrate=115200,
-        bytesize=8,
-        parity='N',
-        stopbits=1,
-        timeout=2
-    )
-    if not client.connect():
-        print("  [X] No se pudo conectar al puerto serie")
-        sys.exit(1)
-    connected_baudrate = 115200
-
-print(f"  [OK] Conectado a {port} @ {connected_baudrate} baud")
+print(f"  [OK] Conectado a {port}")
 print("")
 
-nuevo_valor = $NUEVO_VALOR_CONSIGNA
+valor_1 = $VALOR_1
+valor_2 = $VALOR_2
+intervalo = $INTERVALO
 FLAG_ESCRITURA = 43981
 
-# Escribir en las 3 placas
-exitos = 0
-MAX_REINTENTOS = 3
+valores = [valor_1, valor_2]
+idx = 0
+ciclo = 0
 
-for unit_id in [1, 2, 3]:
-    fase = f"L{unit_id}"
-    print(f"  [M] Escribiendo en {fase}...")
+while running:
+    nuevo_valor = valores[idx]
+    ciclo += 1
+    print(f"  [{ciclo}] Escribiendo {nuevo_valor} dV ({nuevo_valor/10:.1f} V)...")
     
-    # Leer valor anterior con reintentos
-    val_anterior = None
-    for intento in range(MAX_REINTENTOS):
-        read_result = client.read_holding_registers(address=32, count=1, slave=unit_id)
-        if not read_result.isError():
-            val_anterior = read_result.registers[0]
-            break
-        time.sleep(0.2)
-    
-    if val_anterior is not None:
-        print(f"      Valor anterior: {val_anterior} dV ({val_anterior/10:.1f} V)")
-    else:
-        print(f"      Valor anterior: no se pudo leer (sin respuesta)")
-    
-    # Activar flag de escritura (reg 30 = 43981)
-    flag_ok = False
-    for intento in range(MAX_REINTENTOS):
-        flag_result = client.write_register(address=30, value=FLAG_ESCRITURA, slave=unit_id)
-        if not flag_result.isError():
-            flag_ok = True
-            break
-        time.sleep(0.2)
-    
-    if flag_ok:
-        print(f"      Flag escritura activado (reg 30 = {FLAG_ESCRITURA})")
-    else:
-        print(f"      [!] Flag no respondió, intentando escribir de todos modos...")
-    time.sleep(0.1)
-    
-    # Escribir nuevo valor en registro 32 con reintentos
-    write_ok = False
-    for intento in range(MAX_REINTENTOS):
-        write_result = client.write_register(address=32, value=nuevo_valor, slave=unit_id)
-        if not write_result.isError():
-            write_ok = True
-            break
-        time.sleep(0.2)
-    
-    if not write_ok:
-        print(f"  [X] Error escribiendo en {fase} (sin respuesta tras {MAX_REINTENTOS} intentos)")
-        continue
-    
-    time.sleep(0.1)
-    
-    # Verificar escritura
-    verify_result = client.read_holding_registers(address=32, count=1, slave=unit_id)
-    if not verify_result.isError():
-        valor_verificado = verify_result.registers[0]
-        if valor_verificado == nuevo_valor:
-            print(f"  [OK] {fase}: Escrito correctamente (verificado: {valor_verificado})")
+    exitos = 0
+    for unit_id in [1, 2, 3]:
+        # Activar flag
+        client.write_register(address=30, value=FLAG_ESCRITURA, slave=unit_id)
+        time.sleep(0.05)
+        # Escribir valor
+        result = client.write_register(address=32, value=nuevo_valor, slave=unit_id)
+        if not result.isError():
             exitos += 1
-        else:
-            print(f"  [!] {fase}: Verificación fallida (esperado {nuevo_valor}, leído {valor_verificado})")
-    else:
-        print(f"  [!] {fase}: No se pudo verificar")
+        time.sleep(0.05)
     
-    time.sleep(0.2)
+    if exitos == 3:
+        print(f"      [OK] L1, L2, L3 = {nuevo_valor} dV")
+    else:
+        print(f"      [!] Solo {exitos}/3 placas")
+    
+    # Alternar valor
+    idx = 1 - idx
+    
+    # Esperar intervalo
+    for _ in range(intervalo * 10):
+        if not running:
+            break
+        time.sleep(0.1)
 
 print("")
-if exitos == 3:
-    print(f"  [OK] Tensión de consigna cambiada a {nuevo_valor} dV ({nuevo_valor/10:.1f} V) en las 3 placas")
-else:
-    print(f"  [!] Solo se escribió correctamente en {exitos}/3 placas")
-
+print(f"  [OK] Oscilación detenida tras {ciclo} ciclos")
 client.close()
-EOFCONSIGNA
-                        echo ""
-                    done
+EOFOSCILA
                     
                     echo ""
                     echo "  [!] Node-RED NO se reinicia automáticamente (modo prueba)"
