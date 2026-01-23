@@ -1608,9 +1608,10 @@ if chronos_id:
             echo "  7) Enviar parámetros por EMAIL"
             echo "  8) Escribir registro"
             echo "  9) Diagnóstico configuración (límites)"
+            echo "  10) Cambiar tensión consigna (reg 37) - 3 placas"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-9]: " TARJETA
+            read -p "  Opción [0-10]: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
@@ -2709,6 +2710,170 @@ EOFDIAG
                     sudo systemctl start nodered
                     docker start gesinne-rpi 2>/dev/null || true
                     echo "  [OK] Listo"
+                    
+                    volver_menu
+                    continue
+                    ;;
+                10)
+                    # Cambiar tensión de consigna (reg 37) en las 3 placas
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Cambiar tensión de consigna (Registro 37)"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  Este registro controla la tensión de consigna en tiempo real."
+                    echo "  El valor se escribe en las 3 placas (L1, L2, L3)."
+                    echo "  Unidad: deciVoltios (ej: 2200 = 220V, 2300 = 230V)"
+                    echo ""
+                    echo "  [!] Parando Node-RED temporalmente..."
+                    sudo systemctl stop nodered 2>/dev/null
+                    docker stop gesinne-rpi >/dev/null 2>&1 || true
+                    sleep 2
+                    echo "  [OK] Servicios parados"
+                    echo ""
+                    
+                    python3 << 'EOFCONSIGNA'
+import sys
+import time
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+import os
+port = None
+for p in ['/dev/ttyAMA0', '/dev/serial0', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyS0']:
+    if os.path.exists(p):
+        port = p
+        break
+
+if not port:
+    print("  [X] No se encontró puerto serie")
+    sys.exit(1)
+
+client = ModbusSerialClient(
+    port=port,
+    baudrate=115200,
+    bytesize=8,
+    parity='N',
+    stopbits=1,
+    timeout=1
+)
+
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+print(f"  [OK] Conectado a {port}")
+print("")
+
+# Leer valores actuales de las 3 placas
+print("  ┌─────────────────────────────────────────────────────────┐")
+print("  │  VALORES ACTUALES - Registro 37 (Tensión consigna)     │")
+print("  ├─────────────────────────────────────────────────────────┤")
+
+valores_actuales = {}
+for unit_id in [1, 2, 3]:
+    fase = f"L{unit_id}"
+    result = client.read_holding_registers(address=37, count=1, slave=unit_id)
+    if not result.isError():
+        val = result.registers[0]
+        valores_actuales[unit_id] = val
+        print(f"  │  {fase}: {val} dV ({val/10:.1f} V)                              │"[:60] + "│")
+    else:
+        valores_actuales[unit_id] = None
+        print(f"  │  {fase}: ERROR de lectura                                │"[:60] + "│")
+    time.sleep(0.1)
+
+print("  └─────────────────────────────────────────────────────────┘")
+print("")
+
+# Pedir nuevo valor
+try:
+    nuevo_valor = input("  Nuevo valor en deciVoltios (ej: 2200 para 220V): ").strip()
+    if not nuevo_valor:
+        print("  [X] Cancelado - no se introdujo valor")
+        client.close()
+        sys.exit(0)
+    
+    nuevo_valor = int(nuevo_valor)
+    
+    # Validar rango básico (110V - 280V)
+    if nuevo_valor < 1100 or nuevo_valor > 2800:
+        print(f"  [X] Valor {nuevo_valor} fuera de rango (1100-2800 dV)")
+        client.close()
+        sys.exit(1)
+    
+    print("")
+    print(f"  ⚠️  CONFIRMACIÓN")
+    print(f"  ────────────────────────────────────────")
+    print(f"  Nuevo valor: {nuevo_valor} dV ({nuevo_valor/10:.1f} V)")
+    print(f"  Se escribirá en: L1, L2, L3")
+    print(f"  ────────────────────────────────────────")
+    print("")
+    
+    confirmar = input("  ¿Confirmar escritura? (s/N): ").strip().lower()
+    if confirmar != 's':
+        print("  [X] Escritura cancelada")
+        client.close()
+        sys.exit(0)
+    
+    print("")
+    
+    # Escribir en las 3 placas
+    exitos = 0
+    for unit_id in [1, 2, 3]:
+        fase = f"L{unit_id}"
+        print(f"  [M] Escribiendo en {fase}...")
+        
+        # Leer valor anterior
+        val_anterior = valores_actuales.get(unit_id, "?")
+        print(f"      Valor anterior: {val_anterior}")
+        
+        # Escribir nuevo valor
+        write_result = client.write_register(address=37, value=nuevo_valor, slave=unit_id)
+        
+        if write_result.isError():
+            print(f"  [X] Error escribiendo en {fase}: {write_result}")
+            continue
+        
+        time.sleep(0.1)
+        
+        # Verificar escritura
+        verify_result = client.read_holding_registers(address=37, count=1, slave=unit_id)
+        if not verify_result.isError():
+            valor_verificado = verify_result.registers[0]
+            if valor_verificado == nuevo_valor:
+                print(f"  [OK] {fase}: Escrito correctamente (verificado: {valor_verificado})")
+                exitos += 1
+            else:
+                print(f"  [!] {fase}: Verificación fallida (esperado {nuevo_valor}, leído {valor_verificado})")
+        else:
+            print(f"  [!] {fase}: No se pudo verificar")
+        
+        time.sleep(0.1)
+    
+    print("")
+    if exitos == 3:
+        print(f"  [OK] Tensión de consigna cambiada a {nuevo_valor} dV ({nuevo_valor/10:.1f} V) en las 3 placas")
+    else:
+        print(f"  [!] Solo se escribió correctamente en {exitos}/3 placas")
+
+except ValueError:
+    print("  [X] Valor no válido (debe ser numérico)")
+except KeyboardInterrupt:
+    print("\n  [X] Cancelado")
+
+client.close()
+EOFCONSIGNA
+                    
+                    echo ""
+                    echo "  [!] Node-RED NO se reinicia automáticamente (modo prueba)"
+                    echo "  Para reiniciar manualmente: sudo systemctl start nodered"
                     
                     volver_menu
                     continue
