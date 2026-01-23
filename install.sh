@@ -2725,6 +2725,44 @@ EOFDIAG
                     echo "  El valor se escribe en las 3 placas (L1, L2, L3)."
                     echo "  Unidad: deciVoltios (ej: 2200 = 220V, 2300 = 230V)"
                     echo ""
+                    
+                    # Pedir valor ANTES de parar Node-RED
+                    read -p "  Nuevo valor en deciVoltios (ej: 2200 para 220V): " NUEVO_VALOR_CONSIGNA
+                    
+                    if [ -z "$NUEVO_VALOR_CONSIGNA" ]; then
+                        echo "  [X] Cancelado - no se introdujo valor"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    if ! [[ "$NUEVO_VALOR_CONSIGNA" =~ ^[0-9]+$ ]]; then
+                        echo "  [X] Valor no válido (debe ser numérico)"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    if [ "$NUEVO_VALOR_CONSIGNA" -lt 1100 ] || [ "$NUEVO_VALOR_CONSIGNA" -gt 2800 ]; then
+                        echo "  [X] Valor $NUEVO_VALOR_CONSIGNA fuera de rango (1100-2800 dV)"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    echo ""
+                    echo "  ⚠️  CONFIRMACIÓN"
+                    echo "  ────────────────────────────────────────"
+                    echo "  Nuevo valor: $NUEVO_VALOR_CONSIGNA dV ($(echo "scale=1; $NUEVO_VALOR_CONSIGNA/10" | bc) V)"
+                    echo "  Se escribirá en: L1, L2, L3"
+                    echo "  ────────────────────────────────────────"
+                    echo ""
+                    read -p "  ¿Confirmar escritura? (s/N): " CONFIRMAR_CONSIGNA
+                    
+                    if [[ ! "$CONFIRMAR_CONSIGNA" =~ ^[sS]$ ]]; then
+                        echo "  [X] Escritura cancelada"
+                        volver_menu
+                        continue
+                    fi
+                    
+                    echo ""
                     echo "  [!] Parando Node-RED temporalmente..."
                     sudo systemctl stop nodered 2>/dev/null
                     docker stop gesinne-rpi >/dev/null 2>&1 || true
@@ -2732,7 +2770,7 @@ EOFDIAG
                     echo "  [OK] Servicios parados"
                     echo ""
                     
-                    python3 << 'EOFCONSIGNA'
+                    python3 << EOFCONSIGNA
 import sys
 import time
 try:
@@ -2771,102 +2809,50 @@ if not client.connect():
 print(f"  [OK] Conectado a {port}")
 print("")
 
-# Leer valores actuales de las 3 placas
-print("  ┌─────────────────────────────────────────────────────────┐")
-print("  │  VALORES ACTUALES - Registro 37 (Tensión consigna)     │")
-print("  ├─────────────────────────────────────────────────────────┤")
+nuevo_valor = $NUEVO_VALOR_CONSIGNA
 
-valores_actuales = {}
+# Escribir en las 3 placas
+exitos = 0
 for unit_id in [1, 2, 3]:
     fase = f"L{unit_id}"
-    result = client.read_holding_registers(address=37, count=1, slave=unit_id)
-    if not result.isError():
-        val = result.registers[0]
-        valores_actuales[unit_id] = val
-        print(f"  │  {fase}: {val} dV ({val/10:.1f} V)                              │"[:60] + "│")
+    print(f"  [M] Escribiendo en {fase}...")
+    
+    # Leer valor anterior
+    read_result = client.read_holding_registers(address=37, count=1, slave=unit_id)
+    if not read_result.isError():
+        val_anterior = read_result.registers[0]
+        print(f"      Valor anterior: {val_anterior} dV ({val_anterior/10:.1f} V)")
     else:
-        valores_actuales[unit_id] = None
-        print(f"  │  {fase}: ERROR de lectura                                │"[:60] + "│")
+        print(f"      Valor anterior: no se pudo leer")
+    
+    # Escribir nuevo valor
+    write_result = client.write_register(address=37, value=nuevo_valor, slave=unit_id)
+    
+    if write_result.isError():
+        print(f"  [X] Error escribiendo en {fase}: {write_result}")
+        continue
+    
+    time.sleep(0.1)
+    
+    # Verificar escritura
+    verify_result = client.read_holding_registers(address=37, count=1, slave=unit_id)
+    if not verify_result.isError():
+        valor_verificado = verify_result.registers[0]
+        if valor_verificado == nuevo_valor:
+            print(f"  [OK] {fase}: Escrito correctamente (verificado: {valor_verificado})")
+            exitos += 1
+        else:
+            print(f"  [!] {fase}: Verificación fallida (esperado {nuevo_valor}, leído {valor_verificado})")
+    else:
+        print(f"  [!] {fase}: No se pudo verificar")
+    
     time.sleep(0.1)
 
-print("  └─────────────────────────────────────────────────────────┘")
 print("")
-
-# Pedir nuevo valor
-try:
-    nuevo_valor = input("  Nuevo valor en deciVoltios (ej: 2200 para 220V): ").strip()
-    if not nuevo_valor:
-        print("  [X] Cancelado - no se introdujo valor")
-        client.close()
-        sys.exit(0)
-    
-    nuevo_valor = int(nuevo_valor)
-    
-    # Validar rango básico (110V - 280V)
-    if nuevo_valor < 1100 or nuevo_valor > 2800:
-        print(f"  [X] Valor {nuevo_valor} fuera de rango (1100-2800 dV)")
-        client.close()
-        sys.exit(1)
-    
-    print("")
-    print(f"  ⚠️  CONFIRMACIÓN")
-    print(f"  ────────────────────────────────────────")
-    print(f"  Nuevo valor: {nuevo_valor} dV ({nuevo_valor/10:.1f} V)")
-    print(f"  Se escribirá en: L1, L2, L3")
-    print(f"  ────────────────────────────────────────")
-    print("")
-    
-    confirmar = input("  ¿Confirmar escritura? (s/N): ").strip().lower()
-    if confirmar != 's':
-        print("  [X] Escritura cancelada")
-        client.close()
-        sys.exit(0)
-    
-    print("")
-    
-    # Escribir en las 3 placas
-    exitos = 0
-    for unit_id in [1, 2, 3]:
-        fase = f"L{unit_id}"
-        print(f"  [M] Escribiendo en {fase}...")
-        
-        # Leer valor anterior
-        val_anterior = valores_actuales.get(unit_id, "?")
-        print(f"      Valor anterior: {val_anterior}")
-        
-        # Escribir nuevo valor
-        write_result = client.write_register(address=37, value=nuevo_valor, slave=unit_id)
-        
-        if write_result.isError():
-            print(f"  [X] Error escribiendo en {fase}: {write_result}")
-            continue
-        
-        time.sleep(0.1)
-        
-        # Verificar escritura
-        verify_result = client.read_holding_registers(address=37, count=1, slave=unit_id)
-        if not verify_result.isError():
-            valor_verificado = verify_result.registers[0]
-            if valor_verificado == nuevo_valor:
-                print(f"  [OK] {fase}: Escrito correctamente (verificado: {valor_verificado})")
-                exitos += 1
-            else:
-                print(f"  [!] {fase}: Verificación fallida (esperado {nuevo_valor}, leído {valor_verificado})")
-        else:
-            print(f"  [!] {fase}: No se pudo verificar")
-        
-        time.sleep(0.1)
-    
-    print("")
-    if exitos == 3:
-        print(f"  [OK] Tensión de consigna cambiada a {nuevo_valor} dV ({nuevo_valor/10:.1f} V) en las 3 placas")
-    else:
-        print(f"  [!] Solo se escribió correctamente en {exitos}/3 placas")
-
-except ValueError:
-    print("  [X] Valor no válido (debe ser numérico)")
-except KeyboardInterrupt:
-    print("\n  [X] Cancelado")
+if exitos == 3:
+    print(f"  [OK] Tensión de consigna cambiada a {nuevo_valor} dV ({nuevo_valor/10:.1f} V) en las 3 placas")
+else:
+    print(f"  [!] Solo se escribió correctamente en {exitos}/3 placas")
 
 client.close()
 EOFCONSIGNA
