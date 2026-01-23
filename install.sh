@@ -2810,6 +2810,7 @@ print(f"  [OK] Conectado a {port}")
 print("")
 
 nuevo_valor = $NUEVO_VALOR_CONSIGNA
+FLAG_ESCRITURA = 43981
 
 # Escribir en las 3 placas
 exitos = 0
@@ -2824,6 +2825,14 @@ for unit_id in [1, 2, 3]:
         print(f"      Valor anterior: {val_anterior} dV ({val_anterior/10:.1f} V)")
     else:
         print(f"      Valor anterior: no se pudo leer")
+    
+    # Activar flag de escritura (reg 30 = 43981)
+    flag_result = client.write_register(address=30, value=FLAG_ESCRITURA, slave=unit_id)
+    if flag_result.isError():
+        print(f"  [X] Error activando flag escritura en {fase}: {flag_result}")
+        continue
+    print(f"      Flag escritura activado (reg 30 = {FLAG_ESCRITURA})")
+    time.sleep(0.1)
     
     # Escribir nuevo valor
     write_result = client.write_register(address=37, value=nuevo_valor, slave=unit_id)
