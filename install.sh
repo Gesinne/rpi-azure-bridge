@@ -2715,60 +2715,51 @@ EOFDIAG
                     continue
                     ;;
                 10)
-                    # Cambiar tensión de consigna (reg 37) en las 3 placas
+                    # Cambiar tensión de consigna (reg 32) en las 3 placas - MODO CONTINUO
                     echo ""
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "  Cambiar tensión de consigna (Registro 37)"
+                    echo "  Cambiar tensión de consigna (Registro 32)"
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
                     echo "  Este registro controla la tensión de consigna en tiempo real."
                     echo "  El valor se escribe en las 3 placas (L1, L2, L3)."
                     echo "  Unidad: deciVoltios (ej: 2200 = 220V, 2300 = 230V)"
                     echo ""
-                    
-                    # Pedir valor ANTES de parar Node-RED
-                    read -p "  Nuevo valor en deciVoltios (ej: 2200 para 220V): " NUEVO_VALOR_CONSIGNA
-                    
-                    if [ -z "$NUEVO_VALOR_CONSIGNA" ]; then
-                        echo "  [X] Cancelado - no se introdujo valor"
-                        volver_menu
-                        continue
-                    fi
-                    
-                    if ! [[ "$NUEVO_VALOR_CONSIGNA" =~ ^[0-9]+$ ]]; then
-                        echo "  [X] Valor no válido (debe ser numérico)"
-                        volver_menu
-                        continue
-                    fi
-                    
-                    if [ "$NUEVO_VALOR_CONSIGNA" -lt 1100 ] || [ "$NUEVO_VALOR_CONSIGNA" -gt 2800 ]; then
-                        echo "  [X] Valor $NUEVO_VALOR_CONSIGNA fuera de rango (1100-2800 dV)"
-                        volver_menu
-                        continue
-                    fi
-                    
-                    echo ""
-                    echo "  ⚠️  CONFIRMACIÓN"
-                    echo "  ────────────────────────────────────────"
-                    echo "  Nuevo valor: $NUEVO_VALOR_CONSIGNA dV ($(echo "scale=1; $NUEVO_VALOR_CONSIGNA/10" | bc) V)"
-                    echo "  Se escribirá en: L1, L2, L3"
-                    echo "  ────────────────────────────────────────"
-                    echo ""
-                    read -p "  ¿Confirmar escritura? (s/N): " CONFIRMAR_CONSIGNA
-                    
-                    if [[ ! "$CONFIRMAR_CONSIGNA" =~ ^[sS]$ ]]; then
-                        echo "  [X] Escritura cancelada"
-                        volver_menu
-                        continue
-                    fi
-                    
-                    echo ""
-                    echo "  [!] Parando Node-RED temporalmente..."
+                    echo "  [!] Parando Node-RED..."
                     sudo systemctl stop nodered 2>/dev/null
                     docker stop gesinne-rpi >/dev/null 2>&1 || true
                     sleep 2
                     echo "  [OK] Servicios parados"
                     echo ""
+                    echo "  ═══════════════════════════════════════════════"
+                    echo "  MODO CONTINUO - Escribe 'salir' o Enter vacío para terminar"
+                    echo "  ═══════════════════════════════════════════════"
+                    echo ""
+                    
+                    # Bucle continuo para cambiar valores
+                    while true; do
+                        read -p "  Nuevo valor en dV (ej: 2200) [salir]: " NUEVO_VALOR_CONSIGNA
+                        
+                        # Salir si está vacío o es "salir"
+                        if [ -z "$NUEVO_VALOR_CONSIGNA" ] || [[ "$NUEVO_VALOR_CONSIGNA" =~ ^[sS]alir$ ]]; then
+                            echo ""
+                            echo "  [~] Saliendo del modo continuo..."
+                            break
+                        fi
+                        
+                        # Validar numérico
+                        if ! [[ "$NUEVO_VALOR_CONSIGNA" =~ ^[0-9]+$ ]]; then
+                            echo "  [X] Valor no válido (debe ser numérico)"
+                            continue
+                        fi
+                        
+                        # Validar rango
+                        if [ "$NUEVO_VALOR_CONSIGNA" -lt 1100 ] || [ "$NUEVO_VALOR_CONSIGNA" -gt 2800 ]; then
+                            echo "  [X] Valor $NUEVO_VALOR_CONSIGNA fuera de rango (1100-2800 dV)"
+                            continue
+                        fi
+                        
+                        echo "  [M] Escribiendo $NUEVO_VALOR_CONSIGNA dV ($(echo "scale=1; $NUEVO_VALOR_CONSIGNA/10" | bc) V) en L1, L2, L3..."
                     
                     python3 << EOFCONSIGNA
 import sys
@@ -2850,7 +2841,7 @@ for unit_id in [1, 2, 3]:
     # Leer valor anterior con reintentos
     val_anterior = None
     for intento in range(MAX_REINTENTOS):
-        read_result = client.read_holding_registers(address=37, count=1, slave=unit_id)
+        read_result = client.read_holding_registers(address=32, count=1, slave=unit_id)
         if not read_result.isError():
             val_anterior = read_result.registers[0]
             break
@@ -2861,8 +2852,7 @@ for unit_id in [1, 2, 3]:
     else:
         print(f"      Valor anterior: no se pudo leer (sin respuesta)")
     
-    # Intentar activar flag de escritura (reg 30 = 43981)
-    # Si falla, intentar escribir de todos modos
+    # Activar flag de escritura (reg 30 = 43981)
     flag_ok = False
     for intento in range(MAX_REINTENTOS):
         flag_result = client.write_register(address=30, value=FLAG_ESCRITURA, slave=unit_id)
@@ -2877,10 +2867,10 @@ for unit_id in [1, 2, 3]:
         print(f"      [!] Flag no respondió, intentando escribir de todos modos...")
     time.sleep(0.1)
     
-    # Escribir nuevo valor con reintentos
+    # Escribir nuevo valor en registro 32 con reintentos
     write_ok = False
     for intento in range(MAX_REINTENTOS):
-        write_result = client.write_register(address=37, value=nuevo_valor, slave=unit_id)
+        write_result = client.write_register(address=32, value=nuevo_valor, slave=unit_id)
         if not write_result.isError():
             write_ok = True
             break
@@ -2893,7 +2883,7 @@ for unit_id in [1, 2, 3]:
     time.sleep(0.1)
     
     # Verificar escritura
-    verify_result = client.read_holding_registers(address=37, count=1, slave=unit_id)
+    verify_result = client.read_holding_registers(address=32, count=1, slave=unit_id)
     if not verify_result.isError():
         valor_verificado = verify_result.registers[0]
         if valor_verificado == nuevo_valor:
@@ -2914,6 +2904,8 @@ else:
 
 client.close()
 EOFCONSIGNA
+                        echo ""
+                    done
                     
                     echo ""
                     echo "  [!] Node-RED NO se reinicia automáticamente (modo prueba)"
