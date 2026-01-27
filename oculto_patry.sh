@@ -352,36 +352,8 @@ for node in flows:
     # NOTA: Desactivado - 0.5s es común para lecturas Modbus rápidas
     
     # 18. Variables globales sin valor por defecto
-    if node_type == 'function' and 'global.get(' in func:
-        # Variables que se cargan de config y siempre existen - ignorar
-        vars_conocidas = ['serie', 'potencia', 'cliente', 'instalacion', 'config', 'mqtt_broker', 'mqtt_port', 'mqtt_user']
-        # Buscar global.get sin valor por defecto: global.get('x') vs global.get('x', 0)
-        pattern = r"global\.get\(['\"]([^'\"]+)['\"]\s*\)"
-        matches = re.findall(pattern, func)
-        for var_name in matches:
-            # Ignorar variables conocidas que se cargan de config
-            if var_name in vars_conocidas:
-                continue
-            # Reconstruir el match completo para buscar contexto
-            match = f"global.get('{var_name}')"
-            if match not in func:
-                match = f'global.get("{var_name}")'
-            match_pos = func.find(match)
-            after_match = func[match_pos:match_pos+60] if match_pos >= 0 else ''
-            # Verificar si no tiene valor por defecto (no tiene coma después del nombre)
-            # También ignorar si usa ?? o || después (nullish coalescing o OR lógico)
-            if '|| ' not in after_match and '?? ' not in after_match:
-                # Ignorar si ya está reportado
-                if name not in [b['nodo'] for b in bugs if b['fix_type'] == 'global_default']:
-                    bugs.append({
-                        'num': len(bugs) + 1,
-                        'tipo': 'BAJO',
-                        'nodo': name,
-                        'id': node_id,
-                        'desc': f"global.get() sin valor por defecto: global.get('{var_name}')",
-                        'fix_type': 'global_default'
-                    })
-                    break
+    # NOTA: Desactivado - con persistencia activada (opción 6) las variables se guardan en disco
+    # y no se pierden al reiniciar, por lo que este check ya no es necesario
     
     # 19. Comparación con == en lugar de === (puede causar bugs sutiles)
     if node_type == 'function' and ' == ' in func:
