@@ -18,9 +18,10 @@ echo "  2) Analizar bugs del Flow"
 echo "  3) Revisar el JSON"
 echo "  4) Actualizar software"
 echo "  5) Reparar placas desparametrizadas"
+echo "  6) Activar persistencia de variables (anti-desparametrización)"
 echo "  0) Salir"
 echo ""
-read -p "  Opción [0-5]: " PATRY_OPT
+read -p "  Opción [0-6]: " PATRY_OPT
 
 case $PATRY_OPT in
     1)
@@ -1662,6 +1663,80 @@ for val in sorted(valores.keys()):
             sudo bash "$REPAIR_SCRIPT" reparar
         else
             echo "  [X] Error descargando script de reparación"
+        fi
+        ;;
+    6)
+        # Activar persistencia de variables (anti-desparametrización)
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Activar persistencia de variables"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "  Esto configura Node-RED para guardar las variables"
+        echo "  globales en disco, evitando que se pierdan al reiniciar."
+        echo ""
+        
+        SETTINGS_FILE="/home/gesinne/.node-red/settings.js"
+        
+        # Verificar si ya está configurado
+        if grep -q 'default:.*localfilesystem' "$SETTINGS_FILE" 2>/dev/null; then
+            echo "  [OK] La persistencia ya está activada"
+        else
+            echo "  [~] Configurando persistencia..."
+            
+            # Backup
+            cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+            
+            # Reemplazar la configuración de contextStorage
+            python3 << PYFIX
+import re
+
+with open('$SETTINGS_FILE', 'r') as f:
+    content = f.read()
+
+# Buscar y reemplazar contextStorage
+old_pattern = r'contextStorage:\s*\{[^}]*default:\s*\{[^}]*module:\s*["\']memory["\'][^}]*\}[^}]*\}'
+new_config = '''contextStorage: {
+    default: {
+        module: "localfilesystem"
+    },
+    memory: {
+        module: "memory"
+    }
+}'''
+
+if re.search(old_pattern, content, re.DOTALL):
+    content = re.sub(old_pattern, new_config, content, flags=re.DOTALL)
+    with open('$SETTINGS_FILE', 'w') as f:
+        f.write(content)
+    print('  [OK] Configuración actualizada')
+else:
+    # Intentar otro patrón más simple
+    if 'module: "memory"' in content and 'default:' in content:
+        content = content.replace(
+            'default: {\n        module: "memory"\n    }',
+            'default: {\n        module: "localfilesystem"\n    },\n    memory: {\n        module: "memory"\n    }'
+        )
+        with open('$SETTINGS_FILE', 'w') as f:
+            f.write(content)
+        print('  [OK] Configuración actualizada (método alternativo)')
+    else:
+        print('  [!] No se pudo actualizar automáticamente')
+        print('      Edita manualmente: $SETTINGS_FILE')
+        print('      Cambia module: "memory" por module: "localfilesystem"')
+PYFIX
+            
+            echo ""
+            echo "  [~] Reiniciando Node-RED para aplicar cambios..."
+            sudo systemctl restart nodered
+            sleep 5
+            echo "  [OK] Node-RED reiniciado"
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  [OK] Persistencia activada"
+            echo "      Las variables globales ahora se guardan en disco"
+            echo "      y sobrevivirán a reinicios de Node-RED y la RPi"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         fi
         ;;
     0|*)
