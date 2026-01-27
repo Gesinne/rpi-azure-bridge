@@ -446,16 +446,21 @@ for node in flows:
     
     # 23. Funciones muy largas (> 100 líneas) - difíciles de mantener
     if node_type == 'function':
-        lines = func.count('\\n') + 1
-        if lines > 100:
-            bugs.append({
-                'num': len(bugs) + 1,
-                'tipo': 'BAJO',
-                'nodo': name,
-                'id': node_id,
-                'desc': f'Función muy larga ({lines} líneas) - difícil de mantener',
-                'fix_type': 'long_function'
-            })
+        # Ignorar funciones conocidas que son largas por necesidad
+        funciones_largas_ok = ['Modbus Queue', 'MQTT Processor', 'Delivery subflow']
+        if name in funciones_largas_ok:
+            pass  # Ignorar
+        else:
+            lines = func.count('\\n') + 1
+            if lines > 100:
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'BAJO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': f'Función muy larga ({lines} líneas) - difícil de mantener',
+                    'fix_type': 'long_function'
+                })
     
     # 24. Uso de var en lugar de let/const (ES6+)
     if node_type == 'function' and '\\nvar ' in func or func.startswith('var '):
