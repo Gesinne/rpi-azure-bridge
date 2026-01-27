@@ -357,7 +357,10 @@ for node in flows:
         matches = re.findall(pattern, func)
         for match in matches:
             # Verificar si no tiene valor por defecto (no tiene coma después del nombre)
-            if ',' not in match and '|| ' not in func[func.find(match):func.find(match)+50]:
+            # También ignorar si usa ?? o || después (nullish coalescing o OR lógico)
+            match_pos = func.find(match)
+            after_match = func[match_pos:match_pos+60] if match_pos >= 0 else ''
+            if ',' not in match and '|| ' not in after_match and '?? ' not in after_match and '??g' not in after_match:
                 # Ignorar si ya está reportado o es un patrón común
                 if name not in [b['nodo'] for b in bugs if b['fix_type'] == 'global_default']:
                     bugs.append({
