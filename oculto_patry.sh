@@ -403,19 +403,7 @@ for node in flows:
             })
     
     # 22. Inject sin topic definido
-    if node_type == 'inject':
-        topic = node.get('topic', '')
-        if not topic:
-            # Solo reportar si tiene nombre significativo
-            if name and name != 'Sin nombre' and not name.startswith('timestamp'):
-                bugs.append({
-                    'num': len(bugs) + 1,
-                    'tipo': 'BAJO',
-                    'nodo': name,
-                    'id': node_id,
-                    'desc': 'Inject sin topic definido',
-                    'fix_type': 'inject_topic'
-                })
+    # NOTA: Desactivado - los injects internos no necesitan topic, son disparadores locales
     
     # 23. Funciones muy largas (> 100 líneas) - difíciles de mantener
     if node_type == 'function':
