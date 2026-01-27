@@ -377,7 +377,7 @@ for node in flows:
         nodos_modbus = ['function ' + str(i) for i in range(1, 51)] + ['Store Data L1', 'Store Data L2', 'Store Data L3']
         if name in nodos_modbus:
             pass  # Ignorar - siempre reciben datos de Modbus
-        elif 'if (msg.payload' not in func and 'if (!msg.payload' not in func and 'msg.payload &&' not in func and '|| ' not in func:
+        elif 'if (msg.payload' not in func and 'if (!msg.payload' not in func and 'msg.payload &&' not in func and '|| ' not in func and 'if (!match)' not in func:
             # Ignorar si tiene try/catch
             if 'try' not in func and 'catch' not in func:
                 bugs.append({
