@@ -541,6 +541,7 @@ PYEOF
                     
                     python3 << PYFIX
 import json
+import re
 
 with open('$FLOWS_FILE', 'r') as f:
     flows = json.load(f)
@@ -749,7 +750,6 @@ return msg;"""
             
             elif fix_type == 'var_usage':
                 func = node.get('func', '')
-                import re
                 func = re.sub(r'\bvar\s+', 'let ', func)
                 node['func'] = func
                 cambios += 1
@@ -810,6 +810,7 @@ PYFIX
                     
                     python3 << PYFIX
 import json
+import re
 
 with open('$FLOWS_FILE', 'r') as f:
     flows = json.load(f)
@@ -1020,7 +1021,6 @@ return msg;"""
         elif fix_type == 'var_usage':
             func = node.get('func', '')
             # Reemplazar var por let (más seguro que const para variables que se reasignan)
-            import re
             func = re.sub(r'\bvar\s+', 'let ', func)
             node['func'] = func
             cambios += 1
