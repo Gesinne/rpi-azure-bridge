@@ -1685,10 +1685,10 @@ for val in sorted(valores.keys()):
             echo "  [~] Configurando persistencia..."
             
             # Backup
-            cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+            sudo cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
             
             # Reemplazar la configuración de contextStorage
-            python3 << PYFIX
+            sudo python3 << PYFIX
 import re
 
 with open('$SETTINGS_FILE', 'r') as f:
