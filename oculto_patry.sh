@@ -1639,7 +1639,7 @@ for val in sorted(valores.keys()):
         SETTINGS_FILE="/home/gesinne/.node-red/settings.js"
         
         # Verificar si ya está configurado
-        if grep -q 'default:.*localfilesystem' "$SETTINGS_FILE" 2>/dev/null; then
+        if grep -q 'module: "localfilesystem"' "$SETTINGS_FILE" 2>/dev/null && grep -B2 'module: "localfilesystem"' "$SETTINGS_FILE" | grep -q 'default:'; then
             echo "  [OK] La persistencia ya está activada"
         else
             echo "  [~] Configurando persistencia..."
@@ -1647,56 +1647,46 @@ for val in sorted(valores.keys()):
             # Backup
             sudo cp "$SETTINGS_FILE" "${SETTINGS_FILE}.backup.$(date +%Y%m%d%H%M%S)"
             
-            # Reemplazar la configuración de contextStorage
-            sudo python3 << PYFIX
-import re
-
-with open('$SETTINGS_FILE', 'r') as f:
-    content = f.read()
-
-# Buscar y reemplazar contextStorage
-old_pattern = r'contextStorage:\s*\{[^}]*default:\s*\{[^}]*module:\s*["\']memory["\'][^}]*\}[^}]*\}'
-new_config = '''contextStorage: {
-    default: {
-        module: "localfilesystem"
-    },
-    memory: {
-        module: "memory"
-    }
-}'''
-
-if re.search(old_pattern, content, re.DOTALL):
-    content = re.sub(old_pattern, new_config, content, flags=re.DOTALL)
-    with open('$SETTINGS_FILE', 'w') as f:
-        f.write(content)
-    print('  [OK] Configuración actualizada')
-else:
-    # Intentar otro patrón más simple
-    if 'module: "memory"' in content and 'default:' in content:
-        content = content.replace(
-            'default: {\n        module: "memory"\n    }',
-            'default: {\n        module: "localfilesystem"\n    },\n    memory: {\n        module: "memory"\n    }'
-        )
-        with open('$SETTINGS_FILE', 'w') as f:
-            f.write(content)
-        print('  [OK] Configuración actualizada (método alternativo)')
-    else:
-        print('  [!] No se pudo actualizar automáticamente')
-        print('      Edita manualmente: $SETTINGS_FILE')
-        print('      Cambia module: "memory" por module: "localfilesystem"')
-PYFIX
-            
-            echo ""
-            echo "  [~] Reiniciando Node-RED para aplicar cambios..."
-            sudo systemctl restart nodered
-            sleep 5
-            echo "  [OK] Node-RED reiniciado"
-            echo ""
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  [OK] Persistencia activada"
-            echo "      Las variables globales ahora se guardan en disco"
-            echo "      y sobrevivirán a reinicios de Node-RED y la RPi"
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            # Método simple: reemplazar solo la línea module: "memory" dentro de default
+            # Buscar la línea exacta y reemplazarla
+            if grep -q 'module: "memory"' "$SETTINGS_FILE"; then
+                sudo sed -i '0,/module: "memory"/{s/module: "memory"/module: "localfilesystem"/}' "$SETTINGS_FILE"
+                
+                # Verificar que el cambio se aplicó
+                if grep -q 'module: "localfilesystem"' "$SETTINGS_FILE"; then
+                    echo "  [OK] Configuración actualizada"
+                    
+                    echo ""
+                    echo "  [~] Reiniciando Node-RED para aplicar cambios..."
+                    sudo systemctl restart nodered
+                    sleep 5
+                    
+                    # Verificar que Node-RED inició correctamente
+                    if sudo systemctl is-active --quiet nodered; then
+                        echo "  [OK] Node-RED reiniciado correctamente"
+                        echo ""
+                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "  [OK] Persistencia activada"
+                        echo "      Las variables globales ahora se guardan en disco"
+                        echo "      y sobrevivirán a reinicios de Node-RED y la RPi"
+                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    else
+                        echo "  [X] Error: Node-RED no inició correctamente"
+                        echo "  [~] Restaurando backup..."
+                        BACKUP_FILE=$(ls -t ${SETTINGS_FILE}.backup.* 2>/dev/null | head -1)
+                        if [ -n "$BACKUP_FILE" ]; then
+                            sudo cp "$BACKUP_FILE" "$SETTINGS_FILE"
+                            sudo systemctl restart nodered
+                            echo "  [OK] Backup restaurado"
+                        fi
+                    fi
+                else
+                    echo "  [X] Error aplicando cambio"
+                fi
+            else
+                echo "  [!] No se encontró configuración de memoria para cambiar"
+                echo "      El archivo puede tener un formato diferente"
+            fi
         fi
         ;;
     0|*)
