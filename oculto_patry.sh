@@ -349,6 +349,151 @@ for node in flows:
     
     # 17. Inject con intervalo muy corto (< 1 segundo)
     # NOTA: Desactivado - 0.5s es común para lecturas Modbus rápidas
+    
+    # 18. Variables globales sin valor por defecto
+    if node_type == 'function' and 'global.get(' in func:
+        # Buscar global.get sin valor por defecto: global.get('x') vs global.get('x', 0)
+        pattern = r"global\.get\(['\"][^'\"]+['\"]\s*\)"
+        matches = re.findall(pattern, func)
+        for match in matches:
+            # Verificar si no tiene valor por defecto (no tiene coma después del nombre)
+            if ',' not in match and '|| ' not in func[func.find(match):func.find(match)+50]:
+                # Ignorar si ya está reportado o es un patrón común
+                if name not in [b['nodo'] for b in bugs if b['fix_type'] == 'global_default']:
+                    bugs.append({
+                        'num': len(bugs) + 1,
+                        'tipo': 'BAJO',
+                        'nodo': name,
+                        'id': node_id,
+                        'desc': f'global.get() sin valor por defecto: {match[:40]}',
+                        'fix_type': 'global_default'
+                    })
+                    break
+    
+    # 19. Comparación con == en lugar de === (puede causar bugs sutiles)
+    if node_type == 'function' and ' == ' in func:
+        # Ignorar si también usa === (probablemente sabe lo que hace)
+        if ' === ' not in func and '!== ' not in func:
+            # Contar ocurrencias
+            count = func.count(' == ')
+            if count > 0:
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'BAJO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': f'Usa == en lugar de === ({count} ocurrencias) - puede causar bugs',
+                    'fix_type': 'strict_equality'
+                })
+    
+    # 20. msg.payload sin verificar null/undefined
+    if node_type == 'function' and 'msg.payload.' in func:
+        if 'if (msg.payload' not in func and 'if (!msg.payload' not in func and 'msg.payload &&' not in func and '|| ' not in func:
+            # Ignorar si tiene try/catch
+            if 'try' not in func and 'catch' not in func:
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'MEDIO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': 'Accede a msg.payload.* sin verificar si existe',
+                    'fix_type': 'payload_check'
+                })
+    
+    # 21. Nodos debug activos en producción
+    if node_type == 'debug':
+        active = node.get('active', True)
+        if active == True or active == 'true':
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'BAJO',
+                'nodo': name or 'debug',
+                'id': node_id,
+                'desc': 'Nodo debug activo (puede afectar rendimiento)',
+                'fix_type': 'debug_active'
+            })
+    
+    # 22. Inject sin topic definido
+    if node_type == 'inject':
+        topic = node.get('topic', '')
+        if not topic:
+            # Solo reportar si tiene nombre significativo
+            if name and name != 'Sin nombre' and not name.startswith('timestamp'):
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'BAJO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': 'Inject sin topic definido',
+                    'fix_type': 'inject_topic'
+                })
+    
+    # 23. Funciones muy largas (> 100 líneas) - difíciles de mantener
+    if node_type == 'function':
+        lines = func.count('\\n') + 1
+        if lines > 100:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'BAJO',
+                'nodo': name,
+                'id': node_id,
+                'desc': f'Función muy larga ({lines} líneas) - difícil de mantener',
+                'fix_type': 'long_function'
+            })
+    
+    # 24. Uso de var en lugar de let/const (ES6+)
+    if node_type == 'function' and '\\nvar ' in func or func.startswith('var '):
+        # Solo si no usa let/const en absoluto
+        if 'let ' not in func and 'const ' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'BAJO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Usa var en lugar de let/const (estilo antiguo)',
+                'fix_type': 'var_usage'
+            })
+    
+    # 25. Modbus sin manejo de errores
+    if node_type == 'modbus-flex-write' or node_type == 'modbus-flex-getter':
+        # Verificar si tiene nodo catch conectado
+        wires = node.get('wires', [])
+        has_error_output = len(wires) > 1 and len(wires[1]) > 0
+        if not has_error_output:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'MEDIO',
+                'nodo': name or node_type,
+                'id': node_id,
+                'desc': 'Modbus flex sin salida de error conectada',
+                'fix_type': 'modbus_error'
+            })
+    
+    # 26. Guaranteed delivery con maxQueue muy bajo
+    if node_type == 'guaranteed-delivery':
+        max_queue = node.get('maxQueue', 0)
+        if isinstance(max_queue, int) and max_queue < 100000:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'MEDIO',
+                'nodo': name or 'guaranteed-delivery',
+                'id': node_id,
+                'desc': f'maxQueue muy bajo: {max_queue} (recomendado: 500000+)',
+                'fix_type': 'maxqueue_low'
+            })
+    
+    # 27. Chronos sin timezone configurado
+    if node_type == 'chronos-config':
+        tz = node.get('timezone', '')
+        if not tz or '/' not in str(tz):
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'MEDIO',
+                'nodo': name or 'chronos-config',
+                'id': node_id,
+                'desc': 'Chronos sin timezone configurado correctamente',
+                'fix_type': 'chronos_tz'
+            })
 
 # Guardar bugs en archivo temporal
 with open('/tmp/flow_bugs.json', 'w') as f:
