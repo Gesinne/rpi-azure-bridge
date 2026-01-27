@@ -747,6 +747,38 @@ return msg;"""
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
             
+            elif fix_type == 'var_usage':
+                func = node.get('func', '')
+                import re
+                func = re.sub(r'\bvar\s+', 'let ', func)
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - 'var' cambiado a 'let'")
+            
+            elif fix_type == 'debug_active':
+                node['active'] = False
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Debug desactivado")
+            
+            elif fix_type == 'maxqueue_low':
+                node['maxQueue'] = 500000
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - maxQueue aumentado a 500000")
+            
+            elif fix_type == 'chronos_tz':
+                node['timezone'] = 'Europe/Madrid'
+                node['timezoneType'] = 'str'
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Timezone configurado a Europe/Madrid")
+            
+            elif fix_type == 'strict_equality':
+                func = node.get('func', '')
+                func = func.replace(' == ', ' === ')
+                func = func.replace(' != ', ' !== ')
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - '==' cambiado a '==='")
+            
             break
 
 if cambios > 0:
@@ -984,6 +1016,40 @@ return msg;"""
             node['func'] = nuevo_codigo
             cambios += 1
             print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de rango (1760-2640)")
+        
+        elif fix_type == 'var_usage':
+            func = node.get('func', '')
+            # Reemplazar var por let (más seguro que const para variables que se reasignan)
+            import re
+            func = re.sub(r'\bvar\s+', 'let ', func)
+            node['func'] = func
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - 'var' cambiado a 'let'")
+        
+        elif fix_type == 'debug_active':
+            node['active'] = False
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Debug desactivado")
+        
+        elif fix_type == 'maxqueue_low':
+            node['maxQueue'] = 500000
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - maxQueue aumentado a 500000")
+        
+        elif fix_type == 'chronos_tz':
+            node['timezone'] = 'Europe/Madrid'
+            node['timezoneType'] = 'str'
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Timezone configurado a Europe/Madrid")
+        
+        elif fix_type == 'strict_equality':
+            func = node.get('func', '')
+            # Reemplazar == por === y != por !==
+            func = func.replace(' == ', ' === ')
+            func = func.replace(' != ', ' !== ')
+            node['func'] = func
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - '==' cambiado a '==='")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
