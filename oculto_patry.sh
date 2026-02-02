@@ -1853,8 +1853,14 @@ except Exception as e:
                     done
                     
                     echo ""
-                    read -p "  ¿Los parámetros son correctos? ¿Restaurar? (s/N): " RESTAURAR
-                    if [ "$RESTAURAR" = "s" ] || [ "$RESTAURAR" = "S" ]; then
+                    echo "  ¿Qué desea hacer?"
+                    echo "    1) Restaurar estos parámetros"
+                    echo "    2) Modificar parámetros antes de restaurar"
+                    echo "    3) Solo habilitar placa (no restaurar)"
+                    echo ""
+                    read -p "  Opción [1-3]: " RESTAURAR_OPT
+                    
+                    if [ "$RESTAURAR_OPT" = "1" ]; then
                         echo ""
                         echo "  Restaurando parámetros..."
                         for SLAVE_ID in $PLACAS; do
@@ -1874,7 +1880,6 @@ except:
     c.close()
     exit()
 
-# Registros que se pueden escribir
 escribibles = [32, 46, 47, 49, 50, 51, 52, 53, 55, 56, 57, 58, 62, 63, 64, 65, 66, 67, 91, 92, 93, 94]
 
 escritos = 0
@@ -1885,20 +1890,88 @@ for reg, val in params.items():
         time.sleep(0.03)
         escritos += 1
 
-# Habilitar con Flag Est = 43981
 c.write_register(30, 43981, slave=$SLAVE_ID)
 time.sleep(0.1)
-
-# Poner en regulación
 c.write_register(31, 2, slave=$SLAVE_ID)
-
 c.close()
 print(f'    L$SLAVE_ID: {escritos} parámetros restaurados')
 " 2>/dev/null
                         done
+                        
+                    elif [ "$RESTAURAR_OPT" = "2" ]; then
+                        echo ""
+                        echo "  Modificar parámetros (Enter para mantener valor actual):"
+                        for SLAVE_ID in $PLACAS; do
+                            echo ""
+                            echo "    === L$SLAVE_ID ==="
+                            
+                            # Leer valores actuales del JSON
+                            CONSIGNA=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('32', 2200))" 2>/dev/null)
+                            V_INICIAL=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('56', 2200))" 2>/dev/null)
+                            TOPOLOGIA=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('46', 2))" 2>/dev/null)
+                            DEADTIME=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('47', 8))" 2>/dev/null)
+                            I_NOM=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('49', 150))" 2>/dev/null)
+                            CN00=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('91', 150))" 2>/dev/null)
+                            CN01=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('92', 40))" 2>/dev/null)
+                            CN02=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('93', 15))" 2>/dev/null)
+                            CN03=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('94', 15))" 2>/dev/null)
+                            
+                            read -p "    Consigna [$CONSIGNA]: " NEW_CONSIGNA
+                            read -p "    V inicial [$V_INICIAL]: " NEW_V_INICIAL
+                            read -p "    Topología [$TOPOLOGIA]: " NEW_TOPOLOGIA
+                            read -p "    Dead-time [$DEADTIME]: " NEW_DEADTIME
+                            read -p "    I nom sal [$I_NOM]: " NEW_I_NOM
+                            read -p "    Cn00 [$CN00]: " NEW_CN00
+                            read -p "    Cn01 [$CN01]: " NEW_CN01
+                            read -p "    Cn02 [$CN02]: " NEW_CN02
+                            read -p "    Cn03 [$CN03]: " NEW_CN03
+                            
+                            # Usar valor nuevo o mantener actual
+                            [ -z "$NEW_CONSIGNA" ] && NEW_CONSIGNA=$CONSIGNA
+                            [ -z "$NEW_V_INICIAL" ] && NEW_V_INICIAL=$V_INICIAL
+                            [ -z "$NEW_TOPOLOGIA" ] && NEW_TOPOLOGIA=$TOPOLOGIA
+                            [ -z "$NEW_DEADTIME" ] && NEW_DEADTIME=$DEADTIME
+                            [ -z "$NEW_I_NOM" ] && NEW_I_NOM=$I_NOM
+                            [ -z "$NEW_CN00" ] && NEW_CN00=$CN00
+                            [ -z "$NEW_CN01" ] && NEW_CN01=$CN01
+                            [ -z "$NEW_CN02" ] && NEW_CN02=$CN02
+                            [ -z "$NEW_CN03" ] && NEW_CN03=$CN03
+                            
+                            echo ""
+                            echo "    Escribiendo parámetros modificados..."
+                            python3 -c "
+from pymodbus.client import ModbusSerialClient
+import time
+
+c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
+c.connect()
+
+params = {
+    32: $NEW_CONSIGNA,
+    56: $NEW_V_INICIAL,
+    46: $NEW_TOPOLOGIA,
+    47: $NEW_DEADTIME,
+    49: $NEW_I_NOM,
+    91: $NEW_CN00,
+    92: $NEW_CN01,
+    93: $NEW_CN02,
+    94: $NEW_CN03
+}
+
+for reg, val in params.items():
+    c.write_register(reg, val, slave=$SLAVE_ID)
+    time.sleep(0.03)
+
+c.write_register(30, 43981, slave=$SLAVE_ID)
+time.sleep(0.1)
+c.write_register(31, 2, slave=$SLAVE_ID)
+c.close()
+print(f'    L$SLAVE_ID: Parámetros modificados escritos')
+" 2>/dev/null
+                        done
+                        
                     else
-                        echo "  Parámetros NO restaurados."
-                        echo "  Solo se habilitará la placa..."
+                        echo "  Solo habilitando placas..."
                         for SLAVE_ID in $PLACAS; do
                             python3 -c "
 from pymodbus.client import ModbusSerialClient
