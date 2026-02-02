@@ -19,9 +19,10 @@ echo "  3) Revisar el JSON"
 echo "  4) Actualizar software"
 echo "  5) Reparar placas desparametrizadas"
 echo "  6) Activar persistencia de variables (anti-desparametrización)"
+echo "  7) Reset de placa (limpiar alarma memoria corrupta)"
 echo "  0) Salir"
 echo ""
-read -p "  Opción [0-6]: " PATRY_OPT
+read -p "  Opción [0-7]: " PATRY_OPT
 
 case $PATRY_OPT in
     1)
@@ -1688,6 +1689,277 @@ for val in sorted(valores.keys()):
                 echo "      El archivo puede tener un formato diferente"
             fi
         fi
+        ;;
+    7)
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Reset de Placa (Alarma Memoria Corrupta)"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "  Este proceso:"
+        echo "    1. Guarda los parámetros actuales"
+        echo "    2. Resetea la placa con 0xCACA"
+        echo "    3. Restaura los parámetros guardados"
+        echo ""
+        echo "  Seleccione placa a resetear:"
+        echo "    1) L1 (Modbus ID 1)"
+        echo "    2) L2 (Modbus ID 2)"
+        echo "    3) L3 (Modbus ID 3)"
+        echo "    4) TODAS las placas"
+        echo "    0) Cancelar"
+        echo ""
+        read -p "  Opción [0-4]: " RESET_OPT
+        
+        if [ "$RESET_OPT" = "0" ]; then
+            echo "  Cancelado."
+        else
+            # Determinar placas a resetear
+            case $RESET_OPT in
+                1) PLACAS="1" ;;
+                2) PLACAS="2" ;;
+                3) PLACAS="3" ;;
+                4) PLACAS="1 2 3" ;;
+                *) echo "  Opción no válida"; PLACAS="" ;;
+            esac
+            
+            if [ -n "$PLACAS" ]; then
+                echo ""
+                echo "  Parando Node-RED..."
+                sudo systemctl stop nodered 2>/dev/null
+                sleep 1
+                
+                # PASO 1: Guardar parámetros ANTES del reset
+                echo ""
+                echo "  [1/4] Guardando parámetros actuales..."
+                for SLAVE_ID in $PLACAS; do
+                    python3 -c "
+from pymodbus.client import ModbusSerialClient
+import json
+
+c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
+c.connect()
+
+params = {}
+
+# Registros de configuración importantes
+config_regs = [32, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 55, 56, 57, 58, 62, 63, 64, 65, 66, 67]
+# Registros de calibración
+cal_regs = [71, 72, 75, 76, 81, 83, 84]
+# Registros de control
+ctrl_regs = [91, 92, 93, 94]
+
+all_regs = config_regs + cal_regs + ctrl_regs
+
+for reg in all_regs:
+    r = c.read_holding_registers(reg, 1, slave=$SLAVE_ID)
+    if not r.isError():
+        params[reg] = r.registers[0]
+
+c.close()
+
+# Guardar en archivo temporal
+with open(f'/tmp/placa_L{$SLAVE_ID}_params.json', 'w') as f:
+    json.dump(params, f)
+
+print(f'    L$SLAVE_ID: {len(params)} parámetros guardados')
+" 2>/dev/null
+                done
+                
+                # Verificar alarmas actuales
+                echo ""
+                echo "  Estado actual de alarmas:"
+                for SLAVE_ID in $PLACAS; do
+                    ALARMA=$(python3 -c "
+from pymodbus.client import ModbusSerialClient
+try:
+    c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=1)
+    c.connect()
+    r = c.read_holding_registers(2, 1, slave=$SLAVE_ID)
+    if not r.isError():
+        print(r.registers[0])
+    else:
+        print('Error')
+    c.close()
+except:
+    print('Error')
+" 2>/dev/null)
+                    if [ "$ALARMA" = "0" ]; then
+                        echo "    L$SLAVE_ID: Alarma=$ALARMA (OK)"
+                    elif [ "$ALARMA" = "1024" ]; then
+                        echo "    L$SLAVE_ID: Alarma=$ALARMA (Memoria corrupta)"
+                    else
+                        echo "    L$SLAVE_ID: Alarma=$ALARMA"
+                    fi
+                done
+                
+                echo ""
+                read -p "  ¿Continuar con el reset? (s/N): " CONFIRM
+                if [ "$CONFIRM" = "s" ] || [ "$CONFIRM" = "S" ]; then
+                    # PASO 2: Ejecutar reset
+                    echo ""
+                    echo "  [2/4] Ejecutando reset con 0xCACA..."
+                    for SLAVE_ID in $PLACAS; do
+                        echo "    Reseteando L$SLAVE_ID..."
+                        python3 -c "
+from pymodbus.client import ModbusSerialClient
+import time
+c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
+c.connect()
+c.write_register(110, 0xCACA, slave=$SLAVE_ID)
+time.sleep(0.1)
+c.write_register(111, 0xCACA, slave=$SLAVE_ID)
+c.close()
+" 2>/dev/null
+                    done
+                    
+                    echo ""
+                    echo "  Esperando 5 segundos para que las placas se reinicien..."
+                    sleep 5
+                    
+                    # PASO 3: Mostrar parámetros guardados y confirmar
+                    echo ""
+                    echo "  [3/4] Parámetros guardados:"
+                    for SLAVE_ID in $PLACAS; do
+                        echo ""
+                        echo "    === L$SLAVE_ID ==="
+                        python3 -c "
+import json
+
+nombres = {
+    32: 'Consigna', 41: 'Nº Serie', 42: 'V nominal', 43: 'V prim auto',
+    44: 'V sec auto', 45: 'V sec trafo', 46: 'Topología', 47: 'Dead-time',
+    48: 'Dir Modbus', 49: 'I nom sal', 50: 'I nom chop', 51: 'I max chop',
+    52: 'I max pico', 53: 'T apag CC', 55: 'Est inicial', 56: 'V inicial',
+    57: 'T máxima', 58: 'Dec T reenc', 62: 'Package', 63: 'Áng alta',
+    64: 'Áng baja', 65: '% carga', 66: 'Sens trans', 67: 'Sens deriv',
+    71: 'Ca00', 72: 'Ca01', 75: 'Ca06', 76: 'Ca07', 81: 'Ca12', 83: 'Ca14', 84: 'Ca15',
+    91: 'Cn00', 92: 'Cn01', 93: 'Cn02', 94: 'Cn03'
+}
+
+try:
+    with open(f'/tmp/placa_L{$SLAVE_ID}_params.json', 'r') as f:
+        params = json.load(f)
+    
+    # Mostrar parámetros importantes
+    importantes = [32, 41, 46, 47, 49, 55, 56, 91, 92, 93, 94]
+    for reg in importantes:
+        if str(reg) in params:
+            val = params[str(reg)]
+            nombre = nombres.get(reg, f'Reg {reg}')
+            print(f'    {nombre}: {val}')
+except Exception as e:
+    print(f'    Error: {e}')
+" 2>/dev/null
+                    done
+                    
+                    echo ""
+                    read -p "  ¿Los parámetros son correctos? ¿Restaurar? (s/N): " RESTAURAR
+                    if [ "$RESTAURAR" = "s" ] || [ "$RESTAURAR" = "S" ]; then
+                        echo ""
+                        echo "  Restaurando parámetros..."
+                        for SLAVE_ID in $PLACAS; do
+                            python3 -c "
+from pymodbus.client import ModbusSerialClient
+import json
+import time
+
+c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
+c.connect()
+
+try:
+    with open(f'/tmp/placa_L{$SLAVE_ID}_params.json', 'r') as f:
+        params = json.load(f)
+except:
+    print(f'    L$SLAVE_ID: No se encontraron parámetros guardados')
+    c.close()
+    exit()
+
+# Registros que se pueden escribir
+escribibles = [32, 46, 47, 49, 50, 51, 52, 53, 55, 56, 57, 58, 62, 63, 64, 65, 66, 67, 91, 92, 93, 94]
+
+escritos = 0
+for reg, val in params.items():
+    reg = int(reg)
+    if reg in escribibles:
+        c.write_register(reg, val, slave=$SLAVE_ID)
+        time.sleep(0.03)
+        escritos += 1
+
+# Habilitar con Flag Est = 43981
+c.write_register(30, 43981, slave=$SLAVE_ID)
+time.sleep(0.1)
+
+# Poner en regulación
+c.write_register(31, 2, slave=$SLAVE_ID)
+
+c.close()
+print(f'    L$SLAVE_ID: {escritos} parámetros restaurados')
+" 2>/dev/null
+                        done
+                    else
+                        echo "  Parámetros NO restaurados."
+                        echo "  Solo se habilitará la placa..."
+                        for SLAVE_ID in $PLACAS; do
+                            python3 -c "
+from pymodbus.client import ModbusSerialClient
+import time
+c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
+c.connect()
+c.write_register(30, 43981, slave=$SLAVE_ID)
+time.sleep(0.1)
+c.write_register(31, 2, slave=$SLAVE_ID)
+c.close()
+" 2>/dev/null
+                            echo "    L$SLAVE_ID: Habilitada (Flag Est=43981)"
+                        done
+                    fi
+                    
+                    sleep 1
+                    
+                    # PASO 4: Verificar resultado
+                    echo ""
+                    echo "  [4/4] Verificando resultado:"
+                    for SLAVE_ID in $PLACAS; do
+                        RESULT=$(python3 -c "
+from pymodbus.client import ModbusSerialClient
+try:
+    c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
+    c.connect()
+    r0 = c.read_holding_registers(0, 1, slave=$SLAVE_ID)
+    r2 = c.read_holding_registers(2, 1, slave=$SLAVE_ID)
+    r30 = c.read_holding_registers(30, 1, slave=$SLAVE_ID)
+    r32 = c.read_holding_registers(32, 1, slave=$SLAVE_ID)
+    estado = r0.registers[0] if not r0.isError() else '?'
+    alarma = r2.registers[0] if not r2.isError() else '?'
+    flag = r30.registers[0] if not r30.isError() else '?'
+    consigna = r32.registers[0] if not r32.isError() else '?'
+    print(f'Estado={estado} Alarma={alarma} FlagEst={flag} Consigna={consigna}')
+    c.close()
+except Exception as e:
+    print(f'Error: {e}')
+" 2>/dev/null)
+                        if echo "$RESULT" | grep -q "Alarma=0"; then
+                            echo "    L$SLAVE_ID: $RESULT ✓"
+                        else
+                            echo "    L$SLAVE_ID: $RESULT"
+                        fi
+                    done
+                else
+                    echo "  Cancelado."
+                fi
+                
+                echo ""
+                echo "  Reiniciando Node-RED..."
+                sudo systemctl start nodered 2>/dev/null
+                sleep 2
+                echo "  [OK] Node-RED iniciado"
+            fi
+        fi
+        
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Reset completado"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         ;;
     0|*)
         echo "  Saliendo..."
