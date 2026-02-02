@@ -1971,9 +1971,98 @@ print(f'    L$SLAVE_ID: Parámetros modificados escritos')
                         done
                         
                     else
-                        echo "  Solo habilitando placas..."
-                        for SLAVE_ID in $PLACAS; do
-                            python3 -c "
+                        echo ""
+                        echo "  Comparando con otras placas para encontrar valores correctos..."
+                        python3 -c "
+from pymodbus.client import ModbusSerialClient
+import time
+
+c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
+c.connect()
+
+# Leer parámetros de las 3 placas
+placas = {}
+regs_comparar = [32, 46, 47, 49, 50, 51, 52, 53, 55, 56, 57, 58, 62, 63, 64, 65, 66, 67, 91, 92, 93, 94]
+nombres = {
+    32: 'Consigna', 46: 'Topología', 47: 'Dead-time', 49: 'I nom sal',
+    50: 'I nom chop', 51: 'I max chop', 52: 'I max pico', 53: 'T apag CC',
+    55: 'Est inicial', 56: 'V inicial', 57: 'T máxima', 58: 'Dec T reenc',
+    62: 'Package', 63: 'Áng alta', 64: 'Áng baja', 65: '% carga',
+    66: 'Sens trans', 67: 'Sens deriv', 91: 'Cn00', 92: 'Cn01', 93: 'Cn02', 94: 'Cn03'
+}
+
+for slave in [1, 2, 3]:
+    placas[slave] = {}
+    for reg in regs_comparar:
+        r = c.read_holding_registers(reg, 1, slave=slave)
+        if not r.isError():
+            placas[slave][reg] = r.registers[0]
+        time.sleep(0.02)
+
+c.close()
+
+# Encontrar valores más comunes (probablemente correctos)
+print('')
+print('  Parámetros recomendados (valor más común entre placas):')
+print('  ─────────────────────────────────────────────────────')
+valores_correctos = {}
+for reg in regs_comparar:
+    vals = [placas[s].get(reg) for s in [1,2,3] if placas[s].get(reg) is not None]
+    if vals:
+        # El valor más común
+        from collections import Counter
+        mas_comun = Counter(vals).most_common(1)[0][0]
+        valores_correctos[reg] = mas_comun
+        
+        # Mostrar si hay diferencias
+        diferentes = [s for s in [1,2,3] if placas[s].get(reg) != mas_comun]
+        nombre = nombres.get(reg, f'Reg {reg}')
+        if diferentes:
+            print(f'    {nombre}: {mas_comun}  (L{diferentes[0]} tiene {placas[diferentes[0]].get(reg)})')
+        else:
+            print(f'    {nombre}: {mas_comun}')
+
+# Guardar valores correctos
+import json
+with open('/tmp/valores_correctos.json', 'w') as f:
+    json.dump(valores_correctos, f)
+print('')
+print('  Valores guardados en /tmp/valores_correctos.json')
+" 2>/dev/null
+                        
+                        echo ""
+                        read -p "  ¿Usar estos valores recomendados? (s/N): " USAR_RECOMENDADOS
+                        if [ "$USAR_RECOMENDADOS" = "s" ] || [ "$USAR_RECOMENDADOS" = "S" ]; then
+                            echo "  Escribiendo valores recomendados..."
+                            for SLAVE_ID in $PLACAS; do
+                                python3 -c "
+from pymodbus.client import ModbusSerialClient
+import json
+import time
+
+c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
+c.connect()
+
+with open('/tmp/valores_correctos.json', 'r') as f:
+    params = json.load(f)
+
+escritos = 0
+for reg, val in params.items():
+    c.write_register(int(reg), val, slave=$SLAVE_ID)
+    time.sleep(0.03)
+    escritos += 1
+
+c.write_register(30, 43981, slave=$SLAVE_ID)
+time.sleep(0.1)
+c.write_register(31, 2, slave=$SLAVE_ID)
+c.close()
+print(f'    L$SLAVE_ID: {escritos} parámetros escritos')
+" 2>/dev/null
+                            done
+                        else
+                            echo "  Solo habilitando placas..."
+                            for SLAVE_ID in $PLACAS; do
+                                python3 -c "
 from pymodbus.client import ModbusSerialClient
 import time
 c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
@@ -1983,8 +2072,9 @@ time.sleep(0.1)
 c.write_register(31, 2, slave=$SLAVE_ID)
 c.close()
 " 2>/dev/null
-                            echo "    L$SLAVE_ID: Habilitada (Flag Est=43981)"
-                        done
+                                echo "    L$SLAVE_ID: Habilitada (Flag Est=43981)"
+                            done
+                        fi
                     fi
                     
                     sleep 1
