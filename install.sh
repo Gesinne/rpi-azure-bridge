@@ -436,6 +436,22 @@ EOFPYTHON
             fi
             
             if [ "$CONTEXT_NEEDS_FIX" = true ]; then
+                # Mostrar ANTES
+                echo ""
+                echo "  ┌─ ANTES ─────────────────────────────────────"
+                python3 << EOFBEFORE
+import re
+with open('$SETTINGS_FILE', 'r') as f:
+    content = f.read()
+match = re.search(r'contextStorage:\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\}', content, re.DOTALL)
+if match:
+    for line in match.group(0).split('\n'):
+        print(f'  │ {line.strip()}')
+else:
+    print('  │ (no existe)')
+EOFBEFORE
+                echo "  └──────────────────────────────────────────────"
+                echo ""
                 echo "  [~]  Corrigiendo contextStorage..."
                 
                 python3 << EOFCTX
@@ -473,6 +489,20 @@ else:
 EOFCTX
                 
                 if grep -A5 "contextStorage:" "$SETTINGS_FILE" | grep -A3 "file:" | grep -q '"localfilesystem"'; then
+                    # Mostrar DESPUÉS
+                    echo ""
+                    echo "  ┌─ DESPUÉS ───────────────────────────────────"
+                    python3 << EOFAFTER
+import re
+with open('$SETTINGS_FILE', 'r') as f:
+    content = f.read()
+match = re.search(r'contextStorage:\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\}', content, re.DOTALL)
+if match:
+    for line in match.group(0).split('\n'):
+        print(f'  │ {line.strip()}')
+EOFAFTER
+                    echo "  └──────────────────────────────────────────────"
+                    echo ""
                     echo "  [OK] contextStorage corregido (variables persisten)"
                     NEED_RESTART=true
                 else
