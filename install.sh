@@ -1248,6 +1248,34 @@ EOFUTF8
                 else
                     if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
                         echo "  [OK] contextStorage ya está configurado"
+                        echo ""
+                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "  Configuración actual:"
+                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo ""
+                        # Extraer y mostrar el bloque contextStorage
+                        python3 << EOFSHOW
+import re
+with open('$SETTINGS_FILE', 'r') as f:
+    content = f.read()
+
+# Buscar el bloque contextStorage completo
+match = re.search(r'contextStorage:\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\}', content, re.DOTALL)
+if match:
+    block = match.group(0)
+    # Formatear para mostrar
+    for line in block.split('\n'):
+        print(f'    {line.strip()}')
+else:
+    # Intentar buscar versión más simple
+    match = re.search(r'contextStorage:\s*\{.*?\},', content, re.DOTALL)
+    if match:
+        for line in match.group(0).split('\n'):
+            print(f'    {line.strip()}')
+    else:
+        print('    (no se pudo extraer el bloque)')
+EOFSHOW
+                        echo ""
                     else
                         echo "  [*] Configurando contextStorage..."
                         
