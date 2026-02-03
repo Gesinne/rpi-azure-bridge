@@ -421,10 +421,22 @@ EOFPYTHON
             fi
         fi
         
-        # Verificar y configurar contextStorage si falta
+        # Verificar y configurar contextStorage si falta o está mal configurado
         if [ -f "$SETTINGS_FILE" ]; then
+            CONTEXT_NEEDS_FIX=false
+            
+            # Verificar si falta contextStorage
             if ! grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                echo "  [!]  Falta contextStorage en settings.js, configurando..."
+                echo "  [!]  Falta contextStorage en settings.js"
+                CONTEXT_NEEDS_FIX=true
+            # Verificar si file usa "memory" en vez de "localfilesystem"
+            elif grep -A5 "contextStorage:" "$SETTINGS_FILE" | grep -A3 "file:" | grep -q '"memory"'; then
+                echo "  [!]  contextStorage mal configurado (file usa memory)"
+                CONTEXT_NEEDS_FIX=true
+            fi
+            
+            if [ "$CONTEXT_NEEDS_FIX" = true ]; then
+                echo "  [~]  Corrigiendo contextStorage..."
                 
                 python3 << EOFCTX
 import re
@@ -432,8 +444,8 @@ import re
 with open('$SETTINGS_FILE', 'r') as f:
     content = f.read()
 
-context_code = '''
-    contextStorage: {
+# Configuración correcta
+context_code_correct = '''    contextStorage: {
         default: {
             module: "memory"
         },
@@ -442,9 +454,15 @@ context_code = '''
         }
     },'''
 
-pattern = r'(module\.exports\s*=\s*\{)'
-replacement = r'\1' + context_code
-new_content = re.sub(pattern, replacement, content, count=1)
+# Primero intentar reemplazar contextStorage existente (mal configurado)
+pattern_existing = r'contextStorage:\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\},?'
+if re.search(pattern_existing, content, re.DOTALL):
+    new_content = re.sub(pattern_existing, context_code_correct, content, count=1, flags=re.DOTALL)
+else:
+    # Si no existe, añadir después de module.exports = {
+    pattern = r'(module\.exports\s*=\s*\{)'
+    replacement = r'\1\n' + context_code_correct
+    new_content = re.sub(pattern, replacement, content, count=1)
 
 if new_content != content:
     with open('$SETTINGS_FILE', 'w') as f:
@@ -454,11 +472,11 @@ else:
     print("NO_MATCH")
 EOFCTX
                 
-                if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                    echo "  [OK] contextStorage configurado (variables persisten)"
+                if grep -A5 "contextStorage:" "$SETTINGS_FILE" | grep -A3 "file:" | grep -q '"localfilesystem"'; then
+                    echo "  [OK] contextStorage corregido (variables persisten)"
                     NEED_RESTART=true
                 else
-                    echo "  [!]  No se pudo configurar automáticamente"
+                    echo "  [!]  No se pudo corregir automáticamente"
                 fi
             fi
         fi
