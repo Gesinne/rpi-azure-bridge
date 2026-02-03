@@ -471,9 +471,10 @@ while true; do
     echo "  4) Ver/Modificar registros de la placa"
     echo "  5) Revisar espacio y logs"
     echo "  6) Gestionar paleta Node-RED"
+    echo "  7) Diagnóstico y reparación"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-6]: " OPTION
+    read -p "  Opción [0-7]: " OPTION
 
     case $OPTION in
         0)
@@ -3862,6 +3863,136 @@ except Exception as e:
                     echo "  Volviendo al menú..."
                     ;;
             esac
+            
+            volver_menu
+            ;;
+        7)
+            # Diagnóstico y reparación de comunicación con placas
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Diagnóstico y Reparación"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            
+            # 1. Verificar estado Node-RED
+            echo "  [1/5] Estado Node-RED:"
+            NR_STATUS=$(systemctl is-active nodered 2>/dev/null || echo "no instalado")
+            if [ "$NR_STATUS" = "active" ]; then
+                echo "        ✓ Activo"
+            else
+                echo "        ✗ $NR_STATUS"
+            fi
+            echo ""
+            
+            # 2. Verificar errores en logs
+            echo "  [2/5] Errores recientes:"
+            ERRORS=$(journalctl -u nodered -n 20 --no-pager 2>/dev/null | grep -i "error" | tail -3)
+            if [ -n "$ERRORS" ]; then
+                echo "$ERRORS" | sed 's/^/        ⚠ /'
+            else
+                echo "        ✓ Sin errores recientes"
+            fi
+            echo ""
+            
+            # 3. Probar comunicación Modbus
+            echo "  [3/5] Probando comunicación Modbus..."
+            echo "        (Parando Node-RED temporalmente)"
+            sudo systemctl stop nodered 2>/dev/null
+            sleep 1
+            
+            MODBUS_OK=0
+            MODBUS_RESULT=""
+            for SLAVE_ID in 1 2 3; do
+                RESULT=$(python3 -c "
+from pymodbus.client import ModbusSerialClient
+try:
+    c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=1)
+    c.connect()
+    r = c.read_holding_registers(3, 2, slave=$SLAVE_ID)
+    if not r.isError():
+        v_sal = r.registers[0] / 100.0
+        v_ent = r.registers[1] / 100.0
+        print(f'L{$SLAVE_ID}: V_sal={v_sal:.1f}V V_ent={v_ent:.1f}V')
+    else:
+        print(f'L{$SLAVE_ID}: Sin respuesta')
+    c.close()
+except Exception as e:
+    print(f'L{$SLAVE_ID}: Error - {e}')
+" 2>/dev/null)
+                echo "        $RESULT"
+                if echo "$RESULT" | grep -q "V_sal"; then
+                    MODBUS_OK=$((MODBUS_OK + 1))
+                fi
+            done
+            echo ""
+            
+            # 4. Decidir acción según resultado
+            if [ $MODBUS_OK -eq 0 ]; then
+                echo "  [4/5] Resultado: ✗ PROBLEMA FÍSICO"
+                echo "        Ninguna placa responde. Verificar:"
+                echo "        - Cable serial conectado"
+                echo "        - Placas con alimentación"
+                echo "        - Puerto /dev/ttyAMA0 correcto"
+                echo ""
+                echo "        Puertos disponibles:"
+                ls -la /dev/ttyAMA* /dev/ttyUSB* 2>/dev/null | sed 's/^/        /'
+            else
+                echo "  [4/5] Resultado: ✓ Modbus OK ($MODBUS_OK/3 placas)"
+                echo ""
+                
+                # Verificar contexto corrupto
+                CONTEXT_DIR="/home/gesinne/.node-red/context"
+                CONTEXT_ERROR=false
+                if [ -d "$CONTEXT_DIR" ]; then
+                    for f in $(find "$CONTEXT_DIR" -name "*.json" 2>/dev/null); do
+                        if ! python3 -c "import json; json.load(open('$f'))" 2>/dev/null; then
+                            echo "        ⚠ Contexto corrupto: $f"
+                            CONTEXT_ERROR=true
+                        fi
+                    done
+                fi
+                
+                if [ "$CONTEXT_ERROR" = true ] || [ "$NR_STATUS" != "active" ]; then
+                    echo "  [5/5] Reparando..."
+                    echo "        Limpiando contexto..."
+                    rm -rf "$CONTEXT_DIR"/* 2>/dev/null
+                    echo "        ✓ Contexto limpiado"
+                else
+                    echo "  [5/5] No se detectaron problemas de contexto"
+                fi
+            fi
+            
+            # 5. Reiniciar Node-RED
+            echo ""
+            echo "  Reiniciando Node-RED..."
+            sudo systemctl start nodered
+            sleep 3
+            
+            # Verificar estado final
+            FINAL_STATUS=$(systemctl is-active nodered 2>/dev/null)
+            if [ "$FINAL_STATUS" = "active" ]; then
+                echo "  ✓ Node-RED activo"
+                # Verificar si hay errores de arranque
+                STARTUP_ERRORS=$(journalctl -u nodered -n 10 --no-pager 2>/dev/null | grep -i "error")
+                if [ -n "$STARTUP_ERRORS" ]; then
+                    echo ""
+                    echo "  ⚠ Errores en arranque:"
+                    echo "$STARTUP_ERRORS" | sed 's/^/    /'
+                fi
+            else
+                echo "  ✗ Node-RED no arrancó correctamente"
+            fi
+            
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            if [ $MODBUS_OK -gt 0 ]; then
+                echo "  RESUMEN: Comunicación OK. Si sigue sin leer,"
+                echo "  revisar configuración del flow en Node-RED."
+            else
+                echo "  RESUMEN: Problema de comunicación física."
+                echo "  Revisar cables y alimentación de placas."
+            fi
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             volver_menu
             ;;
