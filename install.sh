@@ -421,6 +421,48 @@ EOFPYTHON
             fi
         fi
         
+        # Verificar y configurar contextStorage si falta
+        if [ -f "$SETTINGS_FILE" ]; then
+            if ! grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
+                echo "  [!]  Falta contextStorage en settings.js, configurando..."
+                
+                python3 << EOFCTX
+import re
+
+with open('$SETTINGS_FILE', 'r') as f:
+    content = f.read()
+
+context_code = '''
+    contextStorage: {
+        default: {
+            module: "memory"
+        },
+        file: {
+            module: "localfilesystem"
+        }
+    },'''
+
+pattern = r'(module\.exports\s*=\s*\{)'
+replacement = r'\1' + context_code
+new_content = re.sub(pattern, replacement, content, count=1)
+
+if new_content != content:
+    with open('$SETTINGS_FILE', 'w') as f:
+        f.write(new_content)
+    print("OK")
+else:
+    print("NO_MATCH")
+EOFCTX
+                
+                if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
+                    echo "  [OK] contextStorage configurado (variables persisten)"
+                    NEED_RESTART=true
+                else
+                    echo "  [!]  No se pudo configurar automáticamente"
+                fi
+            fi
+        fi
+        
         # Reiniciar Node-RED si hubo cambios
         if [ "$NEED_RESTART" = true ]; then
             reiniciar_nodered
