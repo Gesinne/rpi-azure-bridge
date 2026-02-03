@@ -30,20 +30,40 @@ trap cleanup_on_exit EXIT
 if [ ! -t 0 ]; then
     SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh"
     TEMP_SCRIPT="/tmp/gesinne_install_$$.sh"
-    curl -sL "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" "$SCRIPT_URL"
+    echo "  [~] Descargando script..."
+    curl -sL --connect-timeout 10 --max-time 60 "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" --timeout=60 "$SCRIPT_URL"
     chmod +x "$TEMP_SCRIPT"
     exec sudo bash "$TEMP_SCRIPT" "$@"
     exit 0
 fi
 
-# Instalar comando 'Actualizar' si no existe
+# Instalar comando 'Actualizar' si no existe o actualizarlo
+ACTUALIZAR_NEEDS_UPDATE=false
 if [ ! -f /usr/local/bin/Actualizar ]; then
+    ACTUALIZAR_NEEDS_UPDATE=true
+elif ! grep -q "connect-timeout" /usr/local/bin/Actualizar 2>/dev/null; then
+    ACTUALIZAR_NEEDS_UPDATE=true
+fi
+
+if [ "$ACTUALIZAR_NEEDS_UPDATE" = true ]; then
     cat > /usr/local/bin/Actualizar << 'EOFCMD'
 #!/bin/bash
 # Comando Actualizar - Lanza el instalador/configurador de Gesinne
 SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh"
 TEMP_SCRIPT="/tmp/gesinne_install_$$.sh"
-curl -sL "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" "$SCRIPT_URL"
+echo "  [~] Descargando script..."
+if ! curl -sL --connect-timeout 10 --max-time 60 --retry 2 "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null; then
+    echo "  [!] curl falló, intentando con wget..."
+    wget -qO "$TEMP_SCRIPT" --timeout=60 --tries=2 "$SCRIPT_URL" || {
+        echo "  [X] Error: No se pudo descargar el script"
+        echo "      Verifica tu conexión a Internet"
+        exit 1
+    }
+fi
+if [ ! -s "$TEMP_SCRIPT" ]; then
+    echo "  [X] Error: Script descargado está vacío"
+    exit 1
+fi
 chmod +x "$TEMP_SCRIPT"
 exec sudo bash "$TEMP_SCRIPT" "$@"
 EOFCMD
