@@ -373,7 +373,19 @@ for node in flows:
                 'fix_type': 'validar_fase'
             })
     
-    # 33. Flujo de configuración consigna roto (L1/L2/L3 <> consigna no conecta a TensionConsigna)
+    # 33. TensionConsigna con anti-duplicados problemáticos (bloquea escritura)
+    if name in ['TensionConsignaL1', 'TensionConsignaL2', 'TensionConsignaL3']:
+        if 'lastConsigna' in func or 'consigna === lastConsigna' in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': f'{name} tiene anti-duplicados que bloquean escritura consigna',
+                'fix_type': 'tension_consigna_antidup'
+            })
+    
+    # 34. Flujo de configuración consigna roto (L1/L2/L3 <> consigna no conecta a TensionConsigna)
     if name in ['L1 <> consigna', 'L2 <> consigna', 'L3 <> consigna']:
         # Buscar el ID del nodo TensionConsigna correspondiente
         fase = name.split(' ')[0]  # L1, L2, L3
@@ -919,6 +931,23 @@ return msg;"""
                     cambios += 1
                     print(f"  [OK] Corregido: {bug['nodo']} - Reconectado al nodo TensionConsigna")
             
+            elif fix_type == 'tension_consigna_antidup':
+                # Restaurar TensionConsigna sin anti-duplicados problemáticos
+                nodo_name = bug['nodo']
+                unitid = '1' if 'L1' in nodo_name else ('2' if 'L2' in nodo_name else '3')
+                node['func'] = f'''let consigna = global.get('consigna');
+msg.payload = {{
+    value: consigna,
+    'fc': 6,
+    'unitid': {unitid},
+    'address': 32,
+    'quantity': 1
+}}
+msg.topic = "TensionConsigna L{unitid}"
+return msg;'''
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Eliminados anti-duplicados problemáticos")
+            
             break
 
 if cambios > 0:
@@ -1275,6 +1304,23 @@ return msg;"""
                 node['wires'] = [[target_id]]
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Reconectado al nodo TensionConsigna")
+        
+        elif fix_type == 'tension_consigna_antidup':
+            # Restaurar TensionConsigna sin anti-duplicados problemáticos
+            nodo_name = bug['nodo']
+            unitid = '1' if 'L1' in nodo_name else ('2' if 'L2' in nodo_name else '3')
+            node['func'] = f'''let consigna = global.get('consigna');
+msg.payload = {{
+    value: consigna,
+    'fc': 6,
+    'unitid': {unitid},
+    'address': 32,
+    'quantity': 1
+}}
+msg.topic = "TensionConsigna L{unitid}"
+return msg;'''
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Eliminados anti-duplicados problemáticos")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
