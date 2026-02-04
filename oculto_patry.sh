@@ -314,52 +314,56 @@ for node in flows:
             pass
     
     # 28. Escritura registro 31 (modo) sin protección anti-duplicados
-    if node_type == 'function' and ("'address': 31" in func or '"address": 31' in func):
-        if 'lastModo' not in func and 'Regulacion' in name or 'Bypass' in name:
-            bugs.append({
-                'num': len(bugs) + 1,
-                'tipo': 'ALTO',
-                'nodo': name,
-                'id': node_id,
-                'desc': 'Escritura reg 31 sin protección anti-duplicados',
-                'fix_type': 'duplicados_reg31'
-            })
+    # NOTA: Desactivado - la protección anti-duplicados causa problemas con el flujo de consigna
+    # if node_type == 'function' and ("'address': 31" in func or '"address": 31' in func):
+    #     if 'lastModo' not in func and 'Regulacion' in name or 'Bypass' in name:
+    #         bugs.append({
+    #             'num': len(bugs) + 1,
+    #             'tipo': 'ALTO',
+    #             'nodo': name,
+    #             'id': node_id,
+    #             'desc': 'Escritura reg 31 sin protección anti-duplicados',
+    #             'fix_type': 'duplicados_reg31'
+    #         })
     
     # 29. Escritura registro 32 (consigna) sin protección anti-duplicados
-    if node_type == 'function' and name.startswith('TensionConsigna') and ("'address': 32" in func or '"address": 32' in func):
-        if 'lastConsigna' not in func:
-            bugs.append({
-                'num': len(bugs) + 1,
-                'tipo': 'ALTO',
-                'nodo': name,
-                'id': node_id,
-                'desc': 'Escritura reg 32 sin protección anti-duplicados',
-                'fix_type': 'duplicados_reg32'
-            })
+    # NOTA: Desactivado - la protección anti-duplicados causa problemas con el flujo de consigna
+    # if node_type == 'function' and name.startswith('TensionConsigna') and ("'address': 32" in func or '"address": 32' in func):
+    #     if 'lastConsigna' not in func:
+    #         bugs.append({
+    #             'num': len(bugs) + 1,
+    #             'tipo': 'ALTO',
+    #             'nodo': name,
+    #             'id': node_id,
+    #             'desc': 'Escritura reg 32 sin protección anti-duplicados',
+    #             'fix_type': 'duplicados_reg32'
+    #         })
     
     # 30. Escritura registro 55 (estadoinicial) sin protección anti-duplicados
-    if node_type == 'function' and name.startswith('EstadoInicial') and ("'address': 55" in func or '"address": 55' in func):
-        if 'lastEstadoInicial' not in func:
-            bugs.append({
-                'num': len(bugs) + 1,
-                'tipo': 'ALTO',
-                'nodo': name,
-                'id': node_id,
-                'desc': 'Escritura reg 55 sin protección anti-duplicados',
-                'fix_type': 'duplicados_reg55'
-            })
+    # NOTA: Desactivado - la protección anti-duplicados causa problemas
+    # if node_type == 'function' and name.startswith('EstadoInicial') and ("'address': 55" in func or '"address": 55' in func):
+    #     if 'lastEstadoInicial' not in func:
+    #         bugs.append({
+    #             'num': len(bugs) + 1,
+    #             'tipo': 'ALTO',
+    #             'nodo': name,
+    #             'id': node_id,
+    #             'desc': 'Escritura reg 55 sin protección anti-duplicados',
+    #             'fix_type': 'duplicados_reg55'
+    #         })
     
     # 31. Escritura registro 56 (inicial) sin protección anti-duplicados
-    if node_type == 'function' and name.startswith('TensionInicial') and ("'address': 56" in func or '"address": 56' in func):
-        if 'lastInicial' not in func:
-            bugs.append({
-                'num': len(bugs) + 1,
-                'tipo': 'ALTO',
-                'nodo': name,
-                'id': node_id,
-                'desc': 'Escritura reg 56 sin protección anti-duplicados',
-                'fix_type': 'duplicados_reg56'
-            })
+    # NOTA: Desactivado - la protección anti-duplicados causa problemas
+    # if node_type == 'function' and name.startswith('TensionInicial') and ("'address': 56" in func or '"address": 56' in func):
+    #     if 'lastInicial' not in func:
+    #         bugs.append({
+    #             'num': len(bugs) + 1,
+    #             'tipo': 'ALTO',
+    #             'nodo': name,
+    #             'id': node_id,
+    #             'desc': 'Escritura reg 56 sin protección anti-duplicados',
+    #             'fix_type': 'duplicados_reg56'
+    #         })
     
     # 32. Escritura Modbus con flow.get("fase") sin validación
     # NOTA: Desactivado - function 32 usa fase correctamente, genera falso positivo
@@ -375,16 +379,17 @@ for node in flows:
     #         })
     
     # 33. TensionConsigna con anti-duplicados problemáticos (bloquea escritura)
-    if name in ['TensionConsignaL1', 'TensionConsignaL2', 'TensionConsignaL3']:
-        if 'lastConsigna' in func or 'consigna === lastConsigna' in func:
-            bugs.append({
-                'num': len(bugs) + 1,
-                'tipo': 'ALTO',
-                'nodo': name,
-                'id': node_id,
-                'desc': f'{name} tiene anti-duplicados que bloquean escritura consigna',
-                'fix_type': 'tension_consigna_antidup'
-            })
+    # NOTA: Desactivado - ya no añadimos anti-duplicados, no necesitamos detectarlos
+    # if name in ['TensionConsignaL1', 'TensionConsignaL2', 'TensionConsignaL3']:
+    #     if 'lastConsigna' in func or 'consigna === lastConsigna' in func:
+    #         bugs.append({
+    #             'num': len(bugs) + 1,
+    #             'tipo': 'ALTO',
+    #             'nodo': name,
+    #             'id': node_id,
+    #             'desc': f'{name} tiene anti-duplicados que bloquean escritura consigna',
+    #             'fix_type': 'tension_consigna_antidup'
+    #         })
     
     # 34. Flujo de configuración consigna roto (L1/L2/L3 <> consigna no conecta a TensionConsigna)
     # NOTA: Desactivado - genera falsos positivos, el flujo puede conectar a otros nodos intermedios
