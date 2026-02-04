@@ -818,7 +818,7 @@ return msg;"""
                     fase = '3'
                 valor = '2' if 'Regulacion' in bug['nodo'] else '0'
                 var_name = f'lastModoL{fase}'
-                proteccion = f'let last = flow.get("{var_name}") || -1; if (last === {valor}) {{ return null; }} flow.set("{var_name}", {valor});\\n'
+                proteccion = f'let last = flow.get("{var_name}"); if (last !== undefined && last === {valor}) {{ return null; }} flow.set("{var_name}", {valor});\\n'
                 func = proteccion + func
                 node['func'] = func
                 cambios += 1
@@ -832,7 +832,7 @@ return msg;"""
                 elif 'L3' in bug['nodo']:
                     fase = '3'
                 var_name = f'lastConsignaL{fase}'
-                proteccion = f"let consigna = global.get('consigna'); let last = flow.get('{var_name}') || -1; if (last === consigna) {{ return null; }} flow.set('{var_name}', consigna);\\n"
+                proteccion = f"let consigna = global.get('consigna'); let last = flow.get('{var_name}'); if (last !== undefined && last === consigna) {{ return null; }} flow.set('{var_name}', consigna);\\n"
                 func = proteccion + func
                 node['func'] = func
                 cambios += 1
@@ -846,7 +846,7 @@ return msg;"""
                 elif 'L3' in bug['nodo']:
                     fase = '3'
                 var_name = f'lastEstadoInicialL{fase}'
-                proteccion = f"let estadoinicial = global.get('estadoinicial'); let last = flow.get('{var_name}') || -1; if (last === estadoinicial) {{ return null; }} flow.set('{var_name}', estadoinicial);\\n"
+                proteccion = f"let estadoinicial = global.get('estadoinicial'); let last = flow.get('{var_name}'); if (last !== undefined && last === estadoinicial) {{ return null; }} flow.set('{var_name}', estadoinicial);\\n"
                 func = proteccion + func
                 node['func'] = func
                 cambios += 1
@@ -860,7 +860,7 @@ return msg;"""
                 elif 'L3' in bug['nodo']:
                     fase = '3'
                 var_name = f'lastInicialL{fase}'
-                proteccion = f"let inicial = global.get('inicial'); let last = flow.get('{var_name}') || -1; if (last === inicial) {{ return null; }} flow.set('{var_name}', inicial);\\n"
+                proteccion = f"let inicial = global.get('inicial'); let last = flow.get('{var_name}'); if (last !== undefined && last === inicial) {{ return null; }} flow.set('{var_name}', inicial);\\n"
                 func = proteccion + func
                 node['func'] = func
                 cambios += 1
@@ -1151,7 +1151,7 @@ return msg;"""
             var_name = f'lastModoL{fase}'
             
             # Añadir protección anti-duplicados al inicio
-            proteccion = f'let last = flow.get("{var_name}") || -1; if (last === {valor}) {{ return null; }} flow.set("{var_name}", {valor});\\n'
+            proteccion = f'let last = flow.get("{var_name}"); if (last !== undefined && last === {valor}) {{ return null; }} flow.set("{var_name}", {valor});\\n'
             func = proteccion + func
             node['func'] = func
             cambios += 1
@@ -1168,7 +1168,7 @@ return msg;"""
             var_name = f'lastConsignaL{fase}'
             
             # Añadir protección anti-duplicados
-            proteccion = f"let consigna = global.get('consigna'); let last = flow.get('{var_name}') || -1; if (last === consigna) {{ return null; }} flow.set('{var_name}', consigna);\\n"
+            proteccion = f"let consigna = global.get('consigna'); let last = flow.get('{var_name}'); if (last !== undefined && last === consigna) {{ return null; }} flow.set('{var_name}', consigna);\\n"
             func = proteccion + func
             node['func'] = func
             cambios += 1
@@ -1185,7 +1185,7 @@ return msg;"""
             var_name = f'lastEstadoInicialL{fase}'
             
             # Añadir protección anti-duplicados
-            proteccion = f"let estadoinicial = global.get('estadoinicial'); let last = flow.get('{var_name}') || -1; if (last === estadoinicial) {{ return null; }} flow.set('{var_name}', estadoinicial);\\n"
+            proteccion = f"let estadoinicial = global.get('estadoinicial'); let last = flow.get('{var_name}'); if (last !== undefined && last === estadoinicial) {{ return null; }} flow.set('{var_name}', estadoinicial);\\n"
             func = proteccion + func
             node['func'] = func
             cambios += 1
@@ -1202,7 +1202,7 @@ return msg;"""
             var_name = f'lastInicialL{fase}'
             
             # Añadir protección anti-duplicados
-            proteccion = f"let inicial = global.get('inicial'); let last = flow.get('{var_name}') || -1; if (last === inicial) {{ return null; }} flow.set('{var_name}', inicial);\\n"
+            proteccion = f"let inicial = global.get('inicial'); let last = flow.get('{var_name}'); if (last !== undefined && last === inicial) {{ return null; }} flow.set('{var_name}', inicial);\\n"
             func = proteccion + func
             node['func'] = func
             cambios += 1
