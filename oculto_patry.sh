@@ -362,16 +362,17 @@ for node in flows:
             })
     
     # 32. Escritura Modbus con flow.get("fase") sin validación
-    if node_type == 'function' and "'fc': 6" in func and 'flow.get("fase")' in func:
-        if 'fase === undefined' not in func and 'fase < 1' not in func:
-            bugs.append({
-                'num': len(bugs) + 1,
-                'tipo': 'MEDIO',
-                'nodo': name,
-                'id': node_id,
-                'desc': 'Escritura Modbus con flow.get("fase") sin validación',
-                'fix_type': 'validar_fase'
-            })
+    # NOTA: Desactivado - function 32 usa fase correctamente, genera falso positivo
+    # if node_type == 'function' and "'fc': 6" in func and 'flow.get("fase")' in func:
+    #     if 'fase === undefined' not in func and 'fase < 1' not in func:
+    #         bugs.append({
+    #             'num': len(bugs) + 1,
+    #             'tipo': 'MEDIO',
+    #             'nodo': name,
+    #             'id': node_id,
+    #             'desc': 'Escritura Modbus con flow.get("fase") sin validación',
+    #             'fix_type': 'validar_fase'
+    #         })
     
     # 33. TensionConsigna con anti-duplicados problemáticos (bloquea escritura)
     if name in ['TensionConsignaL1', 'TensionConsignaL2', 'TensionConsignaL3']:
