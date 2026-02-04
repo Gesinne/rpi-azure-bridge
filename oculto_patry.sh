@@ -387,30 +387,28 @@ for node in flows:
             })
     
     # 34. Flujo de configuración consigna roto (L1/L2/L3 <> consigna no conecta a TensionConsigna)
-    if name in ['L1 <> consigna', 'L2 <> consigna', 'L3 <> consigna']:
-        # Buscar el ID del nodo TensionConsigna correspondiente
-        fase = name.split(' ')[0]  # L1, L2, L3
-        tension_node_name = f'TensionConsigna{fase}'
-        tension_id = None
-        for n in flows:
-            if n.get('name') == tension_node_name:
-                tension_id = n.get('id')
-                break
-        
-        # Verificar si el wire actual conecta al TensionConsigna
-        wires = node.get('wires', [[]])
-        if wires and wires[0]:
-            current_target = wires[0][0] if wires[0] else None
-            if current_target != tension_id:
-                bugs.append({
-                    'num': len(bugs) + 1,
-                    'tipo': 'ALTO',
-                    'nodo': name,
-                    'id': node_id,
-                    'desc': f'Flujo configuración roto: {name} no conecta a {tension_node_name}',
-                    'fix_type': 'flujo_consigna',
-                    'target_id': tension_id
-                })
+    # NOTA: Desactivado - genera falsos positivos, el flujo puede conectar a otros nodos intermedios
+    # if name in ['L1 <> consigna', 'L2 <> consigna', 'L3 <> consigna']:
+    #     fase = name.split(' ')[0]
+    #     tension_node_name = f'TensionConsigna{fase}'
+    #     tension_id = None
+    #     for n in flows:
+    #         if n.get('name') == tension_node_name:
+    #             tension_id = n.get('id')
+    #             break
+    #     wires = node.get('wires', [[]])
+    #     if wires and wires[0]:
+    #         current_target = wires[0][0] if wires[0] else None
+    #         if current_target != tension_id:
+    #             bugs.append({
+    #                 'num': len(bugs) + 1,
+    #                 'tipo': 'ALTO',
+    #                 'nodo': name,
+    #                 'id': node_id,
+    #                 'desc': f'Flujo configuración roto: {name} no conecta a {tension_node_name}',
+    #                 'fix_type': 'flujo_consigna',
+    #                 'target_id': tension_id
+    #             })
     
     # 12. Valores hardcodeados sospechosos en funciones (como 56112)
     # NOTA: Desactivado por generar muchos falsos positivos
