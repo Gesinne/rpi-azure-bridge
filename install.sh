@@ -27,43 +27,25 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 # Si se ejecuta desde curl/pipe, descargar y ejecutar localmente
-if [ ! -t 0 ]; then
+if [ ! -t 0 ] && [ -z "$GESINNE_DOWNLOADED" ]; then
+    export GESINNE_DOWNLOADED=1
     SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh"
     TEMP_SCRIPT="/tmp/gesinne_install_$$.sh"
     echo "  [~] Descargando script..."
-    curl -sL --connect-timeout 10 --max-time 60 "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" --timeout=60 "$SCRIPT_URL"
+    curl -sL "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" "$SCRIPT_URL"
     chmod +x "$TEMP_SCRIPT"
-    exec sudo bash "$TEMP_SCRIPT" "$@"
+    exec sudo bash "$TEMP_SCRIPT" "$@" </dev/tty
     exit 0
 fi
 
-# Instalar comando 'Actualizar' si no existe o actualizarlo
-ACTUALIZAR_NEEDS_UPDATE=false
+# Instalar comando 'Actualizar' si no existe
 if [ ! -f /usr/local/bin/Actualizar ]; then
-    ACTUALIZAR_NEEDS_UPDATE=true
-elif ! grep -q "connect-timeout" /usr/local/bin/Actualizar 2>/dev/null; then
-    ACTUALIZAR_NEEDS_UPDATE=true
-fi
-
-if [ "$ACTUALIZAR_NEEDS_UPDATE" = true ]; then
     cat > /usr/local/bin/Actualizar << 'EOFCMD'
 #!/bin/bash
 # Comando Actualizar - Lanza el instalador/configurador de Gesinne
 SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/install.sh"
 TEMP_SCRIPT="/tmp/gesinne_install_$$.sh"
-echo "  [~] Descargando script..."
-if ! curl -sL --connect-timeout 10 --max-time 60 --retry 2 "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null; then
-    echo "  [!] curl falló, intentando con wget..."
-    wget -qO "$TEMP_SCRIPT" --timeout=60 --tries=2 "$SCRIPT_URL" || {
-        echo "  [X] Error: No se pudo descargar el script"
-        echo "      Verifica tu conexión a Internet"
-        exit 1
-    }
-fi
-if [ ! -s "$TEMP_SCRIPT" ]; then
-    echo "  [X] Error: Script descargado está vacío"
-    exit 1
-fi
+curl -sL "$SCRIPT_URL" -o "$TEMP_SCRIPT" 2>/dev/null || wget -qO "$TEMP_SCRIPT" "$SCRIPT_URL"
 chmod +x "$TEMP_SCRIPT"
 exec sudo bash "$TEMP_SCRIPT" "$@"
 EOFCMD
@@ -441,96 +423,6 @@ EOFPYTHON
             fi
         fi
         
-        # Verificar y configurar contextStorage si falta o está mal configurado
-        if [ -f "$SETTINGS_FILE" ]; then
-            CONTEXT_NEEDS_FIX=false
-            
-            # Verificar si falta contextStorage
-            if ! grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
-                echo "  [!]  Falta contextStorage en settings.js"
-                CONTEXT_NEEDS_FIX=true
-            # Verificar si file usa "memory" en vez de "localfilesystem"
-            elif grep -A5 "contextStorage:" "$SETTINGS_FILE" | grep -A3 "file:" | grep -q '"memory"'; then
-                echo "  [!]  contextStorage mal configurado (file usa memory)"
-                CONTEXT_NEEDS_FIX=true
-            fi
-            
-            if [ "$CONTEXT_NEEDS_FIX" = true ]; then
-                # Mostrar ANTES
-                echo ""
-                echo "  ┌─ ANTES ─────────────────────────────────────"
-                python3 << EOFBEFORE
-import re
-with open('$SETTINGS_FILE', 'r') as f:
-    content = f.read()
-match = re.search(r'contextStorage:\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\}', content, re.DOTALL)
-if match:
-    for line in match.group(0).split('\n'):
-        print(f'  │ {line.strip()}')
-else:
-    print('  │ (no existe)')
-EOFBEFORE
-                echo "  └──────────────────────────────────────────────"
-                echo ""
-                echo "  [~]  Corrigiendo contextStorage..."
-                
-                python3 << EOFCTX
-import re
-
-with open('$SETTINGS_FILE', 'r') as f:
-    content = f.read()
-
-# Configuración correcta
-context_code_correct = '''    contextStorage: {
-        default: {
-            module: "memory"
-        },
-        file: {
-            module: "localfilesystem"
-        }
-    },'''
-
-# Primero intentar reemplazar contextStorage existente (mal configurado)
-pattern_existing = r'contextStorage:\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\},?'
-if re.search(pattern_existing, content, re.DOTALL):
-    new_content = re.sub(pattern_existing, context_code_correct, content, count=1, flags=re.DOTALL)
-else:
-    # Si no existe, añadir después de module.exports = {
-    pattern = r'(module\.exports\s*=\s*\{)'
-    replacement = r'\1\n' + context_code_correct
-    new_content = re.sub(pattern, replacement, content, count=1)
-
-if new_content != content:
-    with open('$SETTINGS_FILE', 'w') as f:
-        f.write(new_content)
-    print("OK")
-else:
-    print("NO_MATCH")
-EOFCTX
-                
-                if grep -A5 "contextStorage:" "$SETTINGS_FILE" | grep -A3 "file:" | grep -q '"localfilesystem"'; then
-                    # Mostrar DESPUÉS
-                    echo ""
-                    echo "  ┌─ DESPUÉS ───────────────────────────────────"
-                    python3 << EOFAFTER
-import re
-with open('$SETTINGS_FILE', 'r') as f:
-    content = f.read()
-match = re.search(r'contextStorage:\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\}', content, re.DOTALL)
-if match:
-    for line in match.group(0).split('\n'):
-        print(f'  │ {line.strip()}')
-EOFAFTER
-                    echo "  └──────────────────────────────────────────────"
-                    echo ""
-                    echo "  [OK] contextStorage corregido (variables persisten)"
-                    NEED_RESTART=true
-                else
-                    echo "  [!]  No se pudo corregir automáticamente"
-                fi
-            fi
-        fi
-        
         # Reiniciar Node-RED si hubo cambios
         if [ "$NEED_RESTART" = true ]; then
             reiniciar_nodered
@@ -581,10 +473,9 @@ while true; do
     echo "  4) Ver/Modificar registros de la placa"
     echo "  5) Revisar espacio y logs"
     echo "  6) Gestionar paleta Node-RED"
-    echo "  7) Diagnóstico y reparación"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-7]: " OPTION
+    read -p "  Opción [0-6]: " OPTION
 
     case $OPTION in
         0)
@@ -1358,34 +1249,6 @@ EOFUTF8
                 else
                     if grep -E "^\s*contextStorage:" "$SETTINGS_FILE" | grep -v "^\s*//" > /dev/null 2>&1; then
                         echo "  [OK] contextStorage ya está configurado"
-                        echo ""
-                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                        echo "  Configuración actual:"
-                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                        echo ""
-                        # Extraer y mostrar el bloque contextStorage
-                        python3 << EOFSHOW
-import re
-with open('$SETTINGS_FILE', 'r') as f:
-    content = f.read()
-
-# Buscar el bloque contextStorage completo
-match = re.search(r'contextStorage:\s*\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}[^}]*\}', content, re.DOTALL)
-if match:
-    block = match.group(0)
-    # Formatear para mostrar
-    for line in block.split('\n'):
-        print(f'    {line.strip()}')
-else:
-    # Intentar buscar versión más simple
-    match = re.search(r'contextStorage:\s*\{.*?\},', content, re.DOTALL)
-    if match:
-        for line in match.group(0).split('\n'):
-            print(f'    {line.strip()}')
-    else:
-        print('    (no se pudo extraer el bloque)')
-EOFSHOW
-                        echo ""
                     else
                         echo "  [*] Configurando contextStorage..."
                         
@@ -4001,136 +3864,6 @@ except Exception as e:
                     echo "  Volviendo al menú..."
                     ;;
             esac
-            
-            volver_menu
-            ;;
-        7)
-            # Diagnóstico y reparación de comunicación con placas
-            echo ""
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  Diagnóstico y Reparación"
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            
-            # 1. Verificar estado Node-RED
-            echo "  [1/5] Estado Node-RED:"
-            NR_STATUS=$(systemctl is-active nodered 2>/dev/null || echo "no instalado")
-            if [ "$NR_STATUS" = "active" ]; then
-                echo "        ✓ Activo"
-            else
-                echo "        ✗ $NR_STATUS"
-            fi
-            echo ""
-            
-            # 2. Verificar errores en logs
-            echo "  [2/5] Errores recientes:"
-            ERRORS=$(journalctl -u nodered -n 20 --no-pager 2>/dev/null | grep -i "error" | tail -3)
-            if [ -n "$ERRORS" ]; then
-                echo "$ERRORS" | sed 's/^/        ⚠ /'
-            else
-                echo "        ✓ Sin errores recientes"
-            fi
-            echo ""
-            
-            # 3. Probar comunicación Modbus
-            echo "  [3/5] Probando comunicación Modbus..."
-            echo "        (Parando Node-RED temporalmente)"
-            sudo systemctl stop nodered 2>/dev/null
-            sleep 1
-            
-            MODBUS_OK=0
-            MODBUS_RESULT=""
-            for SLAVE_ID in 1 2 3; do
-                RESULT=$(python3 -c "
-from pymodbus.client import ModbusSerialClient
-try:
-    c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=1)
-    c.connect()
-    r = c.read_holding_registers(3, 2, slave=$SLAVE_ID)
-    if not r.isError():
-        v_sal = r.registers[0] / 100.0
-        v_ent = r.registers[1] / 100.0
-        print(f'L{$SLAVE_ID}: V_sal={v_sal:.1f}V V_ent={v_ent:.1f}V')
-    else:
-        print(f'L{$SLAVE_ID}: Sin respuesta')
-    c.close()
-except Exception as e:
-    print(f'L{$SLAVE_ID}: Error - {e}')
-" 2>/dev/null)
-                echo "        $RESULT"
-                if echo "$RESULT" | grep -q "V_sal"; then
-                    MODBUS_OK=$((MODBUS_OK + 1))
-                fi
-            done
-            echo ""
-            
-            # 4. Decidir acción según resultado
-            if [ $MODBUS_OK -eq 0 ]; then
-                echo "  [4/5] Resultado: ✗ PROBLEMA FÍSICO"
-                echo "        Ninguna placa responde. Verificar:"
-                echo "        - Cable serial conectado"
-                echo "        - Placas con alimentación"
-                echo "        - Puerto /dev/ttyAMA0 correcto"
-                echo ""
-                echo "        Puertos disponibles:"
-                ls -la /dev/ttyAMA* /dev/ttyUSB* 2>/dev/null | sed 's/^/        /'
-            else
-                echo "  [4/5] Resultado: ✓ Modbus OK ($MODBUS_OK/3 placas)"
-                echo ""
-                
-                # Verificar contexto corrupto
-                CONTEXT_DIR="/home/gesinne/.node-red/context"
-                CONTEXT_ERROR=false
-                if [ -d "$CONTEXT_DIR" ]; then
-                    for f in $(find "$CONTEXT_DIR" -name "*.json" 2>/dev/null); do
-                        if ! python3 -c "import json; json.load(open('$f'))" 2>/dev/null; then
-                            echo "        ⚠ Contexto corrupto: $f"
-                            CONTEXT_ERROR=true
-                        fi
-                    done
-                fi
-                
-                if [ "$CONTEXT_ERROR" = true ] || [ "$NR_STATUS" != "active" ]; then
-                    echo "  [5/5] Reparando..."
-                    echo "        Limpiando contexto..."
-                    rm -rf "$CONTEXT_DIR"/* 2>/dev/null
-                    echo "        ✓ Contexto limpiado"
-                else
-                    echo "  [5/5] No se detectaron problemas de contexto"
-                fi
-            fi
-            
-            # 5. Reiniciar Node-RED
-            echo ""
-            echo "  Reiniciando Node-RED..."
-            sudo systemctl start nodered
-            sleep 3
-            
-            # Verificar estado final
-            FINAL_STATUS=$(systemctl is-active nodered 2>/dev/null)
-            if [ "$FINAL_STATUS" = "active" ]; then
-                echo "  ✓ Node-RED activo"
-                # Verificar si hay errores de arranque
-                STARTUP_ERRORS=$(journalctl -u nodered -n 10 --no-pager 2>/dev/null | grep -i "error")
-                if [ -n "$STARTUP_ERRORS" ]; then
-                    echo ""
-                    echo "  ⚠ Errores en arranque:"
-                    echo "$STARTUP_ERRORS" | sed 's/^/    /'
-                fi
-            else
-                echo "  ✗ Node-RED no arrancó correctamente"
-            fi
-            
-            echo ""
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            if [ $MODBUS_OK -gt 0 ]; then
-                echo "  RESUMEN: Comunicación OK. Si sigue sin leer,"
-                echo "  revisar configuración del flow en Node-RED."
-            else
-                echo "  RESUMEN: Problema de comunicación física."
-                echo "  Revisar cables y alimentación de placas."
-            fi
-            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
             volver_menu
             ;;
