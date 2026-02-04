@@ -19,10 +19,9 @@ echo "  3) Revisar el JSON"
 echo "  4) Actualizar software"
 echo "  5) Reparar placas desparametrizadas"
 echo "  6) Activar persistencia de variables (anti-desparametrización)"
-echo "  7) Reset de placa (limpiar alarma memoria corrupta)"
 echo "  0) Salir"
 echo ""
-read -p "  Opción [0-7]: " PATRY_OPT
+read -p "  Opción [0-6]: " PATRY_OPT
 
 case $PATRY_OPT in
     1)
@@ -313,6 +312,54 @@ for node in flows:
                 })
         except:
             pass
+    
+    # 28. Escritura registro 31 (modo) sin protección anti-duplicados
+    if node_type == 'function' and ("'address': 31" in func or '"address": 31' in func):
+        if 'lastModo' not in func and 'Regulacion' in name or 'Bypass' in name:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Escritura reg 31 sin protección anti-duplicados',
+                'fix_type': 'duplicados_reg31'
+            })
+    
+    # 29. Escritura registro 32 (consigna) sin protección anti-duplicados
+    if node_type == 'function' and name.startswith('TensionConsigna') and ("'address': 32" in func or '"address": 32' in func):
+        if 'lastConsigna' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Escritura reg 32 sin protección anti-duplicados',
+                'fix_type': 'duplicados_reg32'
+            })
+    
+    # 30. Escritura registro 55 (estadoinicial) sin protección anti-duplicados
+    if node_type == 'function' and name.startswith('EstadoInicial') and ("'address': 55" in func or '"address": 55' in func):
+        if 'lastEstadoInicial' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Escritura reg 55 sin protección anti-duplicados',
+                'fix_type': 'duplicados_reg55'
+            })
+    
+    # 31. Escritura registro 56 (inicial) sin protección anti-duplicados
+    if node_type == 'function' and name.startswith('TensionInicial') and ("'address': 56" in func or '"address": 56' in func):
+        if 'lastInicial' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'ALTO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Escritura reg 56 sin protección anti-duplicados',
+                'fix_type': 'duplicados_reg56'
+            })
     
     # 12. Valores hardcodeados sospechosos en funciones (como 56112)
     # NOTA: Desactivado por generar muchos falsos positivos
@@ -762,6 +809,63 @@ return msg;"""
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - '==' cambiado a '==='")
             
+            elif fix_type == 'duplicados_reg31':
+                func = node.get('func', '')
+                fase = '1'
+                if 'L2' in bug['nodo']:
+                    fase = '2'
+                elif 'L3' in bug['nodo']:
+                    fase = '3'
+                valor = '2' if 'Regulacion' in bug['nodo'] else '0'
+                var_name = f'lastModoL{fase}'
+                proteccion = f'let last = flow.get("{var_name}") || -1; if (last === {valor}) {{ return null; }} flow.set("{var_name}", {valor});\\n'
+                func = proteccion + func
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 31")
+            
+            elif fix_type == 'duplicados_reg32':
+                func = node.get('func', '')
+                fase = '1'
+                if 'L2' in bug['nodo']:
+                    fase = '2'
+                elif 'L3' in bug['nodo']:
+                    fase = '3'
+                var_name = f'lastConsignaL{fase}'
+                proteccion = f"let consigna = global.get('consigna'); let last = flow.get('{var_name}') || -1; if (last === consigna) {{ return null; }} flow.set('{var_name}', consigna);\\n"
+                func = proteccion + func
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 32")
+            
+            elif fix_type == 'duplicados_reg55':
+                func = node.get('func', '')
+                fase = '1'
+                if 'L2' in bug['nodo']:
+                    fase = '2'
+                elif 'L3' in bug['nodo']:
+                    fase = '3'
+                var_name = f'lastEstadoInicialL{fase}'
+                proteccion = f"let estadoinicial = global.get('estadoinicial'); let last = flow.get('{var_name}') || -1; if (last === estadoinicial) {{ return null; }} flow.set('{var_name}', estadoinicial);\\n"
+                func = proteccion + func
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 55")
+            
+            elif fix_type == 'duplicados_reg56':
+                func = node.get('func', '')
+                fase = '1'
+                if 'L2' in bug['nodo']:
+                    fase = '2'
+                elif 'L3' in bug['nodo']:
+                    fase = '3'
+                var_name = f'lastInicialL{fase}'
+                proteccion = f"let inicial = global.get('inicial'); let last = flow.get('{var_name}') || -1; if (last === inicial) {{ return null; }} flow.set('{var_name}', inicial);\\n"
+                func = proteccion + func
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 56")
+            
             break
 
 if cambios > 0:
@@ -1033,6 +1137,76 @@ return msg;"""
             node['func'] = func
             cambios += 1
             print(f"  [OK] Corregido: {bug['nodo']} - '==' cambiado a '==='")
+        
+        elif fix_type == 'duplicados_reg31':
+            func = node.get('func', '')
+            # Detectar fase del nodo
+            fase = '1'
+            if 'L2' in bug['nodo']:
+                fase = '2'
+            elif 'L3' in bug['nodo']:
+                fase = '3'
+            # Detectar valor (2 para regulacion, 0 para bypass)
+            valor = '2' if 'Regulacion' in bug['nodo'] else '0'
+            var_name = f'lastModoL{fase}'
+            
+            # Añadir protección anti-duplicados al inicio
+            proteccion = f'let last = flow.get("{var_name}") || -1; if (last === {valor}) {{ return null; }} flow.set("{var_name}", {valor});\\n'
+            func = proteccion + func
+            node['func'] = func
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 31")
+        
+        elif fix_type == 'duplicados_reg32':
+            func = node.get('func', '')
+            # Detectar fase del nodo
+            fase = '1'
+            if 'L2' in bug['nodo']:
+                fase = '2'
+            elif 'L3' in bug['nodo']:
+                fase = '3'
+            var_name = f'lastConsignaL{fase}'
+            
+            # Añadir protección anti-duplicados
+            proteccion = f"let consigna = global.get('consigna'); let last = flow.get('{var_name}') || -1; if (last === consigna) {{ return null; }} flow.set('{var_name}', consigna);\\n"
+            func = proteccion + func
+            node['func'] = func
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 32")
+        
+        elif fix_type == 'duplicados_reg55':
+            func = node.get('func', '')
+            # Detectar fase del nodo
+            fase = '1'
+            if 'L2' in bug['nodo']:
+                fase = '2'
+            elif 'L3' in bug['nodo']:
+                fase = '3'
+            var_name = f'lastEstadoInicialL{fase}'
+            
+            # Añadir protección anti-duplicados
+            proteccion = f"let estadoinicial = global.get('estadoinicial'); let last = flow.get('{var_name}') || -1; if (last === estadoinicial) {{ return null; }} flow.set('{var_name}', estadoinicial);\\n"
+            func = proteccion + func
+            node['func'] = func
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 55")
+        
+        elif fix_type == 'duplicados_reg56':
+            func = node.get('func', '')
+            # Detectar fase del nodo
+            fase = '1'
+            if 'L2' in bug['nodo']:
+                fase = '2'
+            elif 'L3' in bug['nodo']:
+                fase = '3'
+            var_name = f'lastInicialL{fase}'
+            
+            # Añadir protección anti-duplicados
+            proteccion = f"let inicial = global.get('inicial'); let last = flow.get('{var_name}') || -1; if (last === inicial) {{ return null; }} flow.set('{var_name}', inicial);\\n"
+            func = proteccion + func
+            node['func'] = func
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 56")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
@@ -1689,440 +1863,6 @@ for val in sorted(valores.keys()):
                 echo "      El archivo puede tener un formato diferente"
             fi
         fi
-        ;;
-    7)
-        echo ""
-        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "  Reset de Placa (Alarma Memoria Corrupta)"
-        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo "  Este proceso:"
-        echo "    1. Guarda los parámetros actuales"
-        echo "    2. Resetea la placa con 0xCACA"
-        echo "    3. Restaura los parámetros guardados"
-        echo ""
-        echo "  Seleccione placa a resetear:"
-        echo "    1) L1 (Modbus ID 1)"
-        echo "    2) L2 (Modbus ID 2)"
-        echo "    3) L3 (Modbus ID 3)"
-        echo "    4) TODAS las placas"
-        echo "    0) Cancelar"
-        echo ""
-        read -p "  Opción [0-4]: " RESET_OPT
-        
-        if [ "$RESET_OPT" = "0" ]; then
-            echo "  Cancelado."
-        else
-            # Determinar placas a resetear
-            case $RESET_OPT in
-                1) PLACAS="1" ;;
-                2) PLACAS="2" ;;
-                3) PLACAS="3" ;;
-                4) PLACAS="1 2 3" ;;
-                *) echo "  Opción no válida"; PLACAS="" ;;
-            esac
-            
-            if [ -n "$PLACAS" ]; then
-                echo ""
-                echo "  Parando Node-RED..."
-                sudo systemctl stop nodered 2>/dev/null
-                sleep 1
-                
-                # PASO 1: Guardar parámetros ANTES del reset
-                echo ""
-                echo "  [1/4] Guardando parámetros actuales..."
-                for SLAVE_ID in $PLACAS; do
-                    python3 -c "
-from pymodbus.client import ModbusSerialClient
-import json
-
-c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
-c.connect()
-
-params = {}
-
-# Registros de configuración importantes
-config_regs = [32, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 55, 56, 57, 58, 62, 63, 64, 65, 66, 67]
-# Registros de calibración
-cal_regs = [71, 72, 75, 76, 81, 83, 84]
-# Registros de control
-ctrl_regs = [91, 92, 93, 94]
-
-all_regs = config_regs + cal_regs + ctrl_regs
-
-for reg in all_regs:
-    r = c.read_holding_registers(reg, 1, slave=$SLAVE_ID)
-    if not r.isError():
-        params[reg] = r.registers[0]
-
-c.close()
-
-# Guardar en archivo temporal
-with open(f'/tmp/placa_L{$SLAVE_ID}_params.json', 'w') as f:
-    json.dump(params, f)
-
-print(f'    L$SLAVE_ID: {len(params)} parámetros guardados')
-" 2>/dev/null
-                done
-                
-                # Verificar alarmas actuales
-                echo ""
-                echo "  Estado actual de alarmas:"
-                for SLAVE_ID in $PLACAS; do
-                    ALARMA=$(python3 -c "
-from pymodbus.client import ModbusSerialClient
-try:
-    c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=1)
-    c.connect()
-    r = c.read_holding_registers(2, 1, slave=$SLAVE_ID)
-    if not r.isError():
-        print(r.registers[0])
-    else:
-        print('Error')
-    c.close()
-except:
-    print('Error')
-" 2>/dev/null)
-                    if [ "$ALARMA" = "0" ]; then
-                        echo "    L$SLAVE_ID: Alarma=$ALARMA (OK)"
-                    elif [ "$ALARMA" = "1024" ]; then
-                        echo "    L$SLAVE_ID: Alarma=$ALARMA (Memoria corrupta)"
-                    else
-                        echo "    L$SLAVE_ID: Alarma=$ALARMA"
-                    fi
-                done
-                
-                echo ""
-                read -p "  ¿Continuar con el reset? (s/N): " CONFIRM
-                if [ "$CONFIRM" = "s" ] || [ "$CONFIRM" = "S" ]; then
-                    # PASO 2: Ejecutar reset
-                    echo ""
-                    echo "  [2/4] Ejecutando reset con 0xCACA..."
-                    for SLAVE_ID in $PLACAS; do
-                        echo "    Reseteando L$SLAVE_ID..."
-                        python3 -c "
-from pymodbus.client import ModbusSerialClient
-import time
-c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
-c.connect()
-c.write_register(110, 0xCACA, slave=$SLAVE_ID)
-time.sleep(0.1)
-c.write_register(111, 0xCACA, slave=$SLAVE_ID)
-c.close()
-" 2>/dev/null
-                    done
-                    
-                    echo ""
-                    echo "  Esperando 5 segundos para que las placas se reinicien..."
-                    sleep 5
-                    
-                    # PASO 3: Mostrar parámetros guardados y confirmar
-                    echo ""
-                    echo "  [3/4] Parámetros guardados:"
-                    for SLAVE_ID in $PLACAS; do
-                        echo ""
-                        echo "    === L$SLAVE_ID ==="
-                        python3 -c "
-import json
-
-nombres = {
-    32: 'Consigna', 41: 'Nº Serie', 42: 'V nominal', 43: 'V prim auto',
-    44: 'V sec auto', 45: 'V sec trafo', 46: 'Topología', 47: 'Dead-time',
-    48: 'Dir Modbus', 49: 'I nom sal', 50: 'I nom chop', 51: 'I max chop',
-    52: 'I max pico', 53: 'T apag CC', 55: 'Est inicial', 56: 'V inicial',
-    57: 'T máxima', 58: 'Dec T reenc', 62: 'Package', 63: 'Áng alta',
-    64: 'Áng baja', 65: '% carga', 66: 'Sens trans', 67: 'Sens deriv',
-    71: 'Ca00', 72: 'Ca01', 75: 'Ca06', 76: 'Ca07', 81: 'Ca12', 83: 'Ca14', 84: 'Ca15',
-    91: 'Cn00', 92: 'Cn01', 93: 'Cn02', 94: 'Cn03'
-}
-
-try:
-    with open(f'/tmp/placa_L{$SLAVE_ID}_params.json', 'r') as f:
-        params = json.load(f)
-    
-    # Mostrar parámetros importantes
-    importantes = [32, 41, 46, 47, 49, 55, 56, 91, 92, 93, 94]
-    for reg in importantes:
-        if str(reg) in params:
-            val = params[str(reg)]
-            nombre = nombres.get(reg, f'Reg {reg}')
-            print(f'    {nombre}: {val}')
-except Exception as e:
-    print(f'    Error: {e}')
-" 2>/dev/null
-                    done
-                    
-                    echo ""
-                    echo "  ¿Qué desea hacer?"
-                    echo "    1) Restaurar estos parámetros"
-                    echo "    2) Modificar parámetros antes de restaurar"
-                    echo "    3) Solo habilitar placa (no restaurar)"
-                    echo ""
-                    read -p "  Opción [1-3]: " RESTAURAR_OPT
-                    
-                    if [ "$RESTAURAR_OPT" = "1" ]; then
-                        echo ""
-                        echo "  Restaurando parámetros..."
-                        for SLAVE_ID in $PLACAS; do
-                            python3 -c "
-from pymodbus.client import ModbusSerialClient
-import json
-import time
-
-c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
-c.connect()
-
-try:
-    with open(f'/tmp/placa_L{$SLAVE_ID}_params.json', 'r') as f:
-        params = json.load(f)
-except:
-    print(f'    L$SLAVE_ID: No se encontraron parámetros guardados')
-    c.close()
-    exit()
-
-escribibles = [32, 46, 47, 49, 50, 51, 52, 53, 55, 56, 57, 58, 62, 63, 64, 65, 66, 67, 91, 92, 93, 94]
-
-escritos = 0
-for reg, val in params.items():
-    reg = int(reg)
-    if reg in escribibles:
-        c.write_register(reg, val, slave=$SLAVE_ID)
-        time.sleep(0.03)
-        escritos += 1
-
-c.write_register(30, 43981, slave=$SLAVE_ID)
-time.sleep(0.1)
-c.write_register(31, 2, slave=$SLAVE_ID)
-c.close()
-print(f'    L$SLAVE_ID: {escritos} parámetros restaurados')
-" 2>/dev/null
-                        done
-                        
-                    elif [ "$RESTAURAR_OPT" = "2" ]; then
-                        echo ""
-                        echo "  Modificar parámetros (Enter para mantener valor actual):"
-                        for SLAVE_ID in $PLACAS; do
-                            echo ""
-                            echo "    === L$SLAVE_ID ==="
-                            
-                            # Leer valores actuales del JSON
-                            CONSIGNA=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('32', 2200))" 2>/dev/null)
-                            V_INICIAL=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('56', 2200))" 2>/dev/null)
-                            TOPOLOGIA=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('46', 2))" 2>/dev/null)
-                            DEADTIME=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('47', 8))" 2>/dev/null)
-                            I_NOM=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('49', 150))" 2>/dev/null)
-                            CN00=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('91', 150))" 2>/dev/null)
-                            CN01=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('92', 40))" 2>/dev/null)
-                            CN02=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('93', 15))" 2>/dev/null)
-                            CN03=$(python3 -c "import json; p=json.load(open('/tmp/placa_L${SLAVE_ID}_params.json')); print(p.get('94', 15))" 2>/dev/null)
-                            
-                            read -p "    Consigna [$CONSIGNA]: " NEW_CONSIGNA
-                            read -p "    V inicial [$V_INICIAL]: " NEW_V_INICIAL
-                            read -p "    Topología [$TOPOLOGIA]: " NEW_TOPOLOGIA
-                            read -p "    Dead-time [$DEADTIME]: " NEW_DEADTIME
-                            read -p "    I nom sal [$I_NOM]: " NEW_I_NOM
-                            read -p "    Cn00 [$CN00]: " NEW_CN00
-                            read -p "    Cn01 [$CN01]: " NEW_CN01
-                            read -p "    Cn02 [$CN02]: " NEW_CN02
-                            read -p "    Cn03 [$CN03]: " NEW_CN03
-                            
-                            # Usar valor nuevo o mantener actual
-                            [ -z "$NEW_CONSIGNA" ] && NEW_CONSIGNA=$CONSIGNA
-                            [ -z "$NEW_V_INICIAL" ] && NEW_V_INICIAL=$V_INICIAL
-                            [ -z "$NEW_TOPOLOGIA" ] && NEW_TOPOLOGIA=$TOPOLOGIA
-                            [ -z "$NEW_DEADTIME" ] && NEW_DEADTIME=$DEADTIME
-                            [ -z "$NEW_I_NOM" ] && NEW_I_NOM=$I_NOM
-                            [ -z "$NEW_CN00" ] && NEW_CN00=$CN00
-                            [ -z "$NEW_CN01" ] && NEW_CN01=$CN01
-                            [ -z "$NEW_CN02" ] && NEW_CN02=$CN02
-                            [ -z "$NEW_CN03" ] && NEW_CN03=$CN03
-                            
-                            echo ""
-                            echo "    Escribiendo parámetros modificados..."
-                            python3 -c "
-from pymodbus.client import ModbusSerialClient
-import time
-
-c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
-c.connect()
-
-params = {
-    32: $NEW_CONSIGNA,
-    56: $NEW_V_INICIAL,
-    46: $NEW_TOPOLOGIA,
-    47: $NEW_DEADTIME,
-    49: $NEW_I_NOM,
-    91: $NEW_CN00,
-    92: $NEW_CN01,
-    93: $NEW_CN02,
-    94: $NEW_CN03
-}
-
-for reg, val in params.items():
-    c.write_register(reg, val, slave=$SLAVE_ID)
-    time.sleep(0.03)
-
-c.write_register(30, 43981, slave=$SLAVE_ID)
-time.sleep(0.1)
-c.write_register(31, 2, slave=$SLAVE_ID)
-c.close()
-print(f'    L$SLAVE_ID: Parámetros modificados escritos')
-" 2>/dev/null
-                        done
-                        
-                    else
-                        echo ""
-                        echo "  Comparando con otras placas para encontrar valores correctos..."
-                        python3 -c "
-from pymodbus.client import ModbusSerialClient
-import time
-
-c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
-c.connect()
-
-# Leer parámetros de las 3 placas
-placas = {}
-regs_comparar = [32, 46, 47, 49, 50, 51, 52, 53, 55, 56, 57, 58, 62, 63, 64, 65, 66, 67, 91, 92, 93, 94]
-nombres = {
-    32: 'Consigna', 46: 'Topología', 47: 'Dead-time', 49: 'I nom sal',
-    50: 'I nom chop', 51: 'I max chop', 52: 'I max pico', 53: 'T apag CC',
-    55: 'Est inicial', 56: 'V inicial', 57: 'T máxima', 58: 'Dec T reenc',
-    62: 'Package', 63: 'Áng alta', 64: 'Áng baja', 65: '% carga',
-    66: 'Sens trans', 67: 'Sens deriv', 91: 'Cn00', 92: 'Cn01', 93: 'Cn02', 94: 'Cn03'
-}
-
-for slave in [1, 2, 3]:
-    placas[slave] = {}
-    for reg in regs_comparar:
-        r = c.read_holding_registers(reg, 1, slave=slave)
-        if not r.isError():
-            placas[slave][reg] = r.registers[0]
-        time.sleep(0.02)
-
-c.close()
-
-# Encontrar valores más comunes (probablemente correctos)
-print('')
-print('  Parámetros recomendados (valor más común entre placas):')
-print('  ─────────────────────────────────────────────────────')
-valores_correctos = {}
-for reg in regs_comparar:
-    vals = [placas[s].get(reg) for s in [1,2,3] if placas[s].get(reg) is not None]
-    if vals:
-        # El valor más común
-        from collections import Counter
-        mas_comun = Counter(vals).most_common(1)[0][0]
-        valores_correctos[reg] = mas_comun
-        
-        # Mostrar si hay diferencias
-        diferentes = [s for s in [1,2,3] if placas[s].get(reg) != mas_comun]
-        nombre = nombres.get(reg, f'Reg {reg}')
-        if diferentes:
-            print(f'    {nombre}: {mas_comun}  (L{diferentes[0]} tiene {placas[diferentes[0]].get(reg)})')
-        else:
-            print(f'    {nombre}: {mas_comun}')
-
-# Guardar valores correctos
-import json
-with open('/tmp/valores_correctos.json', 'w') as f:
-    json.dump(valores_correctos, f)
-print('')
-print('  Valores guardados en /tmp/valores_correctos.json')
-" 2>/dev/null
-                        
-                        echo ""
-                        read -p "  ¿Usar estos valores recomendados? (s/N): " USAR_RECOMENDADOS
-                        if [ "$USAR_RECOMENDADOS" = "s" ] || [ "$USAR_RECOMENDADOS" = "S" ]; then
-                            echo "  Escribiendo valores recomendados..."
-                            for SLAVE_ID in $PLACAS; do
-                                python3 -c "
-from pymodbus.client import ModbusSerialClient
-import json
-import time
-
-c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
-c.connect()
-
-with open('/tmp/valores_correctos.json', 'r') as f:
-    params = json.load(f)
-
-escritos = 0
-for reg, val in params.items():
-    c.write_register(int(reg), val, slave=$SLAVE_ID)
-    time.sleep(0.03)
-    escritos += 1
-
-c.write_register(30, 43981, slave=$SLAVE_ID)
-time.sleep(0.1)
-c.write_register(31, 2, slave=$SLAVE_ID)
-c.close()
-print(f'    L$SLAVE_ID: {escritos} parámetros escritos')
-" 2>/dev/null
-                            done
-                        else
-                            echo "  Solo habilitando placas..."
-                            for SLAVE_ID in $PLACAS; do
-                                python3 -c "
-from pymodbus.client import ModbusSerialClient
-import time
-c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
-c.connect()
-c.write_register(30, 43981, slave=$SLAVE_ID)
-time.sleep(0.1)
-c.write_register(31, 2, slave=$SLAVE_ID)
-c.close()
-" 2>/dev/null
-                                echo "    L$SLAVE_ID: Habilitada (Flag Est=43981)"
-                            done
-                        fi
-                    fi
-                    
-                    sleep 1
-                    
-                    # PASO 4: Verificar resultado
-                    echo ""
-                    echo "  [4/4] Verificando resultado:"
-                    for SLAVE_ID in $PLACAS; do
-                        RESULT=$(python3 -c "
-from pymodbus.client import ModbusSerialClient
-try:
-    c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, timeout=2)
-    c.connect()
-    r0 = c.read_holding_registers(0, 1, slave=$SLAVE_ID)
-    r2 = c.read_holding_registers(2, 1, slave=$SLAVE_ID)
-    r30 = c.read_holding_registers(30, 1, slave=$SLAVE_ID)
-    r32 = c.read_holding_registers(32, 1, slave=$SLAVE_ID)
-    estado = r0.registers[0] if not r0.isError() else '?'
-    alarma = r2.registers[0] if not r2.isError() else '?'
-    flag = r30.registers[0] if not r30.isError() else '?'
-    consigna = r32.registers[0] if not r32.isError() else '?'
-    print(f'Estado={estado} Alarma={alarma} FlagEst={flag} Consigna={consigna}')
-    c.close()
-except Exception as e:
-    print(f'Error: {e}')
-" 2>/dev/null)
-                        if echo "$RESULT" | grep -q "Alarma=0"; then
-                            echo "    L$SLAVE_ID: $RESULT ✓"
-                        else
-                            echo "    L$SLAVE_ID: $RESULT"
-                        fi
-                    done
-                else
-                    echo "  Cancelado."
-                fi
-                
-                echo ""
-                echo "  Reiniciando Node-RED..."
-                sudo systemctl start nodered 2>/dev/null
-                sleep 2
-                echo "  [OK] Node-RED iniciado"
-            fi
-        fi
-        
-        echo ""
-        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "  Reset completado"
-        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         ;;
     0|*)
         echo "  Saliendo..."
