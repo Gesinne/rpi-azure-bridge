@@ -361,6 +361,18 @@ for node in flows:
                 'fix_type': 'duplicados_reg56'
             })
     
+    # 32. Escritura Modbus con flow.get("fase") sin validación
+    if node_type == 'function' and "'fc': 6" in func and 'flow.get("fase")' in func:
+        if 'fase === undefined' not in func and 'fase < 1' not in func:
+            bugs.append({
+                'num': len(bugs) + 1,
+                'tipo': 'MEDIO',
+                'nodo': name,
+                'id': node_id,
+                'desc': 'Escritura Modbus con flow.get("fase") sin validación',
+                'fix_type': 'validar_fase'
+            })
+    
     # 12. Valores hardcodeados sospechosos en funciones (como 56112)
     # NOTA: Desactivado por generar muchos falsos positivos
     # Valores comunes válidos: 43981 (0xABCD), 47818, 51914 (0xCACA), 86400 (24h), 300000 (5min)
@@ -866,6 +878,14 @@ return msg;"""
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 56")
             
+            elif fix_type == 'validar_fase':
+                func = node.get('func', '')
+                validacion = 'let fase = flow.get("fase"); if (fase === undefined || fase < 1 || fase > 3) { node.error("Fase inválida: " + fase); return null; }\\n'
+                func = validacion + func
+                node['func'] = func
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de fase")
+            
             break
 
 if cambios > 0:
@@ -1207,6 +1227,14 @@ return msg;"""
             node['func'] = func
             cambios += 1
             print(f"  [OK] Corregido: {bug['nodo']} - Añadida protección anti-duplicados reg 56")
+        
+        elif fix_type == 'validar_fase':
+            func = node.get('func', '')
+            validacion = 'let fase = flow.get("fase"); if (fase === undefined || fase < 1 || fase > 3) { node.error("Fase inválida: " + fase); return null; }\\n'
+            func = validacion + func
+            node['func'] = func
+            cambios += 1
+            print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de fase")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
