@@ -373,6 +373,32 @@ for node in flows:
                 'fix_type': 'validar_fase'
             })
     
+    # 33. Flujo de configuración consigna roto (L1/L2/L3 <> consigna no conecta a TensionConsigna)
+    if name in ['L1 <> consigna', 'L2 <> consigna', 'L3 <> consigna']:
+        # Buscar el ID del nodo TensionConsigna correspondiente
+        fase = name.split(' ')[0]  # L1, L2, L3
+        tension_node_name = f'TensionConsigna{fase}'
+        tension_id = None
+        for n in flows:
+            if n.get('name') == tension_node_name:
+                tension_id = n.get('id')
+                break
+        
+        # Verificar si el wire actual conecta al TensionConsigna
+        wires = node.get('wires', [[]])
+        if wires and wires[0]:
+            current_target = wires[0][0] if wires[0] else None
+            if current_target != tension_id:
+                bugs.append({
+                    'num': len(bugs) + 1,
+                    'tipo': 'ALTO',
+                    'nodo': name,
+                    'id': node_id,
+                    'desc': f'Flujo configuración roto: {name} no conecta a {tension_node_name}',
+                    'fix_type': 'flujo_consigna',
+                    'target_id': tension_id
+                })
+    
     # 12. Valores hardcodeados sospechosos en funciones (como 56112)
     # NOTA: Desactivado por generar muchos falsos positivos
     # Valores comunes válidos: 43981 (0xABCD), 47818, 51914 (0xCACA), 86400 (24h), 300000 (5min)
@@ -886,6 +912,13 @@ return msg;"""
                 cambios += 1
                 print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de fase")
             
+            elif fix_type == 'flujo_consigna':
+                target_id = bug.get('target_id')
+                if target_id:
+                    node['wires'] = [[target_id]]
+                    cambios += 1
+                    print(f"  [OK] Corregido: {bug['nodo']} - Reconectado al nodo TensionConsigna")
+            
             break
 
 if cambios > 0:
@@ -1235,6 +1268,13 @@ return msg;"""
             node['func'] = func
             cambios += 1
             print(f"  [OK] Corregido: {bug['nodo']} - Añadida validación de fase")
+        
+        elif fix_type == 'flujo_consigna':
+            target_id = bug.get('target_id')
+            if target_id:
+                node['wires'] = [[target_id]]
+                cambios += 1
+                print(f"  [OK] Corregido: {bug['nodo']} - Reconectado al nodo TensionConsigna")
         
         else:
             print(f"  [!] No hay corrección automática para: {bug['desc']}")
