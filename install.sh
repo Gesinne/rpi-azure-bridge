@@ -2374,11 +2374,11 @@ for unit_id, fase in zip(unit_ids, fases):
     
     # Para registros de control (90-95), activar flag 90
     elif 90 <= reg_num <= 95:
-        flag_result = client.write_register(address=90, value=47818, slave=unit_id)
+        flag_result = client.write_register(address=90, value=56010, slave=unit_id)
         if flag_result.isError():
             print(f"  [X] Error activando flag de control en {fase}")
             continue
-        print(f"      Flag control activado (reg 90 = 47818)")
+        print(f"      Flag control activado (reg 90 = 56010)")
         time.sleep(0.1)
     
     # Leer valor actual
