@@ -2365,11 +2365,11 @@ for unit_id, fase in zip(unit_ids, fases):
     
     # Para registros de calibración (70-89), activar flag 70
     elif 70 <= reg_num <= 89:
-        flag_result = client.write_register(address=70, value=47818, slave=unit_id)
+        flag_result = client.write_register(address=70, value=51898, slave=unit_id)
         if flag_result.isError():
             print(f"  [X] Error activando flag de calibración en {fase}")
             continue
-        print(f"      Flag calibración activado (reg 70 = 47818)")
+        print(f"      Flag calibración activado (reg 70 = 51898)")
         time.sleep(0.1)
     
     # Para registros de control (90-95), activar flag 90
