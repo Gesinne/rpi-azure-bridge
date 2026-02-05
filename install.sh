@@ -2363,8 +2363,19 @@ for unit_id, fase in zip(unit_ids, fases):
             print(f"      Flag configuración activado (reg 40 = 47818)")
             time.sleep(0.1)
     
-    # Para registros de calibración (70-89), activar flag 70
+    # Para registros de calibración (70-89), poner en bypass y activar flag 70
     elif 70 <= reg_num <= 89:
+        # Primero poner en bypass (reg 31 = 0)
+        reg31_result = client.read_holding_registers(address=31, count=1, slave=unit_id)
+        if not reg31_result.isError():
+            estado_anterior_31 = reg31_result.registers[0]
+            print(f"      Estado anterior reg 31: {estado_anterior_31}")
+        if estado_anterior_31 != 0:
+            bypass_result = client.write_register(address=31, value=0, slave=unit_id)
+            if not bypass_result.isError():
+                print(f"      Bypass aplicado (reg 31 = 0)")
+            time.sleep(0.1)
+        # Activar flag calibración
         flag_result = client.write_register(address=70, value=51898, slave=unit_id)
         if flag_result.isError():
             print(f"  [X] Error activando flag de calibración en {fase}")
