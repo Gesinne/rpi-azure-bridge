@@ -124,14 +124,27 @@ TOTAL_REGISTROS = 112
 
 def leer_tarjeta(client, unit_id):
     """Lee todos los registros de una tarjeta"""
-    data = []
-    for start in range(0, TOTAL_REGISTROS, 40):
-        count = min(40, TOTAL_REGISTROS - start)
-        result = client.read_holding_registers(address=start, count=count, slave=unit_id)
-        if not result.isError():
-            data.extend(result.registers)
-        else:
-            break
+    data = [0] * TOTAL_REGISTROS  # Inicializar con ceros
+    
+    # Rangos válidos de registros (evitar 97-99 y 108-109 que no existen)
+    rangos = [
+        (0, 40),    # 0-39
+        (40, 40),   # 40-79
+        (80, 17),   # 80-96
+        (100, 8),   # 100-107
+        (110, 2),   # 110-111
+    ]
+    
+    for start, count in rangos:
+        try:
+            result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+            if not result.isError():
+                for i, val in enumerate(result.registers):
+                    if start + i < TOTAL_REGISTROS:
+                        data[start + i] = val
+        except Exception:
+            pass  # Continuar con el siguiente rango
+    
     return data
 
 
