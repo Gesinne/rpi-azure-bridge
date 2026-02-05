@@ -2350,7 +2350,7 @@ for unit_id, fase in zip(unit_ids, fases):
         print(f"      Flag configuración activado (reg 40 = 47818)")
         time.sleep(0.2)
     
-    # Para otros registros de configuración (40-69), solo activar flag
+    # Para otros registros de configuración (40-69), solo activar flag 40
     elif 40 <= reg_num <= 69:
         flag_read = client.read_holding_registers(address=40, count=1, slave=unit_id)
         if not flag_read.isError() and flag_read.registers[0] == 47818:
@@ -2362,6 +2362,24 @@ for unit_id, fase in zip(unit_ids, fases):
                 continue
             print(f"      Flag configuración activado (reg 40 = 47818)")
             time.sleep(0.1)
+    
+    # Para registros de calibración (70-89), activar flag 70
+    elif 70 <= reg_num <= 89:
+        flag_result = client.write_register(address=70, value=47818, slave=unit_id)
+        if flag_result.isError():
+            print(f"  [X] Error activando flag de calibración en {fase}")
+            continue
+        print(f"      Flag calibración activado (reg 70 = 47818)")
+        time.sleep(0.1)
+    
+    # Para registros de control (90-95), activar flag 90
+    elif 90 <= reg_num <= 95:
+        flag_result = client.write_register(address=90, value=47818, slave=unit_id)
+        if flag_result.isError():
+            print(f"  [X] Error activando flag de control en {fase}")
+            continue
+        print(f"      Flag control activado (reg 90 = 47818)")
+        time.sleep(0.1)
     
     # Leer valor actual
     read_result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
