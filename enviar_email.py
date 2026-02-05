@@ -18,7 +18,7 @@ SMTP_FROM = "gesinneasturias@gmail.com"
 SMTP_TO = "patricia.garcia@gesinne.com,victorbarrero@gesinne.com"
 
 
-def enviar_email(contenido, asunto=None):
+def enviar_email(contenido, asunto=None, numero_serie="N/A"):
     """Envía un email con el contenido especificado"""
     
     if not SMTP_SERVER:
@@ -26,7 +26,7 @@ def enviar_email(contenido, asunto=None):
         return False
     
     if asunto is None:
-        asunto = f"📋 Configuración Modbus - Equipo {NUMERO_SERIE} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        asunto = f"📋 Configuración Modbus - Equipo {numero_serie} - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     
     # Crear mensaje
     msg = MIMEMultipart('alternative')
@@ -63,7 +63,7 @@ def enviar_email(contenido, asunto=None):
     </head>
     <body>
         <div class="header">
-            <h2>📋 Configuración Modbus - Equipo {NUMERO_SERIE}</h2>
+            <h2>📋 Configuración Modbus - Equipo {numero_serie}</h2>
             <p>Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
         </div>
         <pre>{contenido}</pre>
