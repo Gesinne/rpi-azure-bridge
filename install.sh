@@ -88,6 +88,16 @@ if [ "$1" != "--updated" ]; then
         fi
     fi
     
+    # Copiar scripts de email y lectura de registros
+    if [ -f "$INSTALL_DIR/enviar_email.py" ]; then
+        cp "$INSTALL_DIR/enviar_email.py" "$USER_HOME/enviar_email.py"
+        echo "  [OK] enviar_email.py copiado"
+    fi
+    if [ -f "$INSTALL_DIR/leer_registros.py" ]; then
+        cp "$INSTALL_DIR/leer_registros.py" "$USER_HOME/leer_registros.py"
+        echo "  [OK] leer_registros.py copiado"
+    fi
+    
     # Copiar y configurar script de alerta de reinicio
     if [ -f "$INSTALL_DIR/alerta_reinicio.sh" ]; then
         if [ -f /usr/local/bin/alerta_reinicio.sh ] && crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
@@ -1611,9 +1621,10 @@ if chronos_id:
             echo "  8) Escribir registro"
             echo "  9) Diagnóstico configuración (límites)"
             echo "  10) Cambiar tensión consigna (reg 37) - 3 placas"
+            echo "  11) Escribir Nº Serie en placas (reg 41)"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-10]: " TARJETA
+            read -p "  Opción [0-11]: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
@@ -2180,13 +2191,17 @@ EOFREG
                     echo ""
                     
                     # Ejecutar script de envío de email
-                    EMAIL_SCRIPT="$INSTALL_DIR/enviar_registros_email.sh"
+                    EMAIL_SCRIPT="$INSTALL_DIR/enviar_email.py"
                     if [ -f "$EMAIL_SCRIPT" ]; then
-                        bash "$EMAIL_SCRIPT" $TARJETAS_EMAIL
+                        python3 "$EMAIL_SCRIPT"
                     else
-                        # Fallback: usar el código embebido del antiguo opción 5
-                        echo "  [X] Script de email no encontrado"
-                        echo "  Usa la opción 4 (TODAS) para ver los registros en pantalla"
+                        # Fallback: buscar en directorio actual
+                        if [ -f "./enviar_email.py" ]; then
+                            python3 "./enviar_email.py"
+                        else
+                            echo "  [X] Script de email no encontrado"
+                            echo "  Usa la opción 4 (TODAS) para ver los registros en pantalla"
+                        fi
                     fi
                     
                     echo ""
