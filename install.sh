@@ -2948,7 +2948,8 @@ EOFOSCILA
                     echo ""
                     echo "  ¿Modo?"
                     echo "  1) Solo diagnóstico (no escribe nada)"
-                    echo "  2) Diagnosticar y reparar"
+                    echo "  2) Diagnosticar y reparar (solo corruptos)"
+                    echo "  3) Reescribir TODOS los valores (forzar RAM==FLASH, borrar alarma MR)"
                     echo ""
                     read -p "  Opción [1]: " REPAIR_MODE
                     REPAIR_MODE=${REPAIR_MODE:-1}
@@ -3342,24 +3343,133 @@ def reparar(client, slave_id, corruptos):
     escribir_registro(client, 90, 0, slave_id)
     time.sleep(0.1)
 
-    # 5. Resumen
+    # 5. Resumen y verificacion alarma MR
     print(f"\n{'='*75}")
     print(f"  RESULTADO: {ok_count} reparados, {err_count} errores")
     if err_count == 0:
         print(f"  [OK] Reparacion completada")
-        print(f"  [!] Reinicia el equipo para que la alarma MR se borre")
+        verificar_alarma_mr(client, slave_id)
     else:
         print(f"  [!] Hubo errores. Revisar manualmente")
     print(f"{'='*75}")
 
 
+def reescribir_todos(client, slave_id):
+    """Reescribe TODOS los registros con sus valores actuales para forzar RAM==FLASH"""
+    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+    print(f"\n{'='*75}")
+    print(f"  REESCRITURA COMPLETA - {fase}")
+    print(f"  (Forzar RAM == FLASH para borrar alarma MR)")
+    print(f"{'='*75}")
+
+    # Leer todos los valores actuales
+    todos_regs = {}
+    print(f"\n  [~] Leyendo todos los registros...")
+    for reg in sorted(CALIBRACION.keys()):
+        val = leer_registro(client, reg, slave_id)
+        if val is not None:
+            todos_regs[reg] = val
+    for reg in sorted(CONTROL.keys()):
+        val = leer_registro(client, reg, slave_id)
+        if val is not None:
+            todos_regs[reg] = val
+    for reg in sorted(CONFIGURACION.keys()):
+        if reg in PRESERVAR:
+            continue
+        val = leer_registro(client, reg, slave_id)
+        if val is not None:
+            todos_regs[reg] = val
+
+    print(f"  [OK] Leidos {len(todos_regs)} registros")
+    print(f"\n  Se van a reescribir {len(todos_regs)} registros con sus valores actuales")
+
+    # Pedir confirmacion
+    print("")
+    resp = input("  ¿Confirmar reescritura completa? (s/N): ").strip().lower()
+    if resp != 's':
+        print("  [X] Cancelado por el usuario")
+        return
+
+    # 1. Poner en bypass
+    estado = leer_registro(client, 0, slave_id)
+    if estado and estado != 0:
+        print(f"\n  [~] Poniendo en bypass...")
+        escribir_registro(client, 31, 0, slave_id)
+        time.sleep(2)
+
+    # 2. Activar flags de escritura
+    print(f"  [~] Activando flags de escritura...")
+    escribir_registro(client, 40, 0, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 40, 47818, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 70, 51898, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 90, 51898, slave_id)
+    time.sleep(0.1)
+
+    # 3. Reescribir todos
+    ok_count = 0
+    err_count = 0
+
+    for reg, val in sorted(todos_regs.items()):
+        print(f"  [~] Reg {reg:>3}: {val} -> {val}...", end=" ", flush=True)
+        if escribir_registro(client, reg, val, slave_id):
+            time.sleep(0.1)
+            leido = leer_registro(client, reg, slave_id)
+            if leido == val:
+                print("[OK]")
+                ok_count += 1
+            else:
+                print(f"[!] Verificacion fallo: leido={leido}")
+                err_count += 1
+        else:
+            print("[X] Error escritura")
+            err_count += 1
+
+    # 4. Desactivar flags
+    print(f"\n  [~] Desactivando flags...")
+    escribir_registro(client, 40, 0, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 70, 0, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 90, 0, slave_id)
+    time.sleep(0.1)
+
+    # 5. Resumen y verificacion alarma MR
+    print(f"\n{'='*75}")
+    print(f"  RESULTADO: {ok_count} reescritos, {err_count} errores")
+    if err_count == 0:
+        print(f"  [OK] Reescritura completada")
+        verificar_alarma_mr(client, slave_id)
+    else:
+        print(f"  [!] Hubo errores. Revisar manualmente")
+    print(f"{'='*75}")
+
+
+def verificar_alarma_mr(client, slave_id):
+    """Espera 2 segundos y verifica si la alarma MR se borro"""
+    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+    print(f"\n  [~] Esperando 2s para verificar alarma MR en {fase}...")
+    time.sleep(2)
+    alarma = leer_registro(client, 2, slave_id)
+    if alarma is None:
+        print(f"  [!] No se pudo leer el registro de alarma")
+    elif alarma & (1 << 10):
+        print(f"  [!] Alarma MR SIGUE ACTIVA (reg 2 = {alarma})")
+        print(f"      Puede haber un registro que no estamos cubriendo")
+        print(f"      o un problema de hardware/alimentacion")
+    else:
+        print(f"  [OK] Alarma MR BORRADA (reg 2 = {alarma})")
+
+
 # --- MAIN ---
 if len(sys.argv) < 3:
-    print("Uso: repair_script.py <slaves> <do_fix>")
+    print("Uso: repair_script.py <slaves> <mode>")
     sys.exit(1)
 
 slaves_str = sys.argv[1]
-do_fix = sys.argv[2] == "yes"
+mode = sys.argv[2]  # "no", "yes", "force_all"
 
 client = ModbusSerialClient(
     port=port, baudrate=115200,
@@ -3375,7 +3485,9 @@ try:
 
     for slave_id in slaves:
         corruptos = diagnosticar(client, slave_id)
-        if do_fix:
+        if mode == "force_all":
+            reescribir_todos(client, slave_id)
+        elif mode == "yes":
             reparar(client, slave_id, corruptos)
         elif corruptos:
             fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
@@ -3388,6 +3500,8 @@ EOFREPAIR
                     REPAIR_FIX="no"
                     if [ "$REPAIR_MODE" = "2" ]; then
                         REPAIR_FIX="yes"
+                    elif [ "$REPAIR_MODE" = "3" ]; then
+                        REPAIR_FIX="force_all"
                     fi
                     
                     # Ejecutar como archivo (no heredoc) para que input() funcione
