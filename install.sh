@@ -2967,14 +2967,12 @@ EOFOSCILA
                         REPAIR_SLAVES="$REPAIR_PLACA"
                     fi
                     
-                    REPAIR_FIX="no"
-                    if [ "$REPAIR_MODE" = "2" ]; then
-                        REPAIR_FIX="yes"
-                    fi
-                    
-                    python3 << EOFREPAIR
+                    # Guardar script Python como archivo temporal para poder usar stdin
+                    REPAIR_SCRIPT="/tmp/repair_memoria_$$.py"
+                    cat > "$REPAIR_SCRIPT" << 'EOFREPAIR'
 import sys
 import time
+import json
 
 try:
     from pymodbus.client import ModbusSerialClient
@@ -3284,6 +3282,13 @@ def reparar(client, slave_id, corruptos):
         print("\n  [OK] Solo hay registros preservados, nada que reparar")
         return
 
+    # Pedir confirmacion al usuario
+    print("")
+    resp = input("  ¿Confirmar reparacion? (s/N): ").strip().lower()
+    if resp != 's':
+        print("  [X] Cancelado por el usuario")
+        return
+
     # 1. Poner en bypass
     estado = leer_registro(client, 0, slave_id)
     if estado and estado != 0:
@@ -3349,6 +3354,13 @@ def reparar(client, slave_id, corruptos):
 
 
 # --- MAIN ---
+if len(sys.argv) < 3:
+    print("Uso: repair_script.py <slaves> <do_fix>")
+    sys.exit(1)
+
+slaves_str = sys.argv[1]
+do_fix = sys.argv[2] == "yes"
+
 client = ModbusSerialClient(
     port=port, baudrate=115200,
     bytesize=8, parity='N', stopbits=1, timeout=1
@@ -3359,8 +3371,7 @@ if not client.connect():
     sys.exit(1)
 
 try:
-    slaves = [int(x) for x in "$REPAIR_SLAVES".split()]
-    do_fix = "$REPAIR_FIX" == "yes"
+    slaves = [int(x) for x in slaves_str.split()]
 
     for slave_id in slaves:
         corruptos = diagnosticar(client, slave_id)
@@ -3373,6 +3384,15 @@ finally:
     client.close()
     print(f"\n  Conexion cerrada")
 EOFREPAIR
+                    
+                    REPAIR_FIX="no"
+                    if [ "$REPAIR_MODE" = "2" ]; then
+                        REPAIR_FIX="yes"
+                    fi
+                    
+                    # Ejecutar como archivo (no heredoc) para que input() funcione
+                    python3 "$REPAIR_SCRIPT" "$REPAIR_SLAVES" "$REPAIR_FIX"
+                    rm -f "$REPAIR_SCRIPT"
                     
                     echo ""
                     echo "  [~] Reiniciando Node-RED..."
