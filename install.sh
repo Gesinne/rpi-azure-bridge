@@ -2316,8 +2316,22 @@ fases = "$WRITE_FASES".split()
 reg_num = $WRITE_REG
 valor = $WRITE_VAL
 
+MAX_RETRIES = 3
+
+def write_with_retry(client, address, value, slave, description=""):
+    """Escribe un registro con reintentos si falla"""
+    for attempt in range(MAX_RETRIES):
+        result = client.write_register(address=address, value=value, slave=slave)
+        if not result.isError():
+            return result
+        if attempt < MAX_RETRIES - 1:
+            print(f"      [!] Reintentando {description} ({attempt+2}/{MAX_RETRIES})...")
+            time.sleep(0.3)
+    return result
+
 for unit_id, fase in zip(unit_ids, fases):
     print(f"  [M] Escribiendo en {fase}...")
+    time.sleep(0.3)
     
     # Si es registro 56: bypass → flag → escribir
     estado_anterior_31 = None
@@ -2329,26 +2343,26 @@ for unit_id, fase in zip(unit_ids, fases):
             print(f"      Estado anterior reg 31: {estado_anterior_31}")
         
         if estado_anterior_31 != 0:
-            bypass_result = client.write_register(address=31, value=0, slave=unit_id)
+            bypass_result = write_with_retry(client, 31, 0, unit_id, f"bypass {fase}")
             if bypass_result.isError():
                 print(f"  [X] Error poniendo en bypass {fase}")
                 continue
             print(f"      Bypass aplicado (reg 31 = 0)")
-            time.sleep(0.1)
+            time.sleep(0.2)
         else:
             print(f"      Ya está en bypass (reg 31 = 0)")
         
         # 2. Resetear y activar flag de configuración (reg 40)
         # Primero desactivar (escribir 0)
-        client.write_register(address=40, value=0, slave=unit_id)
-        time.sleep(0.1)
+        write_with_retry(client, 40, 0, unit_id, f"reset flag {fase}")
+        time.sleep(0.2)
         # Luego activar (escribir 47818)
-        flag_result = client.write_register(address=40, value=47818, slave=unit_id)
+        flag_result = write_with_retry(client, 40, 47818, unit_id, f"flag config {fase}")
         if flag_result.isError():
             print(f"  [X] Error activando flag de configuración en {fase}")
             continue
         print(f"      Flag configuración activado (reg 40 = 47818)")
-        time.sleep(0.2)
+        time.sleep(0.3)
     
     # Para otros registros de configuración (40-69), solo activar flag 40
     elif 40 <= reg_num <= 69:
@@ -2356,12 +2370,12 @@ for unit_id, fase in zip(unit_ids, fases):
         if not flag_read.isError() and flag_read.registers[0] == 47818:
             print(f"      Flag configuración ya activo (reg 40 = 47818)")
         else:
-            flag_result = client.write_register(address=40, value=47818, slave=unit_id)
+            flag_result = write_with_retry(client, 40, 47818, unit_id, f"flag config {fase}")
             if flag_result.isError():
                 print(f"  [X] Error activando flag de configuración en {fase}")
                 continue
             print(f"      Flag configuración activado (reg 40 = 47818)")
-            time.sleep(0.1)
+            time.sleep(0.2)
     
     # Para registros de calibración (70-89), poner en bypass, activar flag 40 y luego flag 70
     elif 70 <= reg_num <= 89:
@@ -2371,33 +2385,33 @@ for unit_id, fase in zip(unit_ids, fases):
             estado_anterior_31 = reg31_result.registers[0]
             print(f"      Estado anterior reg 31: {estado_anterior_31}")
         if estado_anterior_31 != 0:
-            bypass_result = client.write_register(address=31, value=0, slave=unit_id)
+            bypass_result = write_with_retry(client, 31, 0, unit_id, f"bypass {fase}")
             if not bypass_result.isError():
                 print(f"      Bypass aplicado (reg 31 = 0)")
-            time.sleep(0.1)
+            time.sleep(0.2)
         # Activar flag configuración primero
-        client.write_register(address=40, value=0, slave=unit_id)
-        time.sleep(0.1)
-        flag40_result = client.write_register(address=40, value=47818, slave=unit_id)
+        write_with_retry(client, 40, 0, unit_id, f"reset flag {fase}")
+        time.sleep(0.2)
+        flag40_result = write_with_retry(client, 40, 47818, unit_id, f"flag config {fase}")
         if not flag40_result.isError():
             print(f"      Flag configuración activado (reg 40 = 47818)")
-        time.sleep(0.1)
+        time.sleep(0.2)
         # Activar flag calibración
-        flag_result = client.write_register(address=70, value=51898, slave=unit_id)
+        flag_result = write_with_retry(client, 70, 51898, unit_id, f"flag calib {fase}")
         if flag_result.isError():
             print(f"  [!] Advertencia: flag 70 no respondió, intentando escribir igual...")
         else:
             print(f"      Flag calibración activado (reg 70 = 51898)")
-        time.sleep(0.1)
+        time.sleep(0.2)
     
     # Para registros de control (90-95), activar flag 90
     elif 90 <= reg_num <= 95:
-        flag_result = client.write_register(address=90, value=56010, slave=unit_id)
+        flag_result = write_with_retry(client, 90, 56010, unit_id, f"flag control {fase}")
         if flag_result.isError():
             print(f"  [X] Error activando flag de control en {fase}")
             continue
         print(f"      Flag control activado (reg 90 = 56010)")
-        time.sleep(0.1)
+        time.sleep(0.2)
     
     # Leer valor actual
     read_result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
@@ -2407,7 +2421,7 @@ for unit_id, fase in zip(unit_ids, fases):
         print(f"      Valor anterior: {valor_anterior}")
     
     # Escribir nuevo valor
-    write_result = client.write_register(address=reg_num, value=valor, slave=unit_id)
+    write_result = write_with_retry(client, reg_num, valor, unit_id, f"reg {reg_num} en {fase}")
     
     if write_result.isError():
         print(f"  [X] Error escribiendo en {fase}: {write_result}")
