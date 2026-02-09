@@ -3297,16 +3297,29 @@ def reparar(client, slave_id, corruptos):
         escribir_registro(client, 31, 0, slave_id)
         time.sleep(2)
 
-    # 2. Activar flags de escritura
+    # 2. Activar flags de escritura (con verificacion)
     print(f"  [~] Activando flags de escritura...")
+    
     escribir_registro(client, 40, 0, slave_id)
-    time.sleep(0.1)
+    time.sleep(0.3)
     escribir_registro(client, 40, 47818, slave_id)
-    time.sleep(0.1)
+    time.sleep(0.3)
+    v = leer_registro(client, 40, slave_id)
+    print(f"      Flag config (reg 40): escrito=47818, leido={v} {'[OK]' if v == 47818 else '[FALLO]'}")
+    
+    time.sleep(0.3)
     escribir_registro(client, 70, 51898, slave_id)
-    time.sleep(0.1)
-    escribir_registro(client, 90, 51898, slave_id)
-    time.sleep(0.1)
+    time.sleep(0.3)
+    v = leer_registro(client, 70, slave_id)
+    print(f"      Flag calib  (reg 70): escrito=51898, leido={v} {'[OK]' if v == 51898 else '[FALLO]'}")
+    
+    time.sleep(0.3)
+    escribir_registro(client, 90, 56010, slave_id)
+    time.sleep(0.3)
+    v = leer_registro(client, 90, slave_id)
+    print(f"      Flag control(reg 90): escrito=56010, leido={v} {'[OK]' if v == 56010 else '[FALLO]'}")
+    
+    time.sleep(0.5)
 
     # 3. Escribir valores
     ok_count = 0
@@ -3397,16 +3410,32 @@ def reescribir_todos(client, slave_id):
         escribir_registro(client, 31, 0, slave_id)
         time.sleep(2)
 
-    # 2. Activar flags de escritura
+    # 2. Activar flags de escritura (con verificacion)
     print(f"  [~] Activando flags de escritura...")
+    
+    # Flag configuracion (reg 40 = 47818)
     escribir_registro(client, 40, 0, slave_id)
-    time.sleep(0.1)
+    time.sleep(0.3)
     escribir_registro(client, 40, 47818, slave_id)
-    time.sleep(0.1)
+    time.sleep(0.3)
+    v = leer_registro(client, 40, slave_id)
+    print(f"      Flag config (reg 40): escrito=47818, leido={v} {'[OK]' if v == 47818 else '[FALLO]'}")
+    
+    # Flag calibracion (reg 70 = 51898)
+    time.sleep(0.3)
     escribir_registro(client, 70, 51898, slave_id)
-    time.sleep(0.1)
-    escribir_registro(client, 90, 51898, slave_id)
-    time.sleep(0.1)
+    time.sleep(0.3)
+    v = leer_registro(client, 70, slave_id)
+    print(f"      Flag calib  (reg 70): escrito=51898, leido={v} {'[OK]' if v == 51898 else '[FALLO]'}")
+    
+    # Flag control (reg 90 = 56010)
+    time.sleep(0.3)
+    escribir_registro(client, 90, 56010, slave_id)
+    time.sleep(0.3)
+    v = leer_registro(client, 90, slave_id)
+    print(f"      Flag control(reg 90): escrito=56010, leido={v} {'[OK]' if v == 56010 else '[FALLO]'}")
+    
+    time.sleep(0.5)
 
     # 3. Reescribir todos
     ok_count = 0
