@@ -2949,7 +2949,8 @@ EOFOSCILA
                     echo "  ¿Modo?"
                     echo "  1) Solo diagnóstico (no escribe nada)"
                     echo "  2) Diagnosticar y reparar (solo corruptos)"
-                    echo "  3) Reescribir TODOS los valores (forzar RAM==FLASH, borrar alarma MR)"
+                    echo "  3) Guardar backup de valores actuales"
+                    echo "  4) Restaurar desde backup"
                     echo ""
                     read -p "  Opción [1]: " REPAIR_MODE
                     REPAIR_MODE=${REPAIR_MODE:-1}
@@ -2974,6 +2975,8 @@ EOFOSCILA
 import sys
 import time
 import json
+import os
+from datetime import datetime
 
 try:
     from pymodbus.client import ModbusSerialClient
@@ -2983,8 +2986,6 @@ except ImportError:
     except ImportError:
         print("  [X] pymodbus no instalado")
         sys.exit(1)
-
-import os
 
 # Detectar puerto serie
 port = None
@@ -3001,30 +3002,30 @@ print(f"  [OK] Puerto: {port}")
 
 MAX_RETRIES = 3
 
-# CALIBRACION (registros 71-84)
+# CALIBRACION (registros 71-84): (nombre, min, max, default, signed, validacion)
 CALIBRACION = {
-    71: ('kV0',      25000, 35000, 30000, False),
-    72: ('kVin',     25000, 35000, 30000, False),
-    73: ('bV0',        -50,    50,     0,  True),
-    74: ('bVin',       -50,    50,     0,  True),
-    75: ('kIc',      10000, 40000, 35000, False),
-    76: ('kIe',      10000, 40000, 35000, False),
-    77: ('bIc',        -20,    20,     0,  True),
-    78: ('bIe',        -20,    20,     0,  True),
-    79: ('ruidoIc',      0,   400,     0, False),
-    80: ('ruidoIe',      0,   400,     0, False),
-    81: ('kP',       10000, 30000, 25000, False),
-    82: ('bP',         -20,    20,     0,  True),
-    83: ('Ndesfase',     0,     3,     1, False),
-    84: ('kFrec',    32700, 32900, 32800, False),
+    71: ('kV0',      25000, 35000, 30000, False, None),
+    72: ('kVin',     25000, 35000, 30000, False, None),
+    73: ('bV0',        -50,    50,     0,  True, None),
+    74: ('bVin',       -50,    50,     0,  True, None),
+    75: ('kIc',      10000, 40000, 35000, False, None),
+    76: ('kIe',      10000, 40000, 35000, False, None),
+    77: ('bIc',        -20,    20,     0,  True, None),
+    78: ('bIe',        -20,    20,     0,  True, None),
+    79: ('ruidoIc',      0,   400,     0, False, None),
+    80: ('ruidoIe',      0,   400,     0, False, None),
+    81: ('kP',       10000, 30000, 25000, False, None),
+    82: ('bP',         -20,    20,     0,  True, None),
+    83: ('Ndesfase',     0,     3,     1, False, None),
+    84: ('kFrec',    32700, 32900, 32800, False, None),
 }
 
 # CONTROL (registros 91-94)
 CONTROL = {
-    91: ('VA',    50, 1000,  150, False),
-    92: ('VB',     5,  200,   40, False),
-    93: ('EMM',    2,  300,   15, False),
-    94: ('EMMVT0', 2,  500,   15, False),
+    91: ('VA',    50, 1000,  150, False, None),
+    92: ('VB',     5,  200,   40, False, None),
+    93: ('EMM',    2,  300,   15, False, None),
+    94: ('EMMVT0', 2,  500,   15, False, None),
 }
 
 # CONFIGURACION (registros 41-67)
@@ -3058,7 +3059,25 @@ CONFIGURACION = {
     67: ('Sens deriv',     0,    6,     3, False, None),
 }
 
-PRESERVAR = {41, 48, 54, 59}
+PRESERVAR = {41, 48, 54, 59}  # N.Serie, Dir Modbus, contadores
+
+BACKUP_DIR = os.path.expanduser("~/chopper_backups")
+
+TODOS_REGISTROS = (
+    list(range(71, 85)) +   # Calibracion: 71-84
+    list(range(91, 95)) +   # Control: 91-94
+    list(range(41, 68))      # Configuracion: 41-67
+)
+
+# Orden de escritura: InC (50) antes que Imax (51,52)
+ORDEN_ESCRITURA = [
+    42, 43, 44, 45, 46, 47, 48, 49,
+    50,
+    51, 52,
+    41, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67,
+    71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84,
+    91, 92, 93, 94,
+]
 
 
 def to_signed(val):
@@ -3099,14 +3118,7 @@ def escribir_registro(client, reg, valor, slave_id):
 
 
 def validar(reg, valor, definicion, config_leida):
-    if reg in CALIBRACION:
-        nombre, vmin, vmax, default, signed = definicion
-        validacion = None
-    elif reg in CONTROL:
-        nombre, vmin, vmax, default, signed = definicion
-        validacion = None
-    else:
-        nombre, vmin, vmax, default, signed, validacion = definicion
+    nombre, vmin, vmax, default, signed, validacion = definicion
 
     if signed:
         valor = to_signed(valor)
@@ -3149,6 +3161,76 @@ def validar(reg, valor, definicion, config_leida):
     return True, "OK"
 
 
+def nombre_registro(reg):
+    if reg in CALIBRACION:
+        return CALIBRACION[reg][0]
+    elif reg in CONTROL:
+        return CONTROL[reg][0]
+    elif reg in CONFIGURACION:
+        return CONFIGURACION[reg][0]
+    return f"reg{reg}"
+
+
+def activar_flags(client, slave_id):
+    """Activa los 3 flags de escritura con verificacion"""
+    print(f"  [~] Activando flags de escritura...")
+
+    # Flag configuracion (reg 40 = 47818)
+    escribir_registro(client, 40, 0, slave_id)
+    time.sleep(0.3)
+    escribir_registro(client, 40, 47818, slave_id)
+    time.sleep(0.3)
+    v = leer_registro(client, 40, slave_id)
+    ok1 = v == 47818
+    print(f"      Flag config (reg 40): escrito=47818, leido={v} {'[OK]' if ok1 else '[FALLO]'}")
+
+    # Flag calibracion (reg 70 = 51898)
+    time.sleep(0.3)
+    escribir_registro(client, 70, 51898, slave_id)
+    time.sleep(0.3)
+    v = leer_registro(client, 70, slave_id)
+    ok2 = v == 51898
+    print(f"      Flag calib  (reg 70): escrito=51898, leido={v} {'[OK]' if ok2 else '[FALLO]'}")
+
+    # Flag control (reg 90 = 56010)
+    time.sleep(0.3)
+    escribir_registro(client, 90, 56010, slave_id)
+    time.sleep(0.3)
+    v = leer_registro(client, 90, slave_id)
+    ok3 = v == 56010
+    print(f"      Flag control(reg 90): escrito=56010, leido={v} {'[OK]' if ok3 else '[FALLO]'}")
+
+    time.sleep(0.5)
+    return ok1 and ok2 and ok3
+
+
+def desactivar_flags(client, slave_id):
+    """Desactiva los 3 flags de escritura"""
+    print(f"\n  [~] Desactivando flags...")
+    escribir_registro(client, 40, 0, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 70, 0, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 90, 0, slave_id)
+    time.sleep(0.1)
+
+
+def verificar_alarma_mr(client, slave_id):
+    """Espera 2 segundos y verifica si la alarma MR se borro"""
+    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+    print(f"\n  [~] Esperando 2s para verificar alarma MR en {fase}...")
+    time.sleep(2)
+    alarma = leer_registro(client, 2, slave_id)
+    if alarma is None:
+        print(f"  [!] No se pudo leer el registro de alarma")
+    elif alarma & (1 << 10):
+        print(f"  [!] Alarma MR SIGUE ACTIVA (reg 2 = {alarma})")
+        print(f"      Puede haber un registro que no estamos cubriendo")
+        print(f"      o un problema de hardware/alimentacion")
+    else:
+        print(f"  [OK] Alarma MR BORRADA (reg 2 = {alarma})")
+
+
 def diagnosticar(client, slave_id):
     fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
     print(f"\n{'='*75}")
@@ -3171,7 +3253,9 @@ def diagnosticar(client, slave_id):
     for reg in sorted(CALIBRACION.keys()):
         val = leer_registro(client, reg, slave_id)
         defn = CALIBRACION[reg]
-        nombre, _, _, default, signed = defn
+        nombre = defn[0]
+        default = defn[3]
+        signed = defn[4]
 
         if val is None:
             print(f"  {reg:<5} {nombre:<12} {'ERR':<8} {'':<8} No se pudo leer")
@@ -3193,7 +3277,8 @@ def diagnosticar(client, slave_id):
     for reg in sorted(CONTROL.keys()):
         val = leer_registro(client, reg, slave_id)
         defn = CONTROL[reg]
-        nombre, _, _, default, _ = defn
+        nombre = defn[0]
+        default = defn[3]
 
         if val is None:
             print(f"  {reg:<5} {nombre:<12} {'ERR':<8} No se pudo leer")
@@ -3242,14 +3327,7 @@ def diagnosticar(client, slave_id):
     if corruptos:
         print(f"  [!] {len(corruptos)} PARAMETROS FUERA DE RANGO:")
         for reg, (val_act, val_def) in sorted(corruptos.items()):
-            if reg in CALIBRACION:
-                nombre = CALIBRACION[reg][0]
-            elif reg in CONTROL:
-                nombre = CONTROL[reg][0]
-            elif reg in CONFIGURACION:
-                nombre = CONFIGURACION[reg][0]
-            else:
-                nombre = "?"
+            nombre = nombre_registro(reg)
             print(f"      Reg {reg:>3} ({nombre:<12}): actual={val_act}, default={val_def}")
     else:
         print(f"  [OK] Todos los parametros dentro de rango")
@@ -3283,9 +3361,8 @@ def reparar(client, slave_id, corruptos):
         print("\n  [OK] Solo hay registros preservados, nada que reparar")
         return
 
-    # Pedir confirmacion al usuario
     print("")
-    resp = input("  ¿Confirmar reparacion? (s/N): ").strip().lower()
+    resp = input("  Confirmar reparacion? (s/N): ").strip().lower()
     if resp != 's':
         print("  [X] Cancelado por el usuario")
         return
@@ -3297,39 +3374,22 @@ def reparar(client, slave_id, corruptos):
         escribir_registro(client, 31, 0, slave_id)
         time.sleep(2)
 
-    # 2. Activar flags de escritura (con verificacion)
-    print(f"  [~] Activando flags de escritura...")
-    
-    escribir_registro(client, 40, 0, slave_id)
-    time.sleep(0.3)
-    escribir_registro(client, 40, 47818, slave_id)
-    time.sleep(0.3)
-    v = leer_registro(client, 40, slave_id)
-    print(f"      Flag config (reg 40): escrito=47818, leido={v} {'[OK]' if v == 47818 else '[FALLO]'}")
-    
-    time.sleep(0.3)
-    escribir_registro(client, 70, 51898, slave_id)
-    time.sleep(0.3)
-    v = leer_registro(client, 70, slave_id)
-    print(f"      Flag calib  (reg 70): escrito=51898, leido={v} {'[OK]' if v == 51898 else '[FALLO]'}")
-    
-    time.sleep(0.3)
-    escribir_registro(client, 90, 56010, slave_id)
-    time.sleep(0.3)
-    v = leer_registro(client, 90, slave_id)
-    print(f"      Flag control(reg 90): escrito=56010, leido={v} {'[OK]' if v == 56010 else '[FALLO]'}")
-    
-    time.sleep(0.5)
+    # 2. Activar flags
+    if not activar_flags(client, slave_id):
+        print("  [!] ATENCION: Algun flag no se activo correctamente")
 
-    # 3. Escribir valores
+    # 3. Escribir valores (en orden correcto)
     ok_count = 0
     err_count = 0
 
-    for reg, (val_act, val_def) in sorted(regs_a_reparar.items()):
+    for reg in ORDEN_ESCRITURA:
+        if reg not in regs_a_reparar:
+            continue
+        val_act, val_def = regs_a_reparar[reg]
+
+        signed = False
         if reg in CALIBRACION:
             signed = CALIBRACION[reg][4]
-        else:
-            signed = False
 
         valor_escribir = to_unsigned(val_def) if signed and val_def < 0 else val_def
 
@@ -3348,15 +3408,9 @@ def reparar(client, slave_id, corruptos):
             err_count += 1
 
     # 4. Desactivar flags
-    print(f"\n  [~] Desactivando flags...")
-    escribir_registro(client, 40, 0, slave_id)
-    time.sleep(0.1)
-    escribir_registro(client, 70, 0, slave_id)
-    time.sleep(0.1)
-    escribir_registro(client, 90, 0, slave_id)
-    time.sleep(0.1)
+    desactivar_flags(client, slave_id)
 
-    # 5. Resumen y verificacion alarma MR
+    # 5. Resumen
     print(f"\n{'='*75}")
     print(f"  RESULTADO: {ok_count} reparados, {err_count} errores")
     if err_count == 0:
@@ -3367,40 +3421,146 @@ def reparar(client, slave_id, corruptos):
     print(f"{'='*75}")
 
 
-def reescribir_todos(client, slave_id):
-    """Reescribe TODOS los registros con sus valores actuales para forzar RAM==FLASH"""
-    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+def backup_registros(client, slave_id):
+    """Lee todos los registros y los guarda en un fichero JSON"""
     print(f"\n{'='*75}")
-    print(f"  REESCRITURA COMPLETA - {fase}")
-    print(f"  (Forzar RAM == FLASH para borrar alarma MR)")
+    print(f"  BACKUP REGISTROS - L{slave_id}")
     print(f"{'='*75}")
 
-    # Leer todos los valores actuales
-    todos_regs = {}
-    print(f"\n  [~] Leyendo todos los registros...")
-    for reg in sorted(CALIBRACION.keys()):
+    datos = {}
+    errores = 0
+
+    for reg in TODOS_REGISTROS:
         val = leer_registro(client, reg, slave_id)
-        if val is not None:
-            todos_regs[reg] = val
-    for reg in sorted(CONTROL.keys()):
-        val = leer_registro(client, reg, slave_id)
-        if val is not None:
-            todos_regs[reg] = val
-    for reg in sorted(CONFIGURACION.keys()):
-        if reg in PRESERVAR:
+        nombre = nombre_registro(reg)
+        if val is None:
+            print(f"  [X] Reg {reg:>3} ({nombre}): no se pudo leer")
+            errores += 1
+        else:
+            datos[str(reg)] = val
+            signed = False
+            if reg in CALIBRACION:
+                signed = CALIBRACION[reg][4]
+            sval = to_signed(val) if signed else val
+            extra = f" (signed={sval})" if signed and sval < 0 else ""
+            print(f"  [OK] Reg {reg:>3} ({nombre:<12}): {val}{extra}")
+
+    if errores:
+        print(f"\n  [!] {errores} registros no se pudieron leer")
+        resp = input("  Guardar backup parcial? (s/N): ").strip().lower()
+        if resp != 's':
+            print("  Cancelado")
+            return None
+
+    fw = leer_registro(client, 100, slave_id)
+    alarma = leer_registro(client, 2, slave_id)
+    nserie = leer_registro(client, 41, slave_id)
+
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
+    fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sn = nserie if nserie else 0
+    filename = f"chopper_L{slave_id}_SN{sn}_{fecha}.json"
+    filepath = os.path.join(BACKUP_DIR, filename)
+
+    backup = {
+        "info": {
+            "slave_id": slave_id,
+            "numero_serie": nserie,
+            "fw_version": fw,
+            "alarma": alarma,
+            "fecha": datetime.now().isoformat(),
+            "registros_leidos": len(datos),
+            "registros_error": errores,
+        },
+        "registros": datos,
+    }
+
+    with open(filepath, 'w') as f:
+        json.dump(backup, f, indent=2)
+
+    print(f"\n{'='*75}")
+    print(f"  [OK] Backup guardado: {filepath}")
+    print(f"       {len(datos)} registros, SN={sn}, FW={fw}")
+    print(f"{'='*75}")
+    return filepath
+
+
+def buscar_ultimo_backup(slave_id):
+    """Busca el backup mas reciente para un slave_id"""
+    if not os.path.exists(BACKUP_DIR):
+        return None
+    archivos = []
+    for f in os.listdir(BACKUP_DIR):
+        if f.startswith(f"chopper_L{slave_id}_") and f.endswith(".json"):
+            archivos.append(os.path.join(BACKUP_DIR, f))
+    if not archivos:
+        return None
+    archivos.sort()
+    return archivos[-1]
+
+
+def restaurar_desde_backup(client, slave_id, filepath=None):
+    """Restaura todos los registros desde un fichero de backup"""
+    if filepath is None:
+        filepath = buscar_ultimo_backup(slave_id)
+        if filepath is None:
+            print(f"\n  [X] No hay backups para L{slave_id} en {BACKUP_DIR}")
+            print(f"      Primero haz un backup con la opcion 3")
+            return
+
+    if not os.path.exists(filepath):
+        print(f"\n  [X] Fichero no encontrado: {filepath}")
+        return
+
+    with open(filepath, 'r') as f:
+        backup = json.load(f)
+
+    info = backup.get("info", {})
+    registros = backup.get("registros", {})
+
+    print(f"\n{'='*75}")
+    print(f"  RESTAURAR DESDE BACKUP - L{slave_id}")
+    print(f"{'='*75}")
+    print(f"  Fichero:   {os.path.basename(filepath)}")
+    print(f"  Fecha:     {info.get('fecha', '?')}")
+    print(f"  SN:        {info.get('numero_serie', '?')}")
+    print(f"  FW:        {info.get('fw_version', '?')}")
+    print(f"  Registros: {len(registros)}")
+
+    # Comparar con valores actuales
+    print(f"\n  Comparacion backup vs actual:")
+    print(f"  {'Reg':<5} {'Nombre':<12} {'Backup':<8} {'Actual':<8} {'Estado'}")
+    print(f"  {'-'*55}")
+
+    diferentes = {}
+    for reg in ORDEN_ESCRITURA:
+        reg_str = str(reg)
+        if reg_str not in registros:
             continue
-        val = leer_registro(client, reg, slave_id)
-        if val is not None:
-            todos_regs[reg] = val
 
-    print(f"  [OK] Leidos {len(todos_regs)} registros")
-    print(f"\n  Se van a reescribir {len(todos_regs)} registros con sus valores actuales")
+        val_backup = registros[reg_str]
+        val_actual = leer_registro(client, reg, slave_id)
+        nombre = nombre_registro(reg)
 
-    # Pedir confirmacion
-    print("")
-    resp = input("  ¿Confirmar reescritura completa? (s/N): ").strip().lower()
+        if val_actual is None:
+            print(f">>{reg:<5} {nombre:<12} {val_backup:<8} {'ERR':<8} No se pudo leer")
+            diferentes[reg] = val_backup
+        elif val_actual != val_backup:
+            print(f">>{reg:<5} {nombre:<12} {val_backup:<8} {val_actual:<8} DIFERENTE")
+            diferentes[reg] = val_backup
+        else:
+            print(f"  {reg:<5} {nombre:<12} {val_backup:<8} {val_actual:<8} OK")
+
+    if not diferentes:
+        print(f"\n  [OK] Todos los registros coinciden con el backup")
+        return
+
+    print(f"\n  [!] {len(diferentes)} registros diferentes")
+
+    resp = input("\n  Restaurar estos registros? (s/N): ").strip().lower()
     if resp != 's':
-        print("  [X] Cancelado por el usuario")
+        print("  Cancelado")
         return
 
     # 1. Poner en bypass
@@ -3410,86 +3570,47 @@ def reescribir_todos(client, slave_id):
         escribir_registro(client, 31, 0, slave_id)
         time.sleep(2)
 
-    # 2. Activar flags de escritura (con verificacion)
-    print(f"  [~] Activando flags de escritura...")
-    
-    # Flag configuracion (reg 40 = 47818)
-    escribir_registro(client, 40, 0, slave_id)
-    time.sleep(0.3)
-    escribir_registro(client, 40, 47818, slave_id)
-    time.sleep(0.3)
-    v = leer_registro(client, 40, slave_id)
-    print(f"      Flag config (reg 40): escrito=47818, leido={v} {'[OK]' if v == 47818 else '[FALLO]'}")
-    
-    # Flag calibracion (reg 70 = 51898)
-    time.sleep(0.3)
-    escribir_registro(client, 70, 51898, slave_id)
-    time.sleep(0.3)
-    v = leer_registro(client, 70, slave_id)
-    print(f"      Flag calib  (reg 70): escrito=51898, leido={v} {'[OK]' if v == 51898 else '[FALLO]'}")
-    
-    # Flag control (reg 90 = 56010)
-    time.sleep(0.3)
-    escribir_registro(client, 90, 56010, slave_id)
-    time.sleep(0.3)
-    v = leer_registro(client, 90, slave_id)
-    print(f"      Flag control(reg 90): escrito=56010, leido={v} {'[OK]' if v == 56010 else '[FALLO]'}")
-    
-    time.sleep(0.5)
+    # 2. Activar flags
+    if not activar_flags(client, slave_id):
+        print("  [!] ATENCION: Algun flag no se activo correctamente")
 
-    # 3. Reescribir todos
+    # 3. Escribir en orden correcto
     ok_count = 0
     err_count = 0
 
-    for reg, val in sorted(todos_regs.items()):
-        print(f"  [~] Reg {reg:>3}: {val} -> {val}...", end=" ", flush=True)
-        if escribir_registro(client, reg, val, slave_id):
+    for reg in ORDEN_ESCRITURA:
+        if reg not in diferentes:
+            continue
+
+        valor = diferentes[reg]
+        nombre = nombre_registro(reg)
+
+        print(f"  [~] Reg {reg:>3} ({nombre:<12}): -> {valor}...", end=" ", flush=True)
+        if escribir_registro(client, reg, valor, slave_id):
             time.sleep(0.1)
             leido = leer_registro(client, reg, slave_id)
-            if leido == val:
+            if leido == valor:
                 print("[OK]")
                 ok_count += 1
             else:
-                print(f"[!] Verificacion fallo: leido={leido}")
+                print(f"[!] Verificacion: leido={leido}")
                 err_count += 1
         else:
             print("[X] Error escritura")
             err_count += 1
 
     # 4. Desactivar flags
-    print(f"\n  [~] Desactivando flags...")
-    escribir_registro(client, 40, 0, slave_id)
-    time.sleep(0.1)
-    escribir_registro(client, 70, 0, slave_id)
-    time.sleep(0.1)
-    escribir_registro(client, 90, 0, slave_id)
-    time.sleep(0.1)
+    desactivar_flags(client, slave_id)
 
-    # 5. Resumen y verificacion alarma MR
+    # 5. Verificar alarma MR
     print(f"\n{'='*75}")
-    print(f"  RESULTADO: {ok_count} reescritos, {err_count} errores")
+    print(f"  RESULTADO: {ok_count} restaurados, {err_count} errores")
     if err_count == 0:
-        print(f"  [OK] Reescritura completada")
+        print(f"  [OK] Restauracion completada desde backup")
         verificar_alarma_mr(client, slave_id)
     else:
         print(f"  [!] Hubo errores. Revisar manualmente")
     print(f"{'='*75}")
-
-
-def verificar_alarma_mr(client, slave_id):
-    """Espera 2 segundos y verifica si la alarma MR se borro"""
-    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
-    print(f"\n  [~] Esperando 2s para verificar alarma MR en {fase}...")
-    time.sleep(2)
-    alarma = leer_registro(client, 2, slave_id)
-    if alarma is None:
-        print(f"  [!] No se pudo leer el registro de alarma")
-    elif alarma & (1 << 10):
-        print(f"  [!] Alarma MR SIGUE ACTIVA (reg 2 = {alarma})")
-        print(f"      Puede haber un registro que no estamos cubriendo")
-        print(f"      o un problema de hardware/alimentacion")
-    else:
-        print(f"  [OK] Alarma MR BORRADA (reg 2 = {alarma})")
 
 
 # --- MAIN ---
@@ -3498,7 +3619,7 @@ if len(sys.argv) < 3:
     sys.exit(1)
 
 slaves_str = sys.argv[1]
-mode = sys.argv[2]  # "no", "yes", "force_all"
+mode = sys.argv[2]  # "diag", "fix", "backup", "restore"
 
 client = ModbusSerialClient(
     port=port, baudrate=115200,
@@ -3513,24 +3634,29 @@ try:
     slaves = [int(x) for x in slaves_str.split()]
 
     for slave_id in slaves:
-        corruptos = diagnosticar(client, slave_id)
-        if mode == "force_all":
-            reescribir_todos(client, slave_id)
-        elif mode == "yes":
-            reparar(client, slave_id, corruptos)
-        elif corruptos:
-            fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
-            print(f"\n  Para reparar {fase}, usa el modo 'Diagnosticar y reparar'")
+        if mode == "backup":
+            backup_registros(client, slave_id)
+        elif mode == "restore":
+            restaurar_desde_backup(client, slave_id)
+        else:
+            corruptos = diagnosticar(client, slave_id)
+            if mode == "fix":
+                reparar(client, slave_id, corruptos)
+            elif corruptos:
+                fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+                print(f"\n  Para reparar {fase}, usa el modo 'Diagnosticar y reparar'")
 finally:
     client.close()
     print(f"\n  Conexion cerrada")
 EOFREPAIR
                     
-                    REPAIR_FIX="no"
+                    REPAIR_FIX="diag"
                     if [ "$REPAIR_MODE" = "2" ]; then
-                        REPAIR_FIX="yes"
+                        REPAIR_FIX="fix"
                     elif [ "$REPAIR_MODE" = "3" ]; then
-                        REPAIR_FIX="force_all"
+                        REPAIR_FIX="backup"
+                    elif [ "$REPAIR_MODE" = "4" ]; then
+                        REPAIR_FIX="restore"
                     fi
                     
                     # Ejecutar como archivo (no heredoc) para que input() funcione
