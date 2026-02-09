@@ -1622,9 +1622,10 @@ if chronos_id:
             echo "  9) Diagnóstico configuración (límites)"
             echo "  10) Cambiar tensión consigna (reg 37) - 3 placas"
             echo "  11) Escribir Nº Serie en placas (reg 41)"
+            echo "  12) Reparar memoria corrupta (diagnóstico + fix)"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-11]: " TARJETA
+            read -p "  Opción [0-12]: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
@@ -2919,6 +2920,466 @@ print("")
 print(f"  [OK] Oscilación detenida tras {ciclo} ciclos")
 client.close()
 EOFOSCILA
+                    
+                    volver_menu
+                    continue
+                    ;;
+                12)
+                    # Reparar memoria corrupta - diagnóstico y fix
+                    echo ""
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo "  Reparar memoria corrupta (ChopperAC)"
+                    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                    echo ""
+                    echo "  ¿Qué placa quieres diagnosticar/reparar?"
+                    echo ""
+                    echo "  1) L1 (slave 1)"
+                    echo "  2) L2 (slave 2)"
+                    echo "  3) L3 (slave 3)"
+                    echo "  4) Las 3 placas (diagnóstico)"
+                    echo "  0) Volver"
+                    echo ""
+                    read -p "  Opción [0-4]: " REPAIR_PLACA
+                    
+                    if [ "$REPAIR_PLACA" = "0" ]; then
+                        continue
+                    fi
+                    
+                    echo ""
+                    echo "  ¿Modo?"
+                    echo "  1) Solo diagnóstico (no escribe nada)"
+                    echo "  2) Diagnosticar y reparar"
+                    echo ""
+                    read -p "  Opción [1]: " REPAIR_MODE
+                    REPAIR_MODE=${REPAIR_MODE:-1}
+                    
+                    echo ""
+                    echo "  [!] Parando Node-RED temporalmente..."
+                    sudo systemctl stop nodered 2>/dev/null
+                    docker stop gesinne-rpi >/dev/null 2>&1 || true
+                    sleep 2
+                    echo "  [OK] Servicios parados"
+                    echo ""
+                    
+                    if [ "$REPAIR_PLACA" = "4" ]; then
+                        REPAIR_SLAVES="1 2 3"
+                    else
+                        REPAIR_SLAVES="$REPAIR_PLACA"
+                    fi
+                    
+                    REPAIR_FIX="no"
+                    if [ "$REPAIR_MODE" = "2" ]; then
+                        REPAIR_FIX="yes"
+                    fi
+                    
+                    python3 << EOFREPAIR
+import sys
+import time
+
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+import os
+
+# Detectar puerto serie
+port = None
+for p in ['/dev/ttyAMA0', '/dev/serial0', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyS0']:
+    if os.path.exists(p):
+        port = p
+        break
+
+if not port:
+    print("  [X] No se encontro puerto serie")
+    sys.exit(1)
+
+print(f"  [OK] Puerto: {port}")
+
+MAX_RETRIES = 3
+
+# CALIBRACION (registros 71-84)
+CALIBRACION = {
+    71: ('kV0',      25000, 35000, 30000, False),
+    72: ('kVin',     25000, 35000, 30000, False),
+    73: ('bV0',        -50,    50,     0,  True),
+    74: ('bVin',       -50,    50,     0,  True),
+    75: ('kIc',      10000, 40000, 35000, False),
+    76: ('kIe',      10000, 40000, 35000, False),
+    77: ('bIc',        -20,    20,     0,  True),
+    78: ('bIe',        -20,    20,     0,  True),
+    79: ('ruidoIc',      0,   400,     0, False),
+    80: ('ruidoIe',      0,   400,     0, False),
+    81: ('kP',       10000, 30000, 25000, False),
+    82: ('bP',         -20,    20,     0,  True),
+    83: ('Ndesfase',     0,     3,     1, False),
+    84: ('kFrec',    32700, 32900, 32800, False),
+}
+
+# CONTROL (registros 91-94)
+CONTROL = {
+    91: ('VA',    50, 1000,  150, False),
+    92: ('VB',     5,  200,   40, False),
+    93: ('EMM',    2,  300,   15, False),
+    94: ('EMMVT0', 2,  500,   15, False),
+}
+
+# CONFIGURACION (registros 41-67)
+CONFIGURACION = {
+    41: ('N.Serie',       0, 65535,     0, False, 'cualquiera'),
+    42: ('Vnom',       1100,  2800,  2400, False, 'multiplo_50'),
+    43: ('V prim auto', 800,  2800,  2310, False, None),
+    44: ('V prim trafo',1000, 3600,  3500, False, None),
+    45: ('V sec trafo',   60, 1000,   230, False, None),
+    46: ('Topologia',      0,    4,     2, False, None),
+    47: ('Dead-time',      3,  250,    22, False, None),
+    48: ('Dir Modbus',     1,    3,     1, False, None),
+    49: ('InE',           30, 2500,   400, False, None),
+    50: ('InC',           15,  250,    15, False, None),
+    51: ('Imax RMS',      10, None,   263, False, 'depende_InC'),
+    52: ('Imax pico',     10, None,   263, False, 'depende_InC'),
+    53: ('T apag CC',      1,  300,    30, False, None),
+    54: ('Cnt CC',         0, 65535,    0, False, 'cualquiera'),
+    55: ('Est inicial', None, None,     0, False, 'solo_0_o_2'),
+    56: ('V consigna', None, None,  2400, False, 'consigna'),
+    57: ('T maxima',     450,  700,   550, False, None),
+    58: ('Dec T reenc',   50,  120,   100, False, None),
+    59: ('Cnt ST',         0, 65535,    0, False, 'cualquiera'),
+    60: ('Tipo alim',   None, None,     0, False, 'solo_0_o_1'),
+    61: ('Vel RS485',   None, None,     0, False, 'solo_0_1_2'),
+    62: ('Package',     None, None,     0, False, 'solo_0_o_1'),
+    63: ('Ang alta',       0,  179,   179, False, None),
+    64: ('Ang baja',       0,  179,   179, False, None),
+    65: ('% carga',        1,   50,     5, False, None),
+    66: ('Sens trans',     0,    4,     3, False, None),
+    67: ('Sens deriv',     0,    6,     3, False, None),
+}
+
+PRESERVAR = {41, 48, 54, 59}
+
+
+def to_signed(val):
+    return val - 65536 if val > 32767 else val
+
+def to_unsigned(val):
+    return val & 0xFFFF
+
+
+def leer_registro(client, reg, slave_id):
+    for retry in range(MAX_RETRIES):
+        try:
+            time.sleep(0.05)
+            resp = client.read_holding_registers(reg, 1, slave=slave_id)
+            if not resp.isError():
+                return resp.registers[0]
+            if retry < MAX_RETRIES - 1:
+                time.sleep(0.2)
+        except Exception:
+            if retry < MAX_RETRIES - 1:
+                time.sleep(0.2)
+    return None
+
+
+def escribir_registro(client, reg, valor, slave_id):
+    for retry in range(MAX_RETRIES):
+        try:
+            time.sleep(0.05)
+            resp = client.write_register(reg, valor, slave=slave_id)
+            if not resp.isError():
+                return True
+            if retry < MAX_RETRIES - 1:
+                time.sleep(0.3)
+        except Exception:
+            if retry < MAX_RETRIES - 1:
+                time.sleep(0.3)
+    return False
+
+
+def validar(reg, valor, definicion, config_leida):
+    if reg in CALIBRACION:
+        nombre, vmin, vmax, default, signed = definicion
+        validacion = None
+    elif reg in CONTROL:
+        nombre, vmin, vmax, default, signed = definicion
+        validacion = None
+    else:
+        nombre, vmin, vmax, default, signed, validacion = definicion
+
+    if signed:
+        valor = to_signed(valor)
+
+    if validacion == 'cualquiera':
+        return True, "OK"
+    if validacion == 'solo_0_o_2':
+        ok = valor in (0, 2)
+        return ok, "OK" if ok else f"Debe ser 0 o 2, es {valor}"
+    if validacion == 'solo_0_o_1':
+        ok = valor in (0, 1)
+        return ok, "OK" if ok else f"Debe ser 0 o 1, es {valor}"
+    if validacion == 'solo_0_1_2':
+        ok = valor in (0, 1, 2)
+        return ok, "OK" if ok else f"Debe ser 0, 1 o 2, es {valor}"
+    if validacion == 'multiplo_50':
+        if vmin is not None and vmax is not None:
+            ok = vmin <= valor <= vmax and (valor % 50) == 0
+            if ok:
+                return True, "OK"
+            if not (vmin <= valor <= vmax):
+                return False, f"Fuera [{vmin}-{vmax}], es {valor}"
+            return False, f"No multiplo de 50, es {valor}"
+    if validacion == 'depende_InC':
+        InC = config_leida.get(50, 15)
+        max_perm = InC * 20
+        ok = 10 <= valor <= max_perm
+        return ok, f"OK (max={max_perm})" if ok else f"Fuera [10-{max_perm}], es {valor}"
+    if validacion == 'consigna':
+        Vnom = config_leida.get(42, 2400)
+        cmin = Vnom * 80 // 100
+        cmax = min(Vnom * 120 // 100, 2800)
+        ok = cmin <= valor <= cmax
+        return ok, f"OK ({cmin}-{cmax})" if ok else f"Fuera [{cmin}-{cmax}], es {valor}"
+
+    if vmin is not None and vmax is not None:
+        ok = vmin <= valor <= vmax
+        return ok, "OK" if ok else f"Fuera [{vmin}-{vmax}], es {valor}"
+
+    return True, "OK"
+
+
+def diagnosticar(client, slave_id):
+    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+    print(f"\n{'='*75}")
+    print(f"  DIAGNOSTICO MEMORIA - {fase}")
+    print(f"{'='*75}")
+
+    config_leida = {}
+    corruptos = {}
+
+    for reg in sorted(CONFIGURACION.keys()):
+        val = leer_registro(client, reg, slave_id)
+        if val is not None:
+            config_leida[reg] = val
+
+    # CALIBRACION
+    print(f"\n  -- CALIBRACION (reg 71-84) --")
+    print(f"  {'Reg':<5} {'Nombre':<12} {'Valor':<8} {'Signed':<8} {'Estado'}")
+    print(f"  {'-'*65}")
+
+    for reg in sorted(CALIBRACION.keys()):
+        val = leer_registro(client, reg, slave_id)
+        defn = CALIBRACION[reg]
+        nombre, _, _, default, signed = defn
+
+        if val is None:
+            print(f"  {reg:<5} {nombre:<12} {'ERR':<8} {'':<8} No se pudo leer")
+            corruptos[reg] = (None, default)
+            continue
+
+        sval = to_signed(val) if signed else val
+        ok, msg = validar(reg, val, defn, config_leida)
+        marca = "  " if ok else ">>"
+        print(f"{marca}{reg:<5} {nombre:<12} {val:<8} {sval:<8} {msg}")
+        if not ok:
+            corruptos[reg] = (val, default)
+
+    # CONTROL
+    print(f"\n  -- CONTROL (reg 91-94) --")
+    print(f"  {'Reg':<5} {'Nombre':<12} {'Valor':<8} {'Estado'}")
+    print(f"  {'-'*50}")
+
+    for reg in sorted(CONTROL.keys()):
+        val = leer_registro(client, reg, slave_id)
+        defn = CONTROL[reg]
+        nombre, _, _, default, _ = defn
+
+        if val is None:
+            print(f"  {reg:<5} {nombre:<12} {'ERR':<8} No se pudo leer")
+            corruptos[reg] = (None, default)
+            continue
+
+        ok, msg = validar(reg, val, defn, config_leida)
+        marca = "  " if ok else ">>"
+        print(f"{marca}{reg:<5} {nombre:<12} {val:<8} {msg}")
+        if not ok:
+            corruptos[reg] = (val, default)
+
+    # CONFIGURACION
+    print(f"\n  -- CONFIGURACION (reg 41-67) --")
+    print(f"  {'Reg':<5} {'Nombre':<12} {'Valor':<8} {'Estado'}")
+    print(f"  {'-'*50}")
+
+    for reg in sorted(CONFIGURACION.keys()):
+        val = config_leida.get(reg)
+        defn = CONFIGURACION[reg]
+        nombre = defn[0]
+        default = defn[3]
+
+        if val is None:
+            print(f"  {reg:<5} {nombre:<12} {'ERR':<8} No se pudo leer")
+            corruptos[reg] = (None, default)
+            continue
+
+        ok, msg = validar(reg, val, defn, config_leida)
+        marca = "  " if ok else ">>"
+        print(f"{marca}{reg:<5} {nombre:<12} {val:<8} {msg}")
+        if not ok:
+            corruptos[reg] = (val, default)
+
+    # FW VERSION
+    print(f"\n  -- INFO FW --")
+    fw = leer_registro(client, 100, slave_id)
+    alarma = leer_registro(client, 2, slave_id)
+    estado = leer_registro(client, 0, slave_id)
+    print(f"  FW Version: {fw}")
+    print(f"  Alarma:     {alarma} (bit10 MR = {1 if alarma and alarma & (1<<10) else 0})")
+    print(f"  Estado:     {estado}")
+
+    # RESUMEN
+    print(f"\n{'='*75}")
+    if corruptos:
+        print(f"  [!] {len(corruptos)} PARAMETROS FUERA DE RANGO:")
+        for reg, (val_act, val_def) in sorted(corruptos.items()):
+            if reg in CALIBRACION:
+                nombre = CALIBRACION[reg][0]
+            elif reg in CONTROL:
+                nombre = CONTROL[reg][0]
+            elif reg in CONFIGURACION:
+                nombre = CONFIGURACION[reg][0]
+            else:
+                nombre = "?"
+            print(f"      Reg {reg:>3} ({nombre:<12}): actual={val_act}, default={val_def}")
+    else:
+        print(f"  [OK] Todos los parametros dentro de rango")
+    print(f"{'='*75}")
+
+    return corruptos
+
+
+def reparar(client, slave_id, corruptos):
+    if not corruptos:
+        print("\n  [OK] No hay nada que reparar")
+        return
+
+    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+    print(f"\n{'='*75}")
+    print(f"  REPARACION MEMORIA - {fase}")
+    print(f"{'='*75}")
+
+    regs_a_reparar = {r: v for r, v in corruptos.items() if r not in PRESERVAR}
+    regs_preservados = {r: v for r, v in corruptos.items() if r in PRESERVAR}
+
+    print(f"\n  Se van a reparar {len(regs_a_reparar)} registros:")
+    for reg, (val_act, val_def) in sorted(regs_a_reparar.items()):
+        print(f"    Reg {reg:>3}: {val_act} -> {val_def}")
+    if regs_preservados:
+        print(f"\n  Se preservan {len(regs_preservados)} registros:")
+        for reg, (val_act, val_def) in sorted(regs_preservados.items()):
+            print(f"    Reg {reg:>3}: {val_act} (no se toca)")
+
+    if not regs_a_reparar:
+        print("\n  [OK] Solo hay registros preservados, nada que reparar")
+        return
+
+    # 1. Poner en bypass
+    estado = leer_registro(client, 0, slave_id)
+    if estado and estado != 0:
+        print(f"\n  [~] Poniendo en bypass...")
+        escribir_registro(client, 31, 0, slave_id)
+        time.sleep(2)
+
+    # 2. Activar flags de escritura
+    print(f"  [~] Activando flags de escritura...")
+    escribir_registro(client, 40, 0, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 40, 47818, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 70, 51898, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 90, 51898, slave_id)
+    time.sleep(0.1)
+
+    # 3. Escribir valores
+    ok_count = 0
+    err_count = 0
+
+    for reg, (val_act, val_def) in sorted(regs_a_reparar.items()):
+        if reg in CALIBRACION:
+            signed = CALIBRACION[reg][4]
+        else:
+            signed = False
+
+        valor_escribir = to_unsigned(val_def) if signed and val_def < 0 else val_def
+
+        print(f"  [~] Reg {reg:>3}: {val_act} -> {val_def}...", end=" ", flush=True)
+        if escribir_registro(client, reg, valor_escribir, slave_id):
+            time.sleep(0.1)
+            leido = leer_registro(client, reg, slave_id)
+            if leido == valor_escribir:
+                print("[OK]")
+                ok_count += 1
+            else:
+                print(f"[!] Verificacion fallo: leido={leido}")
+                err_count += 1
+        else:
+            print("[X] Error escritura")
+            err_count += 1
+
+    # 4. Desactivar flags
+    print(f"\n  [~] Desactivando flags...")
+    escribir_registro(client, 40, 0, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 70, 0, slave_id)
+    time.sleep(0.1)
+    escribir_registro(client, 90, 0, slave_id)
+    time.sleep(0.1)
+
+    # 5. Resumen
+    print(f"\n{'='*75}")
+    print(f"  RESULTADO: {ok_count} reparados, {err_count} errores")
+    if err_count == 0:
+        print(f"  [OK] Reparacion completada")
+        print(f"  [!] Reinicia el equipo para que la alarma MR se borre")
+    else:
+        print(f"  [!] Hubo errores. Revisar manualmente")
+    print(f"{'='*75}")
+
+
+# --- MAIN ---
+client = ModbusSerialClient(
+    port=port, baudrate=115200,
+    bytesize=8, parity='N', stopbits=1, timeout=1
+)
+
+if not client.connect():
+    print("  [X] No se pudo conectar al puerto serie")
+    sys.exit(1)
+
+try:
+    slaves = [int(x) for x in "$REPAIR_SLAVES".split()]
+    do_fix = "$REPAIR_FIX" == "yes"
+
+    for slave_id in slaves:
+        corruptos = diagnosticar(client, slave_id)
+        if do_fix:
+            reparar(client, slave_id, corruptos)
+        elif corruptos:
+            fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+            print(f"\n  Para reparar {fase}, usa el modo 'Diagnosticar y reparar'")
+finally:
+    client.close()
+    print(f"\n  Conexion cerrada")
+EOFREPAIR
+                    
+                    echo ""
+                    echo "  [~] Reiniciando Node-RED..."
+                    sudo systemctl start nodered
+                    docker start gesinne-rpi 2>/dev/null || true
+                    sleep 3
+                    echo "  [OK] Servicios reiniciados"
                     
                     volver_menu
                     continue
