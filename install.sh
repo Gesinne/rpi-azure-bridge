@@ -2405,14 +2405,33 @@ for unit_id, fase in zip(unit_ids, fases):
             print(f"      Flag calibración activado (reg 70 = 51898)")
         time.sleep(0.2)
     
-    # Para registros de control (90-95), activar flag 90
+    # Para registros de control (90-95), activar flag 90 con verificación
     elif 90 <= reg_num <= 95:
-        flag_result = write_with_retry(client, 90, 56010, unit_id, f"flag control {fase}")
-        if flag_result.isError():
-            print(f"  [X] Error activando flag de control en {fase}")
+        # Resetear flag primero
+        write_with_retry(client, 90, 0, unit_id, f"reset flag control {fase}")
+        time.sleep(0.5)
+        
+        # Activar flag con reintentos y verificación
+        flag_ok = False
+        for intento in range(5):
+            flag_result = write_with_retry(client, 90, 56010, unit_id, f"flag control {fase}")
+            time.sleep(0.5)
+            
+            # Verificar que se quedó activo
+            verify = client.read_holding_registers(address=90, count=1, slave=unit_id)
+            if not verify.isError() and verify.registers[0] == 56010:
+                flag_ok = True
+                print(f"      Flag control activado y verificado (reg 90 = 56010)")
+                break
+            else:
+                leido = verify.registers[0] if not verify.isError() else "error"
+                print(f"      [!] Flag no verificado (leído: {leido}), reintento {intento+2}/5...")
+                time.sleep(0.3)
+        
+        if not flag_ok:
+            print(f"  [X] Error activando flag de control en {fase} tras 5 intentos")
             continue
-        print(f"      Flag control activado (reg 90 = 56010)")
-        time.sleep(0.2)
+        time.sleep(0.3)
     
     # Leer valor actual
     read_result = client.read_holding_registers(address=reg_num, count=1, slave=unit_id)
@@ -3000,7 +3019,7 @@ if not port:
 
 print(f"  [OK] Puerto: {port}")
 
-MAX_RETRIES = 3
+MAX_RETRIES = 5
 
 # CALIBRACION (registros 71-84): (nombre, min, max, default, signed, validacion)
 CALIBRACION = {
@@ -3090,30 +3109,36 @@ def to_unsigned(val):
 def leer_registro(client, reg, slave_id):
     for retry in range(MAX_RETRIES):
         try:
-            time.sleep(0.05)
+            time.sleep(0.08)
             resp = client.read_holding_registers(reg, 1, slave=slave_id)
             if not resp.isError():
                 return resp.registers[0]
             if retry < MAX_RETRIES - 1:
-                time.sleep(0.2)
+                wait = 0.3 * (retry + 1)  # backoff: 0.3, 0.6, 0.9, 1.2
+                time.sleep(wait)
         except Exception:
             if retry < MAX_RETRIES - 1:
-                time.sleep(0.2)
+                wait = 0.3 * (retry + 1)
+                time.sleep(wait)
     return None
 
 
 def escribir_registro(client, reg, valor, slave_id):
     for retry in range(MAX_RETRIES):
         try:
-            time.sleep(0.05)
+            time.sleep(0.1)
             resp = client.write_register(reg, valor, slave=slave_id)
             if not resp.isError():
                 return True
             if retry < MAX_RETRIES - 1:
-                time.sleep(0.3)
-        except Exception:
+                wait = 0.5 * (retry + 1)  # backoff: 0.5, 1.0, 1.5, 2.0
+                print(f"      [!] Reintentando reg {reg} en L{slave_id} ({retry+2}/{MAX_RETRIES})...")
+                time.sleep(wait)
+        except Exception as e:
             if retry < MAX_RETRIES - 1:
-                time.sleep(0.3)
+                wait = 0.5 * (retry + 1)
+                print(f"      [!] Reintentando reg {reg} en L{slave_id} ({retry+2}/{MAX_RETRIES})...")
+                time.sleep(wait)
     return False
 
 
@@ -3623,7 +3648,7 @@ mode = sys.argv[2]  # "diag", "fix", "backup", "restore"
 
 client = ModbusSerialClient(
     port=port, baudrate=115200,
-    bytesize=8, parity='N', stopbits=1, timeout=1
+    bytesize=8, parity='N', stopbits=1, timeout=3
 )
 
 if not client.connect():
