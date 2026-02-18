@@ -3442,12 +3442,9 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
         escribir_registro(client, 31, 0, slave_id)
         time.sleep(2)
 
-    # 2. Activar flags
-    if not activar_flags(client, slave_id):
-        print("  [!] ATENCION: Algun flag no se activo correctamente")
-
-    # 3. Escribir TODOS los registros (corruptos con default, buenos con su valor actual)
-    #    Esto fuerza que la placa recalcule el checksum/CRC interno
+    # 2. Escribir TODOS los registros (corruptos con default, buenos con su valor actual)
+    #    Reactiva el flag correspondiente ANTES de cada registro
+    #    (la placa desactiva el flag despues de cada escritura)
     ok_count = 0
     err_count = 0
     fix_count = 0
@@ -3474,6 +3471,23 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
         else:
             continue
 
+        # Activar flag correspondiente ANTES de cada escritura
+        if reg in CONFIGURACION or (41 <= reg <= 69):
+            escribir_registro(client, 40, 0, slave_id)
+            time.sleep(0.15)
+            escribir_registro(client, 40, 47818, slave_id)
+            time.sleep(0.2)
+        elif reg in CALIBRACION or (70 <= reg <= 89):
+            escribir_registro(client, 40, 0, slave_id)
+            time.sleep(0.15)
+            escribir_registro(client, 40, 47818, slave_id)
+            time.sleep(0.15)
+            escribir_registro(client, 70, 51898, slave_id)
+            time.sleep(0.2)
+        elif reg in CONTROL or (90 <= reg <= 95):
+            escribir_registro(client, 90, 56010, slave_id)
+            time.sleep(0.2)
+
         if escribir_registro(client, reg, valor_escribir, slave_id):
             time.sleep(0.1)
             leido = leer_registro(client, reg, slave_id)
@@ -3487,7 +3501,7 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
             print("[X] Error escritura")
             err_count += 1
 
-    # 4. Desactivar flags
+    # 3. Desactivar flags
     desactivar_flags(client, slave_id)
 
     # 5. Resumen
