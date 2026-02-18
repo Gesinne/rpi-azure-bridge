@@ -3241,17 +3241,43 @@ def desactivar_flags(client, slave_id):
 
 
 def verificar_alarma_mr(client, slave_id):
-    """Espera 2 segundos y verifica si la alarma MR se borro"""
+    """Fuerza ciclo bypass->regulacion para borrar alarma MR y verifica"""
     fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
-    print(f"\n  [~] Esperando 2s para verificar alarma MR en {fase}...")
+
+    # 1. Asegurar bypass
+    print(f"\n  [~] Forzando bypass en {fase} (reg 31 = 0)...")
+    escribir_registro(client, 31, 0, slave_id)
     time.sleep(2)
+
+    # 2. Poner en regulacion para que re-evalúe registros
+    print(f"  [~] Poniendo en regulacion {fase} (reg 31 = 2)...")
+    escribir_registro(client, 31, 2, slave_id)
+    time.sleep(3)
+
+    # 3. Verificar alarma
     alarma = leer_registro(client, 2, slave_id)
     if alarma is None:
         print(f"  [!] No se pudo leer el registro de alarma")
-    elif alarma & (1 << 10):
-        print(f"  [!] Alarma MR SIGUE ACTIVA (reg 2 = {alarma})")
-        print(f"      Puede haber un registro que no estamos cubriendo")
-        print(f"      o un problema de hardware/alimentacion")
+        return
+
+    if alarma & (1 << 10):
+        # Segundo intento: ciclo bypass -> regulacion mas largo
+        print(f"  [!] Alarma MR sigue activa, reintentando ciclo...")
+        escribir_registro(client, 31, 0, slave_id)
+        time.sleep(3)
+        escribir_registro(client, 31, 2, slave_id)
+        time.sleep(5)
+
+        alarma = leer_registro(client, 2, slave_id)
+        if alarma is None:
+            print(f"  [!] No se pudo leer el registro de alarma")
+        elif alarma & (1 << 10):
+            print(f"  [!] Alarma MR SIGUE ACTIVA (reg 2 = {alarma})")
+            print(f"      Puede haber un registro que no estamos cubriendo")
+            print(f"      o un problema de hardware/alimentacion")
+            print(f"      Prueba a apagar y encender el equipo")
+        else:
+            print(f"  [OK] Alarma MR BORRADA en 2o intento (reg 2 = {alarma})")
     else:
         print(f"  [OK] Alarma MR BORRADA (reg 2 = {alarma})")
 
