@@ -3123,18 +3123,22 @@ def leer_registro(client, reg, slave_id):
     return None
 
 
-def escribir_registro(client, reg, valor, slave_id):
+def escribir_registro(client, reg, valor, slave_id, verbose=False):
     for retry in range(MAX_RETRIES):
         try:
             time.sleep(0.1)
             resp = client.write_register(reg, valor, slave=slave_id)
             if not resp.isError():
                 return True
+            if verbose or retry == MAX_RETRIES - 1:
+                print(f"\n      [DBG] Error Modbus reg {reg}: {resp}", flush=True)
             if retry < MAX_RETRIES - 1:
-                wait = 0.5 * (retry + 1)  # backoff: 0.5, 1.0, 1.5, 2.0
+                wait = 0.5 * (retry + 1)
                 print(f"      [!] Reintentando reg {reg} en L{slave_id} ({retry+2}/{MAX_RETRIES})...")
                 time.sleep(wait)
         except Exception as e:
+            if verbose or retry == MAX_RETRIES - 1:
+                print(f"\n      [DBG] Excepcion reg {reg}: {e}", flush=True)
             if retry < MAX_RETRIES - 1:
                 wait = 0.5 * (retry + 1)
                 print(f"      [!] Reintentando reg {reg} en L{slave_id} ({retry+2}/{MAX_RETRIES})...")
@@ -3514,6 +3518,10 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
             time.sleep(0.15)
             escribir_registro(client, 40, 47818, slave_id)
             time.sleep(0.2)
+            # Verificar flag en primer registro para diagnostico
+            if ok_count == 0 and err_count == 0:
+                v40 = leer_registro(client, 40, slave_id)
+                print(f"\n      [DBG] Flag 40 despues de activar: {v40} (esperado 47818)", flush=True)
         elif reg in CALIBRACION or (70 <= reg <= 89):
             escribir_registro(client, 40, 0, slave_id)
             time.sleep(0.15)
@@ -3525,7 +3533,8 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
             escribir_registro(client, 90, 56010, slave_id)
             time.sleep(0.2)
 
-        if escribir_registro(client, reg, valor_escribir, slave_id):
+        is_first = (ok_count == 0 and err_count == 0)
+        if escribir_registro(client, reg, valor_escribir, slave_id, verbose=is_first):
             time.sleep(0.1)
             leido = leer_registro(client, reg, slave_id)
             if leido == valor_escribir:
