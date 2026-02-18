@@ -3442,6 +3442,43 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
         escribir_registro(client, 31, 0, slave_id)
         time.sleep(2)
 
+    # 1b. Intentar borrar alarma MR ANTES de escribir registros
+    #     La placa puede bloquear escrituras mientras MR esta activa
+    if hay_alarma_mr:
+        print(f"\n  [~] Intentando borrar alarma MR antes de escribir...")
+        alarma_actual = leer_registro(client, 2, slave_id)
+        if alarma_actual is not None:
+            # Intento 1: Escribir 0 en registro de alarma
+            print(f"      Intento 1: Escribir 0 en reg 2...")
+            escribir_registro(client, 2, 0, slave_id)
+            time.sleep(1)
+            alarma_check = leer_registro(client, 2, slave_id)
+            print(f"      Alarma despues: {alarma_check}")
+
+            if alarma_check and alarma_check & (1 << 10):
+                # Intento 2: Escribir valor sin bit 10
+                sin_mr = alarma_actual & ~(1 << 10)
+                print(f"      Intento 2: Escribir {sin_mr} en reg 2 (sin bit MR)...")
+                escribir_registro(client, 2, sin_mr, slave_id)
+                time.sleep(1)
+                alarma_check = leer_registro(client, 2, slave_id)
+                print(f"      Alarma despues: {alarma_check}")
+
+            if alarma_check and alarma_check & (1 << 10):
+                # Intento 3: Ciclo bypass -> regulacion -> bypass
+                print(f"      Intento 3: Ciclo bypass->regulacion->bypass...")
+                escribir_registro(client, 31, 2, slave_id)
+                time.sleep(3)
+                escribir_registro(client, 31, 0, slave_id)
+                time.sleep(2)
+                alarma_check = leer_registro(client, 2, slave_id)
+                print(f"      Alarma despues: {alarma_check}")
+
+            if alarma_check is None or not (alarma_check & (1 << 10)):
+                print(f"  [OK] Alarma MR borrada antes de escribir")
+            else:
+                print(f"  [!] Alarma MR persiste, intentando escribir de todas formas...")
+
     # 2. Escribir TODOS los registros (corruptos con default, buenos con su valor actual)
     #    Reactiva el flag correspondiente ANTES de cada registro
     #    (la placa desactiva el flag despues de cada escritura)
