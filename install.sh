@@ -3374,6 +3374,7 @@ def diagnosticar(client, slave_id):
     print(f"  Estado:     {estado}")
 
     # RESUMEN
+    hay_alarma_mr = alarma is not None and bool(alarma & (1 << 10))
     print(f"\n{'='*75}")
     if corruptos:
         print(f"  [!] {len(corruptos)} PARAMETROS FUERA DE RANGO:")
@@ -3382,13 +3383,16 @@ def diagnosticar(client, slave_id):
             print(f"      Reg {reg:>3} ({nombre:<12}): actual={val_act}, default={val_def}")
     else:
         print(f"  [OK] Todos los parametros dentro de rango")
+    if hay_alarma_mr and not corruptos:
+        print(f"  [!] ALARMA MR ACTIVA sin registros corruptos visibles")
+        print(f"      Se necesita reescribir todos los registros para borrarla")
     print(f"{'='*75}")
 
-    return corruptos
+    return corruptos, hay_alarma_mr
 
 
-def reparar(client, slave_id, corruptos):
-    if not corruptos:
+def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
+    if not corruptos and not hay_alarma_mr:
         print("\n  [OK] No hay nada que reparar")
         return
 
@@ -3400,17 +3404,22 @@ def reparar(client, slave_id, corruptos):
     regs_a_reparar = {r: v for r, v in corruptos.items() if r not in PRESERVAR}
     regs_preservados = {r: v for r, v in corruptos.items() if r in PRESERVAR}
 
-    print(f"\n  Se van a reparar {len(regs_a_reparar)} registros:")
-    for reg, (val_act, val_def) in sorted(regs_a_reparar.items()):
-        print(f"    Reg {reg:>3}: {val_act} -> {val_def}")
+    if regs_a_reparar:
+        print(f"\n  Se van a reparar {len(regs_a_reparar)} registros:")
+        for reg, (val_act, val_def) in sorted(regs_a_reparar.items()):
+            print(f"    Reg {reg:>3}: {val_act} -> {val_def}")
     if regs_preservados:
         print(f"\n  Se preservan {len(regs_preservados)} registros:")
         for reg, (val_act, val_def) in sorted(regs_preservados.items()):
             print(f"    Reg {reg:>3}: {val_act} (no se toca)")
 
-    if not regs_a_reparar:
+    if not regs_a_reparar and not hay_alarma_mr:
         print("\n  [OK] Solo hay registros preservados, nada que reparar")
         return
+
+    if not regs_a_reparar and hay_alarma_mr:
+        print(f"\n  [!] No hay registros corruptos pero hay ALARMA MR activa")
+        print(f"      Se reescribiran TODOS los registros para forzar borrado")
 
     print("")
     resp = input("  Confirmar reparacion? (s/N): ").strip().lower()
@@ -3710,10 +3719,10 @@ try:
         elif mode == "restore":
             restaurar_desde_backup(client, slave_id)
         else:
-            corruptos = diagnosticar(client, slave_id)
+            corruptos, hay_alarma_mr = diagnosticar(client, slave_id)
             if mode == "fix":
-                reparar(client, slave_id, corruptos)
-            elif corruptos:
+                reparar(client, slave_id, corruptos, hay_alarma_mr)
+            elif corruptos or hay_alarma_mr:
                 fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
                 print(f"\n  Para reparar {fase}, usa el modo 'Diagnosticar y reparar'")
 finally:
