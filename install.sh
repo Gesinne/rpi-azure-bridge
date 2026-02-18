@@ -3418,6 +3418,14 @@ def reparar(client, slave_id, corruptos):
         print("  [X] Cancelado por el usuario")
         return
 
+    # 0. Leer TODOS los registros actuales (para reescribirlos despues)
+    print(f"\n  [~] Leyendo todos los registros actuales...")
+    valores_actuales = {}
+    for reg in ORDEN_ESCRITURA:
+        val = leer_registro(client, reg, slave_id)
+        if val is not None:
+            valores_actuales[reg] = val
+
     # 1. Poner en bypass
     estado = leer_registro(client, 0, slave_id)
     if estado and estado != 0:
@@ -3429,22 +3437,34 @@ def reparar(client, slave_id, corruptos):
     if not activar_flags(client, slave_id):
         print("  [!] ATENCION: Algun flag no se activo correctamente")
 
-    # 3. Escribir valores (en orden correcto)
+    # 3. Escribir TODOS los registros (corruptos con default, buenos con su valor actual)
+    #    Esto fuerza que la placa recalcule el checksum/CRC interno
     ok_count = 0
     err_count = 0
+    fix_count = 0
 
+    print(f"\n  [~] Reescribiendo TODOS los registros ({len(ORDEN_ESCRITURA)})...")
     for reg in ORDEN_ESCRITURA:
-        if reg not in regs_a_reparar:
+        if reg in PRESERVAR:
             continue
-        val_act, val_def = regs_a_reparar[reg]
 
         signed = False
         if reg in CALIBRACION:
             signed = CALIBRACION[reg][4]
 
-        valor_escribir = to_unsigned(val_def) if signed and val_def < 0 else val_def
+        if reg in regs_a_reparar:
+            # Registro corrupto: escribir valor por defecto
+            val_act, val_def = regs_a_reparar[reg]
+            valor_escribir = to_unsigned(val_def) if signed and val_def < 0 else val_def
+            print(f"  [~] Reg {reg:>3}: {val_act} -> {val_def} (CORREGIR)...", end=" ", flush=True)
+            fix_count += 1
+        elif reg in valores_actuales:
+            # Registro OK: reescribir con su valor actual (fuerza recalculo CRC)
+            valor_escribir = valores_actuales[reg]
+            print(f"  [~] Reg {reg:>3}: {valor_escribir} (reescribir)...", end=" ", flush=True)
+        else:
+            continue
 
-        print(f"  [~] Reg {reg:>3}: {val_act} -> {val_def}...", end=" ", flush=True)
         if escribir_registro(client, reg, valor_escribir, slave_id):
             time.sleep(0.1)
             leido = leer_registro(client, reg, slave_id)
@@ -3463,7 +3483,7 @@ def reparar(client, slave_id, corruptos):
 
     # 5. Resumen
     print(f"\n{'='*75}")
-    print(f"  RESULTADO: {ok_count} reparados, {err_count} errores")
+    print(f"  RESULTADO: {ok_count} escritos OK ({fix_count} corregidos), {err_count} errores")
     if err_count == 0:
         print(f"  [OK] Reparacion completada")
         verificar_alarma_mr(client, slave_id)
