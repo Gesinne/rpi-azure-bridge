@@ -3080,7 +3080,7 @@ CONFIGURACION = {
 
 PRESERVAR = {41, 48, 54, 59}  # N.Serie, Dir Modbus, contadores
 
-BACKUP_DIR = os.path.expanduser("~/config")
+BACKUP_DIR = os.path.join(os.path.expanduser(f"~{os.environ.get('SUDO_USER', '')}"), "config")
 
 TODOS_REGISTROS = (
     list(range(71, 85)) +   # Calibracion: 71-84
