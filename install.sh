@@ -2954,29 +2954,38 @@ EOFOSCILA
                     echo "  Reparar memoria corrupta (ChopperAC)"
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
-                    echo "  ¿Qué placa quieres diagnosticar/reparar?"
-                    echo ""
-                    echo "  1) L1 (slave 1)"
-                    echo "  2) L2 (slave 2)"
-                    echo "  3) L3 (slave 3)"
-                    echo "  4) Las 3 placas (diagnóstico)"
+                    echo "  1) Diagnosticar las 3 fases (no escribe nada)"
+                    echo "  2) Diagnosticar y reparar una fase"
+                    echo "  3) Guardar backup (3 fases)"
+                    echo "  4) Restaurar fase desde backup"
                     echo "  0) Volver"
                     echo ""
-                    read -p "  Opción [0-4]: " REPAIR_PLACA
+                    read -p "  Opción [0-4]: " REPAIR_MODE
                     
-                    if [ "$REPAIR_PLACA" = "0" ]; then
+                    if [ "$REPAIR_MODE" = "0" ]; then
                         continue
                     fi
                     
-                    echo ""
-                    echo "  ¿Modo?"
-                    echo "  1) Solo diagnóstico (no escribe nada)"
-                    echo "  2) Diagnosticar y reparar (solo corruptos)"
-                    echo "  3) Guardar backup de valores actuales"
-                    echo "  4) Restaurar desde backup"
-                    echo ""
-                    read -p "  Opción [1]: " REPAIR_MODE
-                    REPAIR_MODE=${REPAIR_MODE:-1}
+                    # Preguntar fase solo para opciones que lo necesitan
+                    if [ "$REPAIR_MODE" = "2" ] || [ "$REPAIR_MODE" = "4" ]; then
+                        echo ""
+                        echo "  ¿Qué fase?"
+                        echo "  1) Fase 1    2) Fase 2    3) Fase 3"
+                        echo ""
+                        read -p "  Fase [1-3]: " REPAIR_PLACA
+                        REPAIR_SLAVES="$REPAIR_PLACA"
+                    else
+                        REPAIR_SLAVES="1 2 3"
+                    fi
+                    
+                    # Remap modo al formato del script Python
+                    case $REPAIR_MODE in
+                        1) REPAIR_FIX_MODE="diag" ;;
+                        2) REPAIR_FIX_MODE="fix" ;;
+                        3) REPAIR_FIX_MODE="backup" ;;
+                        4) REPAIR_FIX_MODE="restore" ;;
+                        *) echo "  [X] Opción no válida"; continue ;;
+                    esac
                     
                     echo ""
                     echo "  [!] Parando Node-RED temporalmente..."
@@ -2985,12 +2994,6 @@ EOFOSCILA
                     sleep 2
                     echo "  [OK] Servicios parados"
                     echo ""
-                    
-                    if [ "$REPAIR_PLACA" = "4" ] || [ "$REPAIR_MODE" = "3" ]; then
-                        REPAIR_SLAVES="1 2 3"
-                    else
-                        REPAIR_SLAVES="$REPAIR_PLACA"
-                    fi
                     
                     # Guardar script Python como archivo temporal para poder usar stdin
                     REPAIR_SCRIPT="/tmp/repair_memoria_$$.py"
@@ -3963,17 +3966,8 @@ finally:
     print(f"\n  Conexion cerrada")
 EOFREPAIR
                     
-                    REPAIR_FIX="diag"
-                    if [ "$REPAIR_MODE" = "2" ]; then
-                        REPAIR_FIX="fix"
-                    elif [ "$REPAIR_MODE" = "3" ]; then
-                        REPAIR_FIX="backup"
-                    elif [ "$REPAIR_MODE" = "4" ]; then
-                        REPAIR_FIX="restore"
-                    fi
-                    
                     # Ejecutar como archivo (no heredoc) para que input() funcione
-                    python3 "$REPAIR_SCRIPT" "$REPAIR_SLAVES" "$REPAIR_FIX"
+                    python3 "$REPAIR_SCRIPT" "$REPAIR_SLAVES" "$REPAIR_FIX_MODE"
                     rm -f "$REPAIR_SCRIPT"
                     
                     echo ""
