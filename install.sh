@@ -3109,7 +3109,7 @@ CO_MAP = [
     (44,   'Pt', ' V',  10),    # 05 - V prim trafo
     (45,   'St', ' V',  10),    # 06 - V sec trafo
     (46,   'Tp', '',     0),    # 07 - Topologia
-    (47,   'Dt', ' us', 100),   # 08 - Dead-time
+    (47,   'Dt', ' us', 1000),  # 08 - Dead-time
     (48,   'MB', '',     0),    # 09 - Dir Modbus
     (49,   'Ie', ' A',   0),    # 10 - InE
     (50,   'Ic', ' A',   0),    # 11 - InC
@@ -3642,7 +3642,8 @@ def escribir_fase_txt(tf, client, slave_id):
                 tf.write(f"{idx:02d}-{nombre}: {'ERR':>6}{unidad}\n")
             elif divisor > 0:
                 fval = raw / divisor
-                tf.write(f"{idx:02d}-{nombre}: {fval:>6.1f}{unidad}\n")
+                decimales = 2 if divisor >= 100 else 1
+                tf.write(f"{idx:02d}-{nombre}: {fval:>6.{decimales}f}{unidad}\n")
             else:
                 tf.write(f"{idx:02d}-{nombre}: {raw:>6}{unidad}\n")
     tf.write("\nOK\n\n")
