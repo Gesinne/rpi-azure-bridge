@@ -2957,7 +2957,7 @@ EOFOSCILA
                     echo "  1) Diagnosticar las 3 fases (no escribe nada)"
                     echo "  2) Diagnosticar y reparar una fase"
                     echo "  3) Guardar backup (3 fases)"
-                    echo "  4) Restaurar fase desde backup"
+                    echo "  4) Restaurar desde backup"
                     echo "  0) Volver"
                     echo ""
                     read -p "  Opción [0-4]: " REPAIR_MODE
@@ -2966,14 +2966,25 @@ EOFOSCILA
                         continue
                     fi
                     
-                    # Preguntar fase solo para opciones que lo necesitan
-                    if [ "$REPAIR_MODE" = "2" ] || [ "$REPAIR_MODE" = "4" ]; then
+                    # Preguntar fase para reparar (solo 1) y restaurar (1 o todas)
+                    if [ "$REPAIR_MODE" = "2" ]; then
                         echo ""
                         echo "  ¿Qué fase?"
                         echo "  1) Fase 1    2) Fase 2    3) Fase 3"
                         echo ""
                         read -p "  Fase [1-3]: " REPAIR_PLACA
                         REPAIR_SLAVES="$REPAIR_PLACA"
+                    elif [ "$REPAIR_MODE" = "4" ]; then
+                        echo ""
+                        echo "  ¿Qué quieres restaurar?"
+                        echo "  1) Fase 1    2) Fase 2    3) Fase 3    4) Las 3 fases"
+                        echo ""
+                        read -p "  Opción [1-4]: " REPAIR_PLACA
+                        if [ "$REPAIR_PLACA" = "4" ]; then
+                            REPAIR_SLAVES="1 2 3"
+                        else
+                            REPAIR_SLAVES="$REPAIR_PLACA"
+                        fi
                     else
                         REPAIR_SLAVES="1 2 3"
                     fi
@@ -3956,17 +3967,23 @@ try:
 
     if mode == "backup":
         backup_registros(client, slaves)
+    elif mode == "restore":
+        filepath = buscar_ultimo_backup()
+        if filepath is None:
+            print(f"\n  [X] No hay backup en {BACKUP_DIR}")
+            print(f"      Primero haz un backup con la opcion 3")
+        else:
+            print(f"\n  Backup encontrado: {os.path.basename(filepath)}")
+            for slave_id in slaves:
+                restaurar_desde_backup(client, slave_id, filepath)
     else:
         for slave_id in slaves:
-            if mode == "restore":
-                restaurar_desde_backup(client, slave_id)
-            else:
-                corruptos, hay_alarma_mr = diagnosticar(client, slave_id)
-                if mode == "fix":
-                    reparar(client, slave_id, corruptos, hay_alarma_mr)
-                elif corruptos or hay_alarma_mr:
-                    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
-                    print(f"\n  Para reparar {fase}, usa el modo 'Diagnosticar y reparar'")
+            corruptos, hay_alarma_mr = diagnosticar(client, slave_id)
+            if mode == "fix":
+                reparar(client, slave_id, corruptos, hay_alarma_mr)
+            elif corruptos or hay_alarma_mr:
+                fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+                print(f"\n  Para reparar {fase}, usa el modo 'Diagnosticar y reparar'")
 finally:
     client.close()
     print(f"\n  Conexion cerrada")
