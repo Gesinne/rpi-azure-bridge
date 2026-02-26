@@ -2982,7 +2982,7 @@ EOFOSCILA
                     echo "  [OK] Servicios parados"
                     echo ""
                     
-                    if [ "$REPAIR_PLACA" = "4" ]; then
+                    if [ "$REPAIR_PLACA" = "4" ] || [ "$REPAIR_MODE" = "3" ]; then
                         REPAIR_SLAVES="1 2 3"
                     else
                         REPAIR_SLAVES="$REPAIR_PLACA"
@@ -3606,12 +3606,8 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
     print(f"{'='*75}")
 
 
-def backup_registros(client, slave_id):
-    """Lee todos los registros y los guarda en formato TXT (?Co/?Ca/?Cn)"""
-    print(f"\n{'='*75}")
-    print(f"  BACKUP REGISTROS - L{slave_id}")
-    print(f"{'='*75}")
-
+def escribir_fase_txt(tf, client, slave_id):
+    """Escribe una fase en formato ?Co/?Ca/?Cn al fichero tf. Devuelve (datos, errores)"""
     datos = {}
     errores = 0
 
@@ -3630,88 +3626,104 @@ def backup_registros(client, slave_id):
             extra = f" (signed={sval})" if signed and sval < 0 else ""
             print(f"  [OK] Reg {reg:>3} ({nombre:<12}): {val}{extra}")
 
-    if errores:
-        print(f"\n  [!] {errores} registros no se pudieron leer")
-        resp = input("  Guardar backup parcial? (s/N): ").strip().lower()
-        if resp != 's':
-            print("  Cancelado")
-            return None
-
     fw = leer_registro(client, 100, slave_id)
-    alarma = leer_registro(client, 2, slave_id)
-    nserie = leer_registro(client, 41, slave_id)
 
-    os.makedirs(BACKUP_DIR, exist_ok=True)
+    tf.write(f"Fase {slave_id}\n\n")
 
-    fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
-    sn = nserie if nserie else 0
-    filename = f"chopper_L{slave_id}_SN{sn}_{fecha}.txt"
-    filepath = os.path.join(BACKUP_DIR, filename)
-
-    with open(filepath, 'w') as tf:
-        tf.write(f"Fase {slave_id}\n\n")
-
-        # --- ?Co ---
-        tf.write("Introduzca comando: ?Co\n")
-        for idx, (reg, nombre, unidad, divisor) in enumerate(CO_MAP):
-            if reg is None:
-                if idx == 0:
-                    val = fw if fw else 0
-                elif idx == 1:
-                    val = fw if fw else 0
-                else:
-                    val = 0
-                tf.write(f"{idx:02d}-{nombre}: {val:>6}{unidad}\n")
+    # --- ?Co ---
+    tf.write("Introduzca comando: ?Co\n")
+    for idx, (reg, nombre, unidad, divisor) in enumerate(CO_MAP):
+        if reg is None:
+            val = fw if fw else 0
+            tf.write(f"{idx:02d}-{nombre}: {val:>6}{unidad}\n")
+        else:
+            raw = datos.get(str(reg))
+            if raw is None:
+                tf.write(f"{idx:02d}-{nombre}: {'ERR':>6}{unidad}\n")
+            elif divisor > 0:
+                fval = raw / divisor
+                tf.write(f"{idx:02d}-{nombre}: {fval:>6.1f}{unidad}\n")
             else:
-                raw = datos.get(str(reg))
-                if raw is None:
-                    tf.write(f"{idx:02d}-{nombre}: {'ERR':>6}{unidad}\n")
-                elif divisor > 0:
-                    fval = raw / divisor
-                    tf.write(f"{idx:02d}-{nombre}: {fval:>6.1f}{unidad}\n")
-                else:
-                    tf.write(f"{idx:02d}-{nombre}: {raw:>6}{unidad}\n")
-        tf.write("\nOK\n\n")
+                tf.write(f"{idx:02d}-{nombre}: {raw:>6}{unidad}\n")
+    tf.write("\nOK\n\n")
 
-        # --- ?Ca ---
-        tf.write("Introduzca comando: ?Ca\n")
-        for idx in range(16):
-            if idx in CA_MAP:
-                reg = CA_MAP[idx]
-                raw = datos.get(str(reg))
-                if raw is None:
-                    tf.write(f"{idx:02d}: ERR\n")
-                else:
-                    signed_flag = CALIBRACION.get(reg, (None,)*6)[4] if reg in CALIBRACION else False
-                    val = to_signed(raw) if signed_flag else raw
-                    tf.write(f"{idx:02d}: {val}\n")
-        tf.write("\nOK\n\n")
-
-        # --- ?Cn ---
-        tf.write("Introduzca comando: ?Cn\n")
-        for idx in range(4):
-            reg = CN_MAP[idx]
+    # --- ?Ca ---
+    tf.write("Introduzca comando: ?Ca\n")
+    for idx in range(16):
+        if idx in CA_MAP:
+            reg = CA_MAP[idx]
             raw = datos.get(str(reg))
             if raw is None:
                 tf.write(f"{idx:02d}: ERR\n")
             else:
-                tf.write(f"{idx:02d}: {raw}\n")
-        tf.write("\nOK\n")
+                signed_flag = CALIBRACION.get(reg, (None,)*6)[4] if reg in CALIBRACION else False
+                val = to_signed(raw) if signed_flag else raw
+                tf.write(f"{idx:02d}: {val}\n")
+    tf.write("\nOK\n\n")
+
+    # --- ?Cn ---
+    tf.write("Introduzca comando: ?Cn\n")
+    for idx in range(4):
+        reg = CN_MAP[idx]
+        raw = datos.get(str(reg))
+        if raw is None:
+            tf.write(f"{idx:02d}: ERR\n")
+        else:
+            tf.write(f"{idx:02d}: {raw}\n")
+    tf.write("\nOK\n")
+
+    return datos, errores
+
+
+def backup_registros(client, slaves=None):
+    """Lee los registros de las 3 fases y los guarda en un solo TXT"""
+    if slaves is None:
+        slaves = [1, 2, 3]
+
+    print(f"\n{'='*75}")
+    print(f"  BACKUP REGISTROS - {', '.join(f'L{s}' for s in slaves)}")
+    print(f"{'='*75}")
+
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"chopper_backup_{fecha}.txt"
+    filepath = os.path.join(BACKUP_DIR, filename)
+
+    total_regs = 0
+    total_errs = 0
+
+    with open(filepath, 'w') as tf:
+        for i, slave_id in enumerate(slaves):
+            print(f"\n  --- Leyendo Fase {slave_id} ---")
+            datos, errores = escribir_fase_txt(tf, client, slave_id)
+            total_regs += len(datos)
+            total_errs += errores
+            # Separar fases con doble salto de linea
+            if i < len(slaves) - 1:
+                tf.write("\n\n")
+
+    if total_errs:
+        print(f"\n  [!] {total_errs} registros no se pudieron leer")
+        resp = input("  Guardar backup parcial? (s/N): ").strip().lower()
+        if resp != 's':
+            os.remove(filepath)
+            print("  Cancelado")
+            return None
 
     print(f"\n{'='*75}")
     print(f"  [OK] Backup guardado: {filepath}")
-    print(f"       {len(datos)} registros, SN={sn}, FW={fw}")
+    print(f"       {total_regs} registros en {len(slaves)} fases")
     print(f"{'='*75}")
     return filepath
 
 
-def buscar_ultimo_backup(slave_id):
-    """Busca el backup mas reciente para un slave_id"""
+def buscar_ultimo_backup():
+    """Busca el backup mas reciente"""
     if not os.path.exists(BACKUP_DIR):
         return None
     archivos = []
     for f in os.listdir(BACKUP_DIR):
-        if f.startswith(f"chopper_L{slave_id}_") and f.endswith(".txt"):
+        if f.startswith("chopper_") and f.endswith(".txt"):
             archivos.append(os.path.join(BACKUP_DIR, f))
     if not archivos:
         return None
@@ -3720,14 +3732,28 @@ def buscar_ultimo_backup(slave_id):
 
 
 def parsear_backup_txt(filepath):
-    """Parsea un fichero TXT en formato ?Co/?Ca/?Cn y devuelve registros raw"""
+    """Parsea un fichero TXT multi-fase y devuelve {slave_id: {reg: val}}"""
     import re
-    registros = {}
+    todas_fases = {}
+    fase_actual = None
     seccion = None
 
     with open(filepath, 'r') as f:
         for line in f:
             line = line.strip()
+
+            # Detectar inicio de fase
+            m_fase = re.match(r'^Fase\s+(\d+)', line)
+            if m_fase:
+                fase_actual = int(m_fase.group(1))
+                if fase_actual not in todas_fases:
+                    todas_fases[fase_actual] = {}
+                seccion = None
+                continue
+
+            if fase_actual is None:
+                continue
+
             if '?Co' in line:
                 seccion = 'Co'
                 continue
@@ -3737,11 +3763,12 @@ def parsear_backup_txt(filepath):
             elif '?Cn' in line:
                 seccion = 'Cn'
                 continue
-            elif line == 'OK' or line == '' or line.startswith('Fase'):
+            elif line == 'OK' or line == '':
                 continue
 
+            regs = todas_fases[fase_actual]
+
             if seccion == 'Co':
-                # Formato: "02-Ns:    182" o "03-Vn: 240.0 V"
                 m = re.match(r'^(\d+)-\w+:\s*([\d.\-]+)', line)
                 if m:
                     idx = int(m.group(1))
@@ -3753,37 +3780,35 @@ def parsear_backup_txt(filepath):
                                 raw = int(round(float(val_str) * divisor))
                             else:
                                 raw = int(float(val_str))
-                            registros[reg] = raw
+                            regs[reg] = raw
 
             elif seccion == 'Ca':
-                # Formato: "00: 29676" o "03: -5"
                 m = re.match(r'^(\d+):\s*([\d\-]+)', line)
                 if m:
                     idx = int(m.group(1))
                     val = int(m.group(2))
                     if idx in CA_MAP:
                         reg = CA_MAP[idx]
-                        registros[reg] = to_unsigned(val) if val < 0 else val
+                        regs[reg] = to_unsigned(val) if val < 0 else val
 
             elif seccion == 'Cn':
-                # Formato: "00: 150"
                 m = re.match(r'^(\d+):\s*(\d+)', line)
                 if m:
                     idx = int(m.group(1))
                     val = int(m.group(2))
                     if idx in CN_MAP:
                         reg = CN_MAP[idx]
-                        registros[reg] = val
+                        regs[reg] = val
 
-    return registros
+    return todas_fases
 
 
 def restaurar_desde_backup(client, slave_id, filepath=None):
-    """Restaura todos los registros desde un fichero TXT de backup"""
+    """Restaura registros de una fase desde un fichero TXT multi-fase"""
     if filepath is None:
-        filepath = buscar_ultimo_backup(slave_id)
+        filepath = buscar_ultimo_backup()
         if filepath is None:
-            print(f"\n  [X] No hay backups para L{slave_id} en {BACKUP_DIR}")
+            print(f"\n  [X] No hay backups en {BACKUP_DIR}")
             print(f"      Primero haz un backup con la opcion 3")
             return
 
@@ -3791,16 +3816,24 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         print(f"\n  [X] Fichero no encontrado: {filepath}")
         return
 
-    registros = parsear_backup_txt(filepath)
+    todas_fases = parsear_backup_txt(filepath)
+
+    if slave_id not in todas_fases:
+        print(f"\n  [X] No se encontro Fase {slave_id} en el backup")
+        print(f"      Fases disponibles: {list(todas_fases.keys())}")
+        return
+
+    registros = todas_fases[slave_id]
 
     print(f"\n{'='*75}")
     print(f"  RESTAURAR DESDE BACKUP - L{slave_id}")
     print(f"{'='*75}")
     print(f"  Fichero:   {os.path.basename(filepath)}")
+    print(f"  Fase:      {slave_id}")
     print(f"  Registros: {len(registros)}")
 
     if not registros:
-        print(f"\n  [X] No se pudieron leer registros del fichero")
+        print(f"\n  [X] No se pudieron leer registros de Fase {slave_id}")
         return
 
     # Comparar con valores actuales
@@ -3907,18 +3940,19 @@ if not client.connect():
 try:
     slaves = [int(x) for x in slaves_str.split()]
 
-    for slave_id in slaves:
-        if mode == "backup":
-            backup_registros(client, slave_id)
-        elif mode == "restore":
-            restaurar_desde_backup(client, slave_id)
-        else:
-            corruptos, hay_alarma_mr = diagnosticar(client, slave_id)
-            if mode == "fix":
-                reparar(client, slave_id, corruptos, hay_alarma_mr)
-            elif corruptos or hay_alarma_mr:
-                fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
-                print(f"\n  Para reparar {fase}, usa el modo 'Diagnosticar y reparar'")
+    if mode == "backup":
+        backup_registros(client, slaves)
+    else:
+        for slave_id in slaves:
+            if mode == "restore":
+                restaurar_desde_backup(client, slave_id)
+            else:
+                corruptos, hay_alarma_mr = diagnosticar(client, slave_id)
+                if mode == "fix":
+                    reparar(client, slave_id, corruptos, hay_alarma_mr)
+                elif corruptos or hay_alarma_mr:
+                    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+                    print(f"\n  Para reparar {fase}, usa el modo 'Diagnosticar y reparar'")
 finally:
     client.close()
     print(f"\n  Conexion cerrada")
