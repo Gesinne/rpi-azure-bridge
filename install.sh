@@ -3686,7 +3686,7 @@ def backup_registros(client, slaves=None):
 
     os.makedirs(BACKUP_DIR, exist_ok=True)
     fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"chopper_backup_{fecha}.txt"
+    filename = f"parametros_{fecha}.txt"
     filepath = os.path.join(BACKUP_DIR, filename)
 
     total_regs = 0
@@ -3723,7 +3723,7 @@ def buscar_ultimo_backup():
         return None
     archivos = []
     for f in os.listdir(BACKUP_DIR):
-        if f.startswith("chopper_") and f.endswith(".txt"):
+        if f.startswith("parametros_") and f.endswith(".txt"):
             archivos.append(os.path.join(BACKUP_DIR, f))
     if not archivos:
         return None
