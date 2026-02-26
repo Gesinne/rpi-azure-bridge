@@ -1615,17 +1615,13 @@ if chronos_id:
             echo "  2) Tarjeta L2 (Fase 2)"
             echo "  3) Tarjeta L3 (Fase 3)"
             echo "  4) TODAS en columnas (L1, L2, L3)"
-            echo "  5) Diagnóstico valores clavados (3 placas)"
             echo "  6) Leer registro específico"
             echo "  7) Enviar parámetros por EMAIL"
             echo "  8) Escribir registro"
-            echo "  9) Diagnóstico configuración (límites)"
-            echo "  10) Cambiar tensión consigna (reg 37) - 3 placas"
-            echo "  11) Escribir Nº Serie en placas (reg 41)"
             echo "  12) Reparar memoria corrupta (diagnóstico + fix)"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción [0-12]: " TARJETA
+            read -p "  Opción: " TARJETA
             
             case $TARJETA in
                 0) continue ;;
