@@ -2960,6 +2960,9 @@ EOFOSCILA
                     echo "  4) Restaurar desde backup"
                     echo "  0) Volver"
                     echo ""
+                    echo "  NOTA: Para reparar/restaurar, pon el equipo en"
+                    echo "        BYPASS desde Node-RED ANTES de continuar"
+                    echo ""
                     read -p "  Opción [0-4]: " REPAIR_MODE
                     
                     if [ "$REPAIR_MODE" = "0" ]; then
@@ -3331,29 +3334,9 @@ def verificar_alarma_mr(client, slave_id):
         print(f"\n  [OK] No hay alarma MR en {fase} (reg 2 = {alarma})")
         return
 
-    # 2. Hay alarma MR -> intentar ciclo bypass->regulacion
+    # 2. Hay alarma MR
     print(f"\n  [!] Alarma MR activa en {fase} (reg 2 = {alarma})")
-    for intento in range(2):
-        espera_reg = 3 if intento == 0 else 5
-        print(f"  [~] Intento {intento+1}/2: ciclo bypass -> regulacion...")
-        try:
-            client.write_register(31, 0, slave=slave_id)
-            time.sleep(espera_reg)
-            client.write_register(31, 2, slave=slave_id)
-            time.sleep(espera_reg)
-        except Exception:
-            print(f"  [!] No se pudo escribir reg 31, verificando alarma igualmente...")
-
-        alarma = leer_registro(client, 2, slave_id)
-        if alarma is None:
-            print(f"  [!] No se pudo leer el registro de alarma")
-            return
-        if not (alarma & (1 << 10)):
-            print(f"  [OK] Alarma MR BORRADA (reg 2 = {alarma})")
-            return
-
-    print(f"  [!] Alarma MR SIGUE ACTIVA (reg 2 = {alarma})")
-    print(f"      Prueba a apagar y encender el equipo")
+    print(f"      Haz un ciclo bypass -> regulacion desde Node-RED para borrarla")
 
 
 def diagnosticar(client, slave_id):
@@ -3509,38 +3492,13 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
         if val is not None:
             valores_actuales[reg] = val
 
-    # 1. Verificar/forzar bypass
+    # 1. Verificar que esta en bypass
     estado = leer_registro(client, 0, slave_id)
-    if estado is not None and estado == 0:
-        print(f"\n  [OK] Fase {slave_id} ya esta en bypass")
-    else:
-        print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
-        en_bypass = False
-        for intento in range(5):
-            try:
-                time.sleep(0.5)
-                resp_wr = client.write_register(31, 0, slave=slave_id)
-                if resp_wr.isError():
-                    print(f"  [!] Intento {intento+1}/5: escritura rechazada, esperando...")
-                    time.sleep(3)
-                    continue
-            except Exception as e:
-                print(f"  [!] Intento {intento+1}/5: excepcion {e}, esperando...")
-                time.sleep(3)
-                continue
-            time.sleep(3)
-            estado = leer_registro(client, 0, slave_id)
-            if estado is not None and estado == 0:
-                print(f"  [OK] Fase {slave_id} en bypass")
-                en_bypass = True
-                break
-            print(f"  [!] Intento {intento+1}/5: estado = {estado}, esperando...")
-            time.sleep(3)
-
-        if not en_bypass:
-            print(f"  [X] No se pudo confirmar bypass en Fase {slave_id}")
-            print(f"      Pon el equipo en bypass manualmente y reintenta.")
-            return
+    if estado is None or estado != 0:
+        print(f"\n  [X] Fase {slave_id} NO esta en bypass (estado = {estado})")
+        print(f"      Pon el equipo en bypass desde Node-RED ANTES de reparar")
+        return
+    print(f"\n  [OK] Fase {slave_id} en bypass")
 
     # 1b. Intentar borrar alarma MR ANTES de escribir registros
     #     La placa puede bloquear escrituras mientras MR esta activa
@@ -3928,38 +3886,13 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         print("  Cancelado")
         return
 
-    # 1. Verificar/forzar bypass
+    # 1. Verificar que esta en bypass
     estado = leer_registro(client, 0, slave_id)
-    if estado is not None and estado == 0:
-        print(f"\n  [OK] Fase {slave_id} ya esta en bypass")
-    else:
-        print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
-        en_bypass = False
-        for intento in range(5):
-            try:
-                time.sleep(0.5)
-                resp_wr = client.write_register(31, 0, slave=slave_id)
-                if resp_wr.isError():
-                    print(f"  [!] Intento {intento+1}/5: escritura rechazada, esperando...")
-                    time.sleep(3)
-                    continue
-            except Exception as e:
-                print(f"  [!] Intento {intento+1}/5: excepcion {e}, esperando...")
-                time.sleep(3)
-                continue
-            time.sleep(3)
-            estado = leer_registro(client, 0, slave_id)
-            if estado is not None and estado == 0:
-                print(f"  [OK] Fase {slave_id} en bypass")
-                en_bypass = True
-                break
-            print(f"  [!] Intento {intento+1}/5: estado = {estado}, esperando...")
-            time.sleep(3)
-
-        if not en_bypass:
-            print(f"  [X] No se pudo confirmar bypass en Fase {slave_id}")
-            print(f"      Pon el equipo en bypass manualmente y reintenta.")
-            return
+    if estado is None or estado != 0:
+        print(f"\n  [X] Fase {slave_id} NO esta en bypass (estado = {estado})")
+        print(f"      Pon el equipo en bypass desde Node-RED ANTES de restaurar")
+        return
+    print(f"\n  [OK] Fase {slave_id} en bypass")
 
     # 2. Activar flags
     if not activar_flags(client, slave_id):
@@ -4000,47 +3933,13 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         print(f"{'='*75}")
         return
 
-    # 5. Ciclo bypass->regulacion para persistir valores
-    print(f"\n  [~] Poniendo en regulacion para persistir valores...")
-    reg_ok = False
-    try:
-        resp_wr = client.write_register(31, 2, slave=slave_id)
-        if not resp_wr.isError():
-            reg_ok = True
-            print(f"  [OK] Regulacion activada (reg 31 = 2)")
-            time.sleep(3)
-    except Exception:
-        pass
-
-    if not reg_ok:
-        print(f"  [!] No se pudo activar regulacion por Modbus")
-        print(f"")
-        print(f"  *** PON EL EQUIPO EN REGULACION DESDE NODE-RED ***")
-        print(f"  *** para que los valores se guarden en la placa ***")
-        print(f"")
-        input("  Pulsa ENTER cuando este en regulacion...")
-        time.sleep(2)
-
-    # 6. Verificar que los valores se persistieron
-    print(f"\n  [~] Verificando valores escritos en placa...")
-    fallos = 0
-    for reg, valor_esperado in diferentes.items():
-        val_leido = leer_registro(client, reg, slave_id)
-        nombre = nombre_registro(reg)
-        if val_leido == valor_esperado:
-            print(f"  [OK] Reg {reg:>3} ({nombre:<12}): {val_leido}")
-        else:
-            print(f"  [X]  Reg {reg:>3} ({nombre:<12}): esperado={valor_esperado}, leido={val_leido}")
-            fallos += 1
-
+    # 5. Resultado
     print(f"\n{'='*75}")
-    if fallos == 0:
-        print(f"  RESULTADO: {ok_count} restaurados y verificados")
-        print(f"  [OK] Restauracion completada")
-        verificar_alarma_mr(client, slave_id)
-    else:
-        print(f"  [!] {fallos} registros NO se persistieron correctamente")
-        print(f"      Prueba a poner en bypass y regulacion desde Node-RED")
+    print(f"  RESULTADO: {ok_count} registros escritos en Fase {slave_id}")
+    print(f"  [OK] Restauracion completada")
+    print(f"")
+    print(f"  IMPORTANTE: Pon el equipo en REGULACION desde Node-RED")
+    print(f"  para que los valores se guarden en la placa")
     print(f"{'='*75}")
 
 
