@@ -3503,34 +3503,38 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
         if val is not None:
             valores_actuales[reg] = val
 
-    # 1. Forzar bypass y verificar
-    print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
-    en_bypass = False
-    for intento in range(5):
-        try:
-            time.sleep(0.5)
-            resp = client.write_register(31, 0, slave=slave_id)
-            if resp.isError():
-                print(f"  [!] Intento {intento+1}/5: escritura rechazada, esperando...")
+    # 1. Verificar/forzar bypass
+    estado = leer_registro(client, 0, slave_id)
+    if estado is not None and estado == 0:
+        print(f"\n  [OK] Fase {slave_id} ya esta en bypass")
+    else:
+        print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
+        en_bypass = False
+        for intento in range(5):
+            try:
+                time.sleep(0.5)
+                resp_wr = client.write_register(31, 0, slave=slave_id)
+                if resp_wr.isError():
+                    print(f"  [!] Intento {intento+1}/5: escritura rechazada, esperando...")
+                    time.sleep(3)
+                    continue
+            except Exception as e:
+                print(f"  [!] Intento {intento+1}/5: excepcion {e}, esperando...")
                 time.sleep(3)
                 continue
-        except Exception as e:
-            print(f"  [!] Intento {intento+1}/5: excepcion {e}, esperando...")
             time.sleep(3)
-            continue
-        time.sleep(3)
-        estado = leer_registro(client, 0, slave_id)
-        if estado is not None and estado == 0:
-            print(f"  [OK] Fase {slave_id} en bypass")
-            en_bypass = True
-            break
-        print(f"  [!] Intento {intento+1}/5: estado = {estado}, esperando...")
-        time.sleep(3)
+            estado = leer_registro(client, 0, slave_id)
+            if estado is not None and estado == 0:
+                print(f"  [OK] Fase {slave_id} en bypass")
+                en_bypass = True
+                break
+            print(f"  [!] Intento {intento+1}/5: estado = {estado}, esperando...")
+            time.sleep(3)
 
-    if not en_bypass:
-        print(f"  [X] No se pudo confirmar bypass en Fase {slave_id}")
-        print(f"      No es seguro escribir registros. Abortando.")
-        return
+        if not en_bypass:
+            print(f"  [X] No se pudo confirmar bypass en Fase {slave_id}")
+            print(f"      Pon el equipo en bypass manualmente y reintenta.")
+            return
 
     # 1b. Intentar borrar alarma MR ANTES de escribir registros
     #     La placa puede bloquear escrituras mientras MR esta activa
@@ -3918,34 +3922,38 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         print("  Cancelado")
         return
 
-    # 1. Forzar bypass y verificar
-    print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
-    en_bypass = False
-    for intento in range(5):
-        try:
-            time.sleep(0.5)
-            resp = client.write_register(31, 0, slave=slave_id)
-            if resp.isError():
-                print(f"  [!] Intento {intento+1}/5: escritura rechazada, esperando...")
+    # 1. Verificar/forzar bypass
+    estado = leer_registro(client, 0, slave_id)
+    if estado is not None and estado == 0:
+        print(f"\n  [OK] Fase {slave_id} ya esta en bypass")
+    else:
+        print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
+        en_bypass = False
+        for intento in range(5):
+            try:
+                time.sleep(0.5)
+                resp_wr = client.write_register(31, 0, slave=slave_id)
+                if resp_wr.isError():
+                    print(f"  [!] Intento {intento+1}/5: escritura rechazada, esperando...")
+                    time.sleep(3)
+                    continue
+            except Exception as e:
+                print(f"  [!] Intento {intento+1}/5: excepcion {e}, esperando...")
                 time.sleep(3)
                 continue
-        except Exception as e:
-            print(f"  [!] Intento {intento+1}/5: excepcion {e}, esperando...")
             time.sleep(3)
-            continue
-        time.sleep(3)
-        estado = leer_registro(client, 0, slave_id)
-        if estado is not None and estado == 0:
-            print(f"  [OK] Fase {slave_id} en bypass")
-            en_bypass = True
-            break
-        print(f"  [!] Intento {intento+1}/5: estado = {estado}, esperando...")
-        time.sleep(3)
+            estado = leer_registro(client, 0, slave_id)
+            if estado is not None and estado == 0:
+                print(f"  [OK] Fase {slave_id} en bypass")
+                en_bypass = True
+                break
+            print(f"  [!] Intento {intento+1}/5: estado = {estado}, esperando...")
+            time.sleep(3)
 
-    if not en_bypass:
-        print(f"  [X] No se pudo confirmar bypass en Fase {slave_id}")
-        print(f"      No es seguro escribir registros. Abortando.")
-        return
+        if not en_bypass:
+            print(f"  [X] No se pudo confirmar bypass en Fase {slave_id}")
+            print(f"      Pon el equipo en bypass manualmente y reintenta.")
+            return
 
     # 2. Activar flags
     if not activar_flags(client, slave_id):
