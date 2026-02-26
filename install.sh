@@ -3098,6 +3098,51 @@ ORDEN_ESCRITURA = [
     91, 92, 93, 94,
 ]
 
+# Mapeo ?Co: indice -> (reg, nombre_corto, unidad, divisor)
+# divisor=0 significa valor entero directo
+CO_MAP = [
+    (None, 'Sz', '',     0),    # 00 - Size/FW (se lee aparte)
+    (None, 'Vr', '',     0),    # 01 - Version FW (se lee aparte)
+    (41,   'Ns', '',     0),    # 02 - N.Serie
+    (42,   'Vn', ' V',  10),    # 03 - Vnom
+    (43,   'Pa', ' V',  10),    # 04 - V prim auto
+    (44,   'Pt', ' V',  10),    # 05 - V prim trafo
+    (45,   'St', ' V',  10),    # 06 - V sec trafo
+    (46,   'Tp', '',     0),    # 07 - Topologia
+    (47,   'Dt', ' us', 100),   # 08 - Dead-time
+    (48,   'MB', '',     0),    # 09 - Dir Modbus
+    (49,   'Ie', ' A',   0),    # 10 - InE
+    (50,   'Ic', ' A',   0),    # 11 - InC
+    (51,   'Im', ' A',  10),    # 12 - Imax RMS
+    (52,   'Ip', ' A',  10),    # 13 - Imax pico
+    (53,   'Ta', ' s',   0),    # 14 - T apag CC
+    (54,   'CC', '',     0),    # 15 - Cnt CC
+    (55,   'Ei', '',     0),    # 16 - Est inicial
+    (56,   'Vk', ' V',  10),    # 17 - V consigna
+    (57,   'Tm', ' gC', 10),    # 18 - T maxima
+    (58,   'DT', ' gC', 10),    # 19 - Dec T reenc
+    (59,   'ST', '',     0),    # 20 - Cnt ST
+    (60,   'FA', '',     0),    # 21 - Tipo alim
+    (61,   'BM', '',     0),    # 22 - Vel RS485
+    (62,   'Pk', '',     0),    # 23 - Package
+    (63,   'Aa', ' g',   0),    # 24 - Ang alta
+    (64,   'Ab', ' g',   0),    # 25 - Ang baja
+    (65,   '%I', ' %',   0),    # 26 - % carga
+    (66,   'St', '',     0),    # 27 - Sens trans
+    (67,   'SD', '',     0),    # 28 - Sens deriv
+]
+
+# Mapeo ?Ca: indice -> reg (indices 00-15, con huecos 02,05)
+CA_MAP = {
+    0: 71, 1: 72, 3: 73, 4: 74,
+    6: 75, 7: 76, 8: 77, 9: 78,
+    10: 79, 11: 80, 12: 81, 13: 82,
+    14: 83, 15: 84,
+}
+
+# Mapeo ?Cn: indice -> reg
+CN_MAP = {0: 91, 1: 92, 2: 93, 3: 94}
+
 
 def to_signed(val):
     return val - 65536 if val > 32767 else val
@@ -3562,7 +3607,7 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
 
 
 def backup_registros(client, slave_id):
-    """Lee todos los registros y los guarda en un fichero JSON"""
+    """Lee todos los registros y los guarda en formato TXT (?Co/?Ca/?Cn)"""
     print(f"\n{'='*75}")
     print(f"  BACKUP REGISTROS - L{slave_id}")
     print(f"{'='*75}")
@@ -3600,84 +3645,16 @@ def backup_registros(client, slave_id):
 
     fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
     sn = nserie if nserie else 0
-    filename = f"chopper_L{slave_id}_SN{sn}_{fecha}.json"
+    filename = f"chopper_L{slave_id}_SN{sn}_{fecha}.txt"
     filepath = os.path.join(BACKUP_DIR, filename)
 
-    backup = {
-        "info": {
-            "slave_id": slave_id,
-            "numero_serie": nserie,
-            "fw_version": fw,
-            "alarma": alarma,
-            "fecha": datetime.now().isoformat(),
-            "registros_leidos": len(datos),
-            "registros_error": errores,
-        },
-        "registros": datos,
-    }
-
-    with open(filepath, 'w') as f:
-        json.dump(backup, f, indent=2)
-
-    # Generar TXT en formato ?Co/?Ca/?Cn
-    txt_filename = f"chopper_L{slave_id}_SN{sn}_{fecha}.txt"
-    txt_filepath = os.path.join(BACKUP_DIR, txt_filename)
-
-    # Mapeo ?Co: indice -> (reg, nombre_corto, unidad, divisor)
-    # divisor=0 significa valor entero directo
-    CO_MAP = [
-        (None, 'Sz', '',     0),    # 00 - Size/FW (se lee aparte)
-        (None, 'Vr', '',     0),    # 01 - Version FW (se lee aparte)
-        (41,   'Ns', '',     0),    # 02 - N.Serie
-        (42,   'Vn', ' V',  10),    # 03 - Vnom
-        (43,   'Pa', ' V',  10),    # 04 - V prim auto
-        (44,   'Pt', ' V',  10),    # 05 - V prim trafo
-        (45,   'St', ' V',  10),    # 06 - V sec trafo
-        (46,   'Tp', '',     0),    # 07 - Topologia
-        (47,   'Dt', ' us', 100),   # 08 - Dead-time
-        (48,   'MB', '',     0),    # 09 - Dir Modbus
-        (49,   'Ie', ' A',   0),    # 10 - InE
-        (50,   'Ic', ' A',   0),    # 11 - InC
-        (51,   'Im', ' A',  10),    # 12 - Imax RMS
-        (52,   'Ip', ' A',  10),    # 13 - Imax pico
-        (53,   'Ta', ' s',   0),    # 14 - T apag CC
-        (54,   'CC', '',     0),    # 15 - Cnt CC
-        (55,   'Ei', '',     0),    # 16 - Est inicial
-        (56,   'Vk', ' V',  10),    # 17 - V consigna
-        (57,   'Tm', ' gC', 10),    # 18 - T maxima
-        (58,   'DT', ' gC', 10),    # 19 - Dec T reenc
-        (59,   'ST', '',     0),    # 20 - Cnt ST
-        (60,   'FA', '',     0),    # 21 - Tipo alim
-        (61,   'BM', '',     0),    # 22 - Vel RS485
-        (62,   'Pk', '',     0),    # 23 - Package
-        (63,   'Aa', ' g',   0),    # 24 - Ang alta
-        (64,   'Ab', ' g',   0),    # 25 - Ang baja
-        (65,   '%I', ' %',   0),    # 26 - % carga
-        (66,   'St', '',     0),    # 27 - Sens trans
-        (67,   'SD', '',     0),    # 28 - Sens deriv
-    ]
-
-    # Mapeo ?Ca: indice -> reg (indices 00-15, con huecos 02,05)
-    CA_MAP = {
-        0: 71, 1: 72, 3: 73, 4: 74,
-        6: 75, 7: 76, 8: 77, 9: 78,
-        10: 79, 11: 80, 12: 81, 13: 82,
-        14: 83, 15: 84,
-    }
-
-    # Mapeo ?Cn: indice -> reg
-    CN_MAP = {0: 91, 1: 92, 2: 93, 3: 94}
-
-    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
-
-    with open(txt_filepath, 'w') as tf:
+    with open(filepath, 'w') as tf:
         tf.write(f"Fase {slave_id}\n\n")
 
         # --- ?Co ---
         tf.write("Introduzca comando: ?Co\n")
         for idx, (reg, nombre, unidad, divisor) in enumerate(CO_MAP):
             if reg is None:
-                # Campos especiales (Sz, Vr) desde FW
                 if idx == 0:
                     val = fw if fw else 0
                 elif idx == 1:
@@ -3721,12 +3698,8 @@ def backup_registros(client, slave_id):
                 tf.write(f"{idx:02d}: {raw}\n")
         tf.write("\nOK\n")
 
-    print(f"  [OK] Backup TXT:     {txt_filepath}")
-
     print(f"\n{'='*75}")
-    print(f"  [OK] Backup guardado:")
-    print(f"       JSON: {filepath}")
-    print(f"       TXT:  {txt_filepath}")
+    print(f"  [OK] Backup guardado: {filepath}")
     print(f"       {len(datos)} registros, SN={sn}, FW={fw}")
     print(f"{'='*75}")
     return filepath
@@ -3738,7 +3711,7 @@ def buscar_ultimo_backup(slave_id):
         return None
     archivos = []
     for f in os.listdir(BACKUP_DIR):
-        if f.startswith(f"chopper_L{slave_id}_") and f.endswith(".json"):
+        if f.startswith(f"chopper_L{slave_id}_") and f.endswith(".txt"):
             archivos.append(os.path.join(BACKUP_DIR, f))
     if not archivos:
         return None
@@ -3746,8 +3719,67 @@ def buscar_ultimo_backup(slave_id):
     return archivos[-1]
 
 
+def parsear_backup_txt(filepath):
+    """Parsea un fichero TXT en formato ?Co/?Ca/?Cn y devuelve registros raw"""
+    import re
+    registros = {}
+    seccion = None
+
+    with open(filepath, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if '?Co' in line:
+                seccion = 'Co'
+                continue
+            elif '?Ca' in line:
+                seccion = 'Ca'
+                continue
+            elif '?Cn' in line:
+                seccion = 'Cn'
+                continue
+            elif line == 'OK' or line == '' or line.startswith('Fase'):
+                continue
+
+            if seccion == 'Co':
+                # Formato: "02-Ns:    182" o "03-Vn: 240.0 V"
+                m = re.match(r'^(\d+)-\w+:\s*([\d.\-]+)', line)
+                if m:
+                    idx = int(m.group(1))
+                    val_str = m.group(2)
+                    if idx < len(CO_MAP):
+                        reg, nombre, unidad, divisor = CO_MAP[idx]
+                        if reg is not None:
+                            if divisor > 0:
+                                raw = int(round(float(val_str) * divisor))
+                            else:
+                                raw = int(float(val_str))
+                            registros[reg] = raw
+
+            elif seccion == 'Ca':
+                # Formato: "00: 29676" o "03: -5"
+                m = re.match(r'^(\d+):\s*([\d\-]+)', line)
+                if m:
+                    idx = int(m.group(1))
+                    val = int(m.group(2))
+                    if idx in CA_MAP:
+                        reg = CA_MAP[idx]
+                        registros[reg] = to_unsigned(val) if val < 0 else val
+
+            elif seccion == 'Cn':
+                # Formato: "00: 150"
+                m = re.match(r'^(\d+):\s*(\d+)', line)
+                if m:
+                    idx = int(m.group(1))
+                    val = int(m.group(2))
+                    if idx in CN_MAP:
+                        reg = CN_MAP[idx]
+                        registros[reg] = val
+
+    return registros
+
+
 def restaurar_desde_backup(client, slave_id, filepath=None):
-    """Restaura todos los registros desde un fichero de backup"""
+    """Restaura todos los registros desde un fichero TXT de backup"""
     if filepath is None:
         filepath = buscar_ultimo_backup(slave_id)
         if filepath is None:
@@ -3759,20 +3791,17 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         print(f"\n  [X] Fichero no encontrado: {filepath}")
         return
 
-    with open(filepath, 'r') as f:
-        backup = json.load(f)
-
-    info = backup.get("info", {})
-    registros = backup.get("registros", {})
+    registros = parsear_backup_txt(filepath)
 
     print(f"\n{'='*75}")
     print(f"  RESTAURAR DESDE BACKUP - L{slave_id}")
     print(f"{'='*75}")
     print(f"  Fichero:   {os.path.basename(filepath)}")
-    print(f"  Fecha:     {info.get('fecha', '?')}")
-    print(f"  SN:        {info.get('numero_serie', '?')}")
-    print(f"  FW:        {info.get('fw_version', '?')}")
     print(f"  Registros: {len(registros)}")
+
+    if not registros:
+        print(f"\n  [X] No se pudieron leer registros del fichero")
+        return
 
     # Comparar con valores actuales
     print(f"\n  Comparacion backup vs actual:")
@@ -3781,11 +3810,10 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
 
     diferentes = {}
     for reg in ORDEN_ESCRITURA:
-        reg_str = str(reg)
-        if reg_str not in registros:
+        if reg not in registros:
             continue
 
-        val_backup = registros[reg_str]
+        val_backup = registros[reg]
         val_actual = leer_registro(client, reg, slave_id)
         nombre = nombre_registro(reg)
 
