@@ -3725,18 +3725,50 @@ def backup_registros(client, slaves=None):
     return filepath
 
 
-def buscar_ultimo_backup():
-    """Busca el backup mas reciente"""
+def elegir_backup():
+    """Lista backups disponibles y deja elegir cual restaurar"""
     if not os.path.exists(BACKUP_DIR):
         return None
     archivos = []
-    for f in os.listdir(BACKUP_DIR):
+    for f in sorted(os.listdir(BACKUP_DIR)):
         if f.startswith("parametros_") and f.endswith(".txt"):
-            archivos.append(os.path.join(BACKUP_DIR, f))
+            archivos.append(f)
     if not archivos:
         return None
-    archivos.sort()
-    return archivos[-1]
+
+    print(f"\n  Backups disponibles en {BACKUP_DIR}:\n")
+    for i, f in enumerate(archivos, 1):
+        # Extraer fecha del nombre: parametros_YYYYMMDD_HHMMSS.txt
+        try:
+            partes = f.replace("parametros_", "").replace(".txt", "")
+            fecha_str = partes[:8]
+            hora_str = partes[9:15]
+            fecha = f"{fecha_str[:4]}-{fecha_str[4:6]}-{fecha_str[6:8]} {hora_str[:2]}:{hora_str[2:4]}:{hora_str[4:6]}"
+        except Exception:
+            fecha = "?"
+        size = os.path.getsize(os.path.join(BACKUP_DIR, f))
+        print(f"  {i}) {f}  ({fecha}, {size} bytes)")
+
+    print(f"\n  0) Cancelar")
+    print()
+
+    if len(archivos) == 1:
+        resp = input(f"  Selecciona backup [1]: ").strip()
+        if resp == '' or resp == '1':
+            return os.path.join(BACKUP_DIR, archivos[0])
+        return None
+
+    resp = input(f"  Selecciona backup [1-{len(archivos)}]: ").strip()
+    if resp == '0' or resp == '':
+        return None
+    try:
+        idx = int(resp) - 1
+        if 0 <= idx < len(archivos):
+            return os.path.join(BACKUP_DIR, archivos[idx])
+    except ValueError:
+        pass
+    print("  [X] Opcion no valida")
+    return None
 
 
 def parsear_backup_txt(filepath):
@@ -3814,7 +3846,7 @@ def parsear_backup_txt(filepath):
 def restaurar_desde_backup(client, slave_id, filepath=None):
     """Restaura registros de una fase desde un fichero TXT multi-fase"""
     if filepath is None:
-        filepath = buscar_ultimo_backup()
+        filepath = elegir_backup()
         if filepath is None:
             print(f"\n  [X] No hay backups en {BACKUP_DIR}")
             print(f"      Primero haz un backup con la opcion 3")
