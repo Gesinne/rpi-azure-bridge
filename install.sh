@@ -3984,14 +3984,54 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
     # 4. Desactivar flags
     desactivar_flags(client, slave_id)
 
-    # 5. Verificar alarma MR
+    if err_count > 0:
+        print(f"\n{'='*75}")
+        print(f"  RESULTADO: {ok_count} escritos, {err_count} errores")
+        print(f"  [!] Hubo errores. Revisar manualmente")
+        print(f"{'='*75}")
+        return
+
+    # 5. Ciclo bypass->regulacion para persistir valores
+    print(f"\n  [~] Poniendo en regulacion para persistir valores...")
+    reg_ok = False
+    try:
+        resp_wr = client.write_register(31, 2, slave=slave_id)
+        if not resp_wr.isError():
+            reg_ok = True
+            print(f"  [OK] Regulacion activada (reg 31 = 2)")
+            time.sleep(3)
+    except Exception:
+        pass
+
+    if not reg_ok:
+        print(f"  [!] No se pudo activar regulacion por Modbus")
+        print(f"")
+        print(f"  *** PON EL EQUIPO EN REGULACION DESDE NODE-RED ***")
+        print(f"  *** para que los valores se guarden en la placa ***")
+        print(f"")
+        input("  Pulsa ENTER cuando este en regulacion...")
+        time.sleep(2)
+
+    # 6. Verificar que los valores se persistieron
+    print(f"\n  [~] Verificando valores escritos en placa...")
+    fallos = 0
+    for reg, valor_esperado in diferentes.items():
+        val_leido = leer_registro(client, reg, slave_id)
+        nombre = nombre_registro(reg)
+        if val_leido == valor_esperado:
+            print(f"  [OK] Reg {reg:>3} ({nombre:<12}): {val_leido}")
+        else:
+            print(f"  [X]  Reg {reg:>3} ({nombre:<12}): esperado={valor_esperado}, leido={val_leido}")
+            fallos += 1
+
     print(f"\n{'='*75}")
-    print(f"  RESULTADO: {ok_count} restaurados, {err_count} errores")
-    if err_count == 0:
-        print(f"  [OK] Restauracion completada desde backup")
+    if fallos == 0:
+        print(f"  RESULTADO: {ok_count} restaurados y verificados")
+        print(f"  [OK] Restauracion completada")
         verificar_alarma_mr(client, slave_id)
     else:
-        print(f"  [!] Hubo errores. Revisar manualmente")
+        print(f"  [!] {fallos} registros NO se persistieron correctamente")
+        print(f"      Prueba a poner en bypass y regulacion desde Node-RED")
     print(f"{'='*75}")
 
 
