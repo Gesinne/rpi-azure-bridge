@@ -3619,8 +3619,114 @@ def backup_registros(client, slave_id):
     with open(filepath, 'w') as f:
         json.dump(backup, f, indent=2)
 
+    # Generar TXT en formato ?Co/?Ca/?Cn
+    txt_filename = f"chopper_L{slave_id}_SN{sn}_{fecha}.txt"
+    txt_filepath = os.path.join(BACKUP_DIR, txt_filename)
+
+    # Mapeo ?Co: indice -> (reg, nombre_corto, unidad, divisor)
+    # divisor=0 significa valor entero directo
+    CO_MAP = [
+        (None, 'Sz', '',     0),    # 00 - Size/FW (se lee aparte)
+        (None, 'Vr', '',     0),    # 01 - Version FW (se lee aparte)
+        (41,   'Ns', '',     0),    # 02 - N.Serie
+        (42,   'Vn', ' V',  10),    # 03 - Vnom
+        (43,   'Pa', ' V',  10),    # 04 - V prim auto
+        (44,   'Pt', ' V',  10),    # 05 - V prim trafo
+        (45,   'St', ' V',  10),    # 06 - V sec trafo
+        (46,   'Tp', '',     0),    # 07 - Topologia
+        (47,   'Dt', ' us', 100),   # 08 - Dead-time
+        (48,   'MB', '',     0),    # 09 - Dir Modbus
+        (49,   'Ie', ' A',   0),    # 10 - InE
+        (50,   'Ic', ' A',   0),    # 11 - InC
+        (51,   'Im', ' A',  10),    # 12 - Imax RMS
+        (52,   'Ip', ' A',  10),    # 13 - Imax pico
+        (53,   'Ta', ' s',   0),    # 14 - T apag CC
+        (54,   'CC', '',     0),    # 15 - Cnt CC
+        (55,   'Ei', '',     0),    # 16 - Est inicial
+        (56,   'Vk', ' V',  10),    # 17 - V consigna
+        (57,   'Tm', ' gC', 10),    # 18 - T maxima
+        (58,   'DT', ' gC', 10),    # 19 - Dec T reenc
+        (59,   'ST', '',     0),    # 20 - Cnt ST
+        (60,   'FA', '',     0),    # 21 - Tipo alim
+        (61,   'BM', '',     0),    # 22 - Vel RS485
+        (62,   'Pk', '',     0),    # 23 - Package
+        (63,   'Aa', ' g',   0),    # 24 - Ang alta
+        (64,   'Ab', ' g',   0),    # 25 - Ang baja
+        (65,   '%I', ' %',   0),    # 26 - % carga
+        (66,   'St', '',     0),    # 27 - Sens trans
+        (67,   'SD', '',     0),    # 28 - Sens deriv
+    ]
+
+    # Mapeo ?Ca: indice -> reg (indices 00-15, con huecos 02,05)
+    CA_MAP = {
+        0: 71, 1: 72, 3: 73, 4: 74,
+        6: 75, 7: 76, 8: 77, 9: 78,
+        10: 79, 11: 80, 12: 81, 13: 82,
+        14: 83, 15: 84,
+    }
+
+    # Mapeo ?Cn: indice -> reg
+    CN_MAP = {0: 91, 1: 92, 2: 93, 3: 94}
+
+    fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
+
+    with open(txt_filepath, 'w') as tf:
+        tf.write(f"Fase {slave_id}\n\n")
+
+        # --- ?Co ---
+        tf.write("Introduzca comando: ?Co\n")
+        for idx, (reg, nombre, unidad, divisor) in enumerate(CO_MAP):
+            if reg is None:
+                # Campos especiales (Sz, Vr) desde FW
+                if idx == 0:
+                    val = fw if fw else 0
+                elif idx == 1:
+                    val = fw if fw else 0
+                else:
+                    val = 0
+                tf.write(f"{idx:02d}-{nombre}: {val:>6}{unidad}\n")
+            else:
+                raw = datos.get(str(reg))
+                if raw is None:
+                    tf.write(f"{idx:02d}-{nombre}: {'ERR':>6}{unidad}\n")
+                elif divisor > 0:
+                    fval = raw / divisor
+                    tf.write(f"{idx:02d}-{nombre}: {fval:>6.1f}{unidad}\n")
+                else:
+                    tf.write(f"{idx:02d}-{nombre}: {raw:>6}{unidad}\n")
+        tf.write("\nOK\n\n")
+
+        # --- ?Ca ---
+        tf.write("Introduzca comando: ?Ca\n")
+        for idx in range(16):
+            if idx in CA_MAP:
+                reg = CA_MAP[idx]
+                raw = datos.get(str(reg))
+                if raw is None:
+                    tf.write(f"{idx:02d}: ERR\n")
+                else:
+                    signed_flag = CALIBRACION.get(reg, (None,)*6)[4] if reg in CALIBRACION else False
+                    val = to_signed(raw) if signed_flag else raw
+                    tf.write(f"{idx:02d}: {val}\n")
+        tf.write("\nOK\n\n")
+
+        # --- ?Cn ---
+        tf.write("Introduzca comando: ?Cn\n")
+        for idx in range(4):
+            reg = CN_MAP[idx]
+            raw = datos.get(str(reg))
+            if raw is None:
+                tf.write(f"{idx:02d}: ERR\n")
+            else:
+                tf.write(f"{idx:02d}: {raw}\n")
+        tf.write("\nOK\n")
+
+    print(f"  [OK] Backup TXT:     {txt_filepath}")
+
     print(f"\n{'='*75}")
-    print(f"  [OK] Backup guardado: {filepath}")
+    print(f"  [OK] Backup guardado:")
+    print(f"       JSON: {filepath}")
+    print(f"       TXT:  {txt_filepath}")
     print(f"       {len(datos)} registros, SN={sn}, FW={fw}")
     print(f"{'='*75}")
     return filepath
