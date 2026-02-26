@@ -3002,7 +3002,7 @@ EOFOSCILA
                     echo "  [!] Parando Node-RED temporalmente..."
                     sudo systemctl stop nodered 2>/dev/null
                     docker stop gesinne-rpi >/dev/null 2>&1 || true
-                    sleep 2
+                    sleep 5
                     echo "  [OK] Servicios parados"
                     echo ""
                     
@@ -3505,16 +3505,26 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
     # 1. Forzar bypass y verificar
     print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
     en_bypass = False
-    for intento in range(3):
-        escribir_registro(client, 31, 0, slave_id)
+    for intento in range(5):
+        try:
+            time.sleep(0.5)
+            resp = client.write_register(31, 0, slave=slave_id)
+            if resp.isError():
+                print(f"  [!] Intento {intento+1}/5: escritura rechazada, esperando...")
+                time.sleep(3)
+                continue
+        except Exception as e:
+            print(f"  [!] Intento {intento+1}/5: excepcion {e}, esperando...")
+            time.sleep(3)
+            continue
         time.sleep(3)
         estado = leer_registro(client, 0, slave_id)
         if estado is not None and estado == 0:
             print(f"  [OK] Fase {slave_id} en bypass")
             en_bypass = True
             break
-        print(f"  [!] Intento {intento+1}/3: estado = {estado}, reintentando...")
-        time.sleep(2)
+        print(f"  [!] Intento {intento+1}/5: estado = {estado}, esperando...")
+        time.sleep(3)
 
     if not en_bypass:
         print(f"  [X] No se pudo confirmar bypass en Fase {slave_id}")
@@ -3910,16 +3920,26 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
     # 1. Forzar bypass y verificar
     print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
     en_bypass = False
-    for intento in range(3):
-        escribir_registro(client, 31, 0, slave_id)
+    for intento in range(5):
+        try:
+            time.sleep(0.5)
+            resp = client.write_register(31, 0, slave=slave_id)
+            if resp.isError():
+                print(f"  [!] Intento {intento+1}/5: escritura rechazada, esperando...")
+                time.sleep(3)
+                continue
+        except Exception as e:
+            print(f"  [!] Intento {intento+1}/5: excepcion {e}, esperando...")
+            time.sleep(3)
+            continue
         time.sleep(3)
         estado = leer_registro(client, 0, slave_id)
         if estado is not None and estado == 0:
             print(f"  [OK] Fase {slave_id} en bypass")
             en_bypass = True
             break
-        print(f"  [!] Intento {intento+1}/3: estado = {estado}, reintentando...")
-        time.sleep(2)
+        print(f"  [!] Intento {intento+1}/5: estado = {estado}, esperando...")
+        time.sleep(3)
 
     if not en_bypass:
         print(f"  [X] No se pudo confirmar bypass en Fase {slave_id}")
