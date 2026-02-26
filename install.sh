@@ -3309,45 +3309,42 @@ def desactivar_flags(client, slave_id):
 
 
 def verificar_alarma_mr(client, slave_id):
-    """Fuerza ciclo bypass->regulacion para borrar alarma MR y verifica"""
+    """Verifica alarma MR. Solo fuerza ciclo bypass->regulacion si hay alarma."""
     fase = {1: "L1", 2: "L2", 3: "L3"}.get(slave_id, f"S{slave_id}")
 
-    # 1. Asegurar bypass
-    print(f"\n  [~] Forzando bypass en {fase} (reg 31 = 0)...")
-    escribir_registro(client, 31, 0, slave_id)
-    time.sleep(2)
-
-    # 2. Poner en regulacion para que re-evalúe registros
-    print(f"  [~] Poniendo en regulacion {fase} (reg 31 = 2)...")
-    escribir_registro(client, 31, 2, slave_id)
-    time.sleep(3)
-
-    # 3. Verificar alarma
+    # 1. Leer alarma actual
     alarma = leer_registro(client, 2, slave_id)
     if alarma is None:
-        print(f"  [!] No se pudo leer el registro de alarma")
+        print(f"\n  [!] No se pudo leer el registro de alarma en {fase}")
         return
 
-    if alarma & (1 << 10):
-        # Segundo intento: ciclo bypass -> regulacion mas largo
-        print(f"  [!] Alarma MR sigue activa, reintentando ciclo...")
-        escribir_registro(client, 31, 0, slave_id)
-        time.sleep(3)
-        escribir_registro(client, 31, 2, slave_id)
-        time.sleep(5)
+    if not (alarma & (1 << 10)):
+        print(f"\n  [OK] No hay alarma MR en {fase} (reg 2 = {alarma})")
+        return
+
+    # 2. Hay alarma MR -> intentar ciclo bypass->regulacion
+    print(f"\n  [!] Alarma MR activa en {fase} (reg 2 = {alarma})")
+    for intento in range(2):
+        espera_reg = 3 if intento == 0 else 5
+        print(f"  [~] Intento {intento+1}/2: ciclo bypass -> regulacion...")
+        try:
+            client.write_register(31, 0, slave=slave_id)
+            time.sleep(espera_reg)
+            client.write_register(31, 2, slave=slave_id)
+            time.sleep(espera_reg)
+        except Exception:
+            print(f"  [!] No se pudo escribir reg 31, verificando alarma igualmente...")
 
         alarma = leer_registro(client, 2, slave_id)
         if alarma is None:
             print(f"  [!] No se pudo leer el registro de alarma")
-        elif alarma & (1 << 10):
-            print(f"  [!] Alarma MR SIGUE ACTIVA (reg 2 = {alarma})")
-            print(f"      Puede haber un registro que no estamos cubriendo")
-            print(f"      o un problema de hardware/alimentacion")
-            print(f"      Prueba a apagar y encender el equipo")
-        else:
-            print(f"  [OK] Alarma MR BORRADA en 2o intento (reg 2 = {alarma})")
-    else:
-        print(f"  [OK] Alarma MR BORRADA (reg 2 = {alarma})")
+            return
+        if not (alarma & (1 << 10)):
+            print(f"  [OK] Alarma MR BORRADA (reg 2 = {alarma})")
+            return
+
+    print(f"  [!] Alarma MR SIGUE ACTIVA (reg 2 = {alarma})")
+    print(f"      Prueba a apagar y encender el equipo")
 
 
 def diagnosticar(client, slave_id):
