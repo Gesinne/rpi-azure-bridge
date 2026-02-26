@@ -3502,11 +3502,15 @@ def reparar(client, slave_id, corruptos, hay_alarma_mr=False):
         if val is not None:
             valores_actuales[reg] = val
 
-    # 1. Poner en bypass
+    # 1. Forzar bypass
+    print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
+    escribir_registro(client, 31, 0, slave_id)
+    time.sleep(3)
     estado = leer_registro(client, 0, slave_id)
-    if estado and estado != 0:
-        print(f"\n  [~] Poniendo en bypass...")
-        escribir_registro(client, 31, 0, slave_id)
+    if estado is not None and estado == 0:
+        print(f"  [OK] Fase {slave_id} en bypass (estado = {estado})")
+    else:
+        print(f"  [!] Estado leido = {estado} (puede tardar en cambiar)")
         time.sleep(2)
 
     # 1b. Intentar borrar alarma MR ANTES de escribir registros
@@ -3895,11 +3899,15 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         print("  Cancelado")
         return
 
-    # 1. Poner en bypass
+    # 1. Forzar bypass
+    print(f"\n  [~] Poniendo Fase {slave_id} en bypass (reg 31 = 0)...")
+    escribir_registro(client, 31, 0, slave_id)
+    time.sleep(3)
     estado = leer_registro(client, 0, slave_id)
-    if estado and estado != 0:
-        print(f"\n  [~] Poniendo en bypass...")
-        escribir_registro(client, 31, 0, slave_id)
+    if estado is not None and estado == 0:
+        print(f"  [OK] Fase {slave_id} en bypass (estado = {estado})")
+    else:
+        print(f"  [!] Estado leido = {estado} (puede tardar en cambiar)")
         time.sleep(2)
 
     # 2. Activar flags
