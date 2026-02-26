@@ -3013,6 +3013,7 @@ import sys
 import time
 import json
 import os
+import fcntl
 from datetime import datetime
 
 try:
@@ -3996,6 +3997,27 @@ if len(sys.argv) < 3:
 
 slaves_str = sys.argv[1]
 mode = sys.argv[2]  # "diag", "fix", "backup", "restore"
+
+# Esperar a que el puerto serie este libre
+print(f"  [~] Comprobando que el puerto {port} esta libre...")
+for intento in range(10):
+    try:
+        fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+        print(f"  [OK] Puerto {port} libre")
+        break
+    except (OSError, IOError) as e:
+        print(f"  [!] Intento {intento+1}/10: puerto ocupado ({e}), esperando 2s...")
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        time.sleep(2)
+else:
+    print(f"  [X] El puerto {port} sigue ocupado tras 20s. Abortando.")
+    sys.exit(1)
 
 client = ModbusSerialClient(
     port=port, baudrate=115200,
