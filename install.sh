@@ -1615,13 +1615,21 @@ if chronos_id:
             echo "  2) Fase 2"
             echo "  3) Fase 3"
             echo "  4) TODAS en columnas (L1, L2, L3)"
-            echo "  6) Leer registro específico"
-            echo "  7) Enviar parámetros por EMAIL"
-            echo "  8) Escribir registro"
-            echo "  12) Reparar memoria corrupta (diagnóstico + fix)"
+            echo "  5) Leer registro específico"
+            echo "  6) Enviar parámetros por EMAIL"
+            echo "  7) Escribir registro"
+            echo "  8) Reparar memoria corrupta (diagnóstico + fix)"
             echo "  0) Volver al menú"
             echo ""
-            read -p "  Opción: " TARJETA
+            read -p "  Opción [0-8]: " TARJETA
+            
+            # Remap menú visible -> números internos
+            case $TARJETA in
+                5) TARJETA=6 ;;
+                6) TARJETA=7 ;;
+                7) TARJETA=8 ;;
+                8) TARJETA=12 ;;
+            esac
             
             case $TARJETA in
                 0) continue ;;
