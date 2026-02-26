@@ -3109,7 +3109,7 @@ CO_MAP = [
     (44,   'Pt', ' V',  10),    # 05 - V prim trafo
     (45,   'St', ' V',  10),    # 06 - V sec trafo
     (46,   'Tp', '',     0),    # 07 - Topologia
-    (47,   'Dt', ' us', 1000),  # 08 - Dead-time
+    (47,   'Dt', ' us', 100),   # 08 - Dead-time
     (48,   'MB', '',     0),    # 09 - Dir Modbus
     (49,   'Ie', ' A',   0),    # 10 - InE
     (50,   'Ic', ' A',   0),    # 11 - InC
