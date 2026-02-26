@@ -3265,8 +3265,15 @@ def nombre_registro(reg):
 
 
 def activar_flags(client, slave_id):
-    """Activa los 3 flags de escritura con verificacion"""
+    """Activa los 4 flags de escritura con verificacion"""
     print(f"  [~] Activando flags de escritura...")
+
+    # Flag estado (reg 30 = 43981)
+    escribir_registro(client, 30, 43981, slave_id)
+    time.sleep(0.3)
+    v = leer_registro(client, 30, slave_id)
+    ok0 = v == 43981
+    print(f"      Flag estado (reg 30): escrito=43981, leido={v} {'[OK]' if ok0 else '[FALLO]'}")
 
     # Flag configuracion (reg 40 = 47818)
     escribir_registro(client, 40, 0, slave_id)
@@ -3294,12 +3301,14 @@ def activar_flags(client, slave_id):
     print(f"      Flag control(reg 90): escrito=56010, leido={v} {'[OK]' if ok3 else '[FALLO]'}")
 
     time.sleep(0.5)
-    return ok1 and ok2 and ok3
+    return ok0 and ok1 and ok2 and ok3
 
 
 def desactivar_flags(client, slave_id):
-    """Desactiva los 3 flags de escritura"""
+    """Desactiva los 4 flags de escritura"""
     print(f"\n  [~] Desactivando flags...")
+    escribir_registro(client, 30, 0, slave_id)
+    time.sleep(0.1)
     escribir_registro(client, 40, 0, slave_id)
     time.sleep(0.1)
     escribir_registro(client, 70, 0, slave_id)
