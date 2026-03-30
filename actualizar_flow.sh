@@ -404,8 +404,9 @@ BACKUP_FILE="$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S).${VERSION_NAME
 cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
 echo "  [D] Backup creado: $BACKUP_FILE"
 
-# Guardar configuración MQTT, maxQueue y chronos actual
-PRESERVED_CONFIG=$(python3 -c "
+# Guardar configuración MQTT, maxQueue y chronos actual en archivo temporal
+PRESERVED_CONFIG_FILE=$(mktemp)
+python3 -c "
 import json
 try:
     with open('$NODERED_DIR/flows.json', 'r') as f:
@@ -427,41 +428,50 @@ try:
                 'longitude': node.get('longitude', ''),
                 'timezone': node.get('timezone', 'Europe/Madrid')
             }
-    print(json.dumps(config))
-except:
+    with open('$PRESERVED_CONFIG_FILE', 'w') as f:
+        json.dump(config, f)
+except Exception as e:
     pass
-" 2>/dev/null)
+" 2>/dev/null
 
 # Verificar que es JSON válido e instalar
 if python3 -c "import json; json.load(open('$FLOW_FILE'))" 2>/dev/null; then
     cp "$FLOW_FILE" "$NODERED_DIR/flows.json"
     
-    # Restaurar configuración MQTT, maxQueue y chronos
-    if [ -n "$PRESERVED_CONFIG" ]; then
+    # Restaurar configuración MQTT, maxQueue y chronos desde archivo temporal
+    if [ -f "$PRESERVED_CONFIG_FILE" ] && [ -s "$PRESERVED_CONFIG_FILE" ]; then
         python3 -c "
 import json
-config = json.loads('$PRESERVED_CONFIG')
-with open('$NODERED_DIR/flows.json', 'r') as f:
-    flows = json.load(f)
-for node in flows:
-    if node.get('type') == 'mqtt-broker' and 'mqtt' in config:
-        node['broker'] = config['mqtt']['broker']
-        node['port'] = config['mqtt']['port']
-        node['usetls'] = config['mqtt']['usetls']
-    if node.get('type') == 'guaranteed-delivery' and 'maxQueue' in config:
-        node['maxQueue'] = config['maxQueue']
-    if node.get('type') == 'chronos-config' and 'chronos' in config:
-        node['name'] = config['chronos']['name']
-        node['latitude'] = config['chronos']['latitude']
-        node['longitude'] = config['chronos']['longitude']
-        node['timezone'] = config['chronos']['timezone']
-with open('$NODERED_DIR/flows.json', 'w') as f:
-    json.dump(flows, f, indent=4)
+import sys
+try:
+    with open('$PRESERVED_CONFIG_FILE', 'r') as f:
+        config = json.load(f)
+    with open('$NODERED_DIR/flows.json', 'r') as f:
+        flows = json.load(f)
+    for node in flows:
+        if node.get('type') == 'mqtt-broker' and 'mqtt' in config:
+            node['broker'] = config['mqtt']['broker']
+            node['port'] = config['mqtt']['port']
+            node['usetls'] = config['mqtt']['usetls']
+        if node.get('type') == 'guaranteed-delivery' and 'maxQueue' in config:
+            node['maxQueue'] = config['maxQueue']
+        if node.get('type') == 'chronos-config' and 'chronos' in config:
+            node['name'] = config['chronos']['name']
+            node['latitude'] = config['chronos']['latitude']
+            node['longitude'] = config['chronos']['longitude']
+            node['timezone'] = config['chronos']['timezone']
+    with open('$NODERED_DIR/flows.json', 'w') as f:
+        json.dump(flows, f, indent=4)
+except Exception as e:
+    print(f'Error: {e}', file=sys.stderr)
+    sys.exit(1)
 " 2>/dev/null
         echo "  [OK] Flow instalado: $VERSION_NAME"
         echo "  [>] Configuración preservada: MQTT + maxQueue + chronos"
+        rm -f "$PRESERVED_CONFIG_FILE"
     else
         echo "  [OK] Flow instalado: $VERSION_NAME"
+        rm -f "$PRESERVED_CONFIG_FILE" 2>/dev/null
     fi
     
     # Copiar carpeta Logo si existe

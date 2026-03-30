@@ -2958,17 +2958,392 @@ EOFOSCILA
                     echo "  2) Diagnosticar y reparar una fase"
                     echo "  3) Guardar backup (3 fases)"
                     echo "  4) Restaurar desde backup"
+                    echo "  5) Watchdog de parámetros (vigilancia automática)"
                     echo "  0) Volver"
                     echo ""
                     echo "  NOTA: Para reparar/restaurar, pon el equipo en"
                     echo "        BYPASS desde Node-RED ANTES de continuar"
                     echo ""
-                    read -p "  Opción [0-4]: " REPAIR_MODE
+                    read -p "  Opción [0-5]: " REPAIR_MODE
                     
                     if [ "$REPAIR_MODE" = "0" ]; then
                         continue
                     fi
-                    
+
+                    # ═══════════ WATCHDOG DE PARÁMETROS ═══════════
+                    if [ "$REPAIR_MODE" = "5" ]; then
+                        echo ""
+                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo "  Watchdog de parámetros"
+                        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                        echo ""
+
+                        # Comprobar si ya está instalado
+                        if systemctl is-active --quiet gesinne-watchdog.timer 2>/dev/null; then
+                            echo "  [OK] Watchdog ACTIVO"
+                            echo ""
+                            # Mostrar últimos eventos
+                            WLOG="/var/log/gesinne-watchdog.log"
+                            if [ -f "$WLOG" ]; then
+                                TOTAL_CHECKS=$(grep -c "Watchdog check" "$WLOG" 2>/dev/null || echo "0")
+                                TOTAL_REPAIRS=$(grep -c "REPARADO" "$WLOG" 2>/dev/null || echo "0")
+                                LAST_CHECK=$(grep "Watchdog check" "$WLOG" 2>/dev/null | tail -1 | cut -d']' -f1 | tr -d '[')
+                                echo "  Verificaciones: $TOTAL_CHECKS"
+                                echo "  Reparaciones:   $TOTAL_REPAIRS"
+                                echo "  Última comprobación: $LAST_CHECK"
+                                echo ""
+                                echo "  Últimos 10 eventos:"
+                                tail -10 "$WLOG"
+                            fi
+                            echo ""
+                            echo "  1) Desactivar watchdog"
+                            echo "  2) Ver log completo"
+                            echo "  3) Ejecutar comprobación ahora"
+                            echo "  0) Volver"
+                            echo ""
+                            read -p "  Opción [0-3]: " WD_OPT
+                            case $WD_OPT in
+                                1)
+                                    sudo systemctl stop gesinne-watchdog.timer 2>/dev/null
+                                    sudo systemctl disable gesinne-watchdog.timer 2>/dev/null
+                                    echo "  [OK] Watchdog desactivado"
+                                    ;;
+                                2)
+                                    echo ""
+                                    if [ -f /var/log/gesinne-watchdog.log ]; then
+                                        less /var/log/gesinne-watchdog.log
+                                    else
+                                        echo "  No hay log todavía"
+                                    fi
+                                    ;;
+                                3)
+                                    echo ""
+                                    echo "  [~] Ejecutando comprobación manual..."
+                                    sudo /usr/local/bin/gesinne-watchdog.py 2>&1
+                                    ;;
+                            esac
+                        else
+                            echo "  El watchdog vigila los parámetros críticos de L1, L2 y L3"
+                            echo "  cada 5 minutos. Si detecta valores corruptos (defaults),"
+                            echo "  los repara automáticamente sin intervención."
+                            echo ""
+                            echo "  Parámetros vigilados:"
+                            echo "    - Reg 32 (Consigna):       detecta reset a default"
+                            echo "    - Reg 42 (V nominal):      detecta cambio inesperado"
+                            echo "    - Reg 43-45 (V autotrafo): detecta reset"
+                            echo "    - Reg 46 (Topología):      detecta cambio"
+                            echo "    - Reg 55 (Estado inicial):  detecta cambio"
+                            echo "    - Reg 56 (V inicial):      detecta reset a default"
+                            echo "    - Reg 57 (T máxima):       detecta reset"
+                            echo ""
+                            echo "  Necesita un backup previo como referencia de valores correctos."
+                            echo ""
+
+                            # Buscar backup existente
+                            BACKUP_FILE=""
+                            WD_USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
+                            WD_CONFIG_DIR="$WD_USER_HOME/config"
+                            if [ -d "$WD_CONFIG_DIR" ]; then
+                                BACKUP_FILE=$(ls -t "$WD_CONFIG_DIR"/parametros_*.txt 2>/dev/null | head -1)
+                            fi
+
+                            if [ -z "$BACKUP_FILE" ]; then
+                                echo "  [X] No hay backup de parámetros."
+                                echo "      Primero haz un backup con la opción 3 (Guardar backup)"
+                                echo ""
+                                volver_menu
+                                continue
+                            fi
+
+                            echo "  Backup encontrado: $(basename $BACKUP_FILE)"
+                            echo ""
+                            read -p "  ¿Activar watchdog? (s/N): " WD_CONFIRM
+
+                            if [ "$WD_CONFIRM" != "s" ] && [ "$WD_CONFIRM" != "S" ]; then
+                                echo "  [X] Cancelado"
+                                volver_menu
+                                continue
+                            fi
+
+                            echo ""
+                            echo "  [~] Instalando watchdog..."
+
+                            # Crear el script watchdog Python
+                            cat > /usr/local/bin/gesinne-watchdog.py << 'EOFWATCHDOG'
+#!/usr/bin/env python3
+"""
+Gesinne Watchdog - Vigila parámetros críticos y repara automáticamente
+Se ejecuta cada 5 minutos via systemd timer.
+Lee los registros de configuración de L1, L2, L3 y si detecta valores
+corruptos (reset a defaults), los restaura desde el backup de referencia.
+"""
+import sys
+import time
+import os
+import fcntl
+from datetime import datetime
+
+SERIAL_PORT = "/dev/ttyAMA0"
+SERIAL_BAUDRATE = 115200
+LOG_FILE = "/var/log/gesinne-watchdog.log"
+
+# Registros críticos a vigilar (registro, nombre)
+REGISTROS_CRITICOS = [
+    (32, "Consigna"),
+    (42, "V nominal"),
+    (43, "V prim autotrafo"),
+    (44, "V sec autotrafo"),
+    (45, "V sec trafo"),
+    (46, "Topología"),
+    (47, "Dead-time"),
+    (55, "Estado inicial"),
+    (56, "V inicial"),
+    (57, "T máxima"),
+    (63, "Ángulo cargas altas"),
+    (64, "Ángulo cargas bajas"),
+    (66, "Sens transitorios"),
+]
+
+# Registros que requieren flag de configuración (40 = 47818) antes de escribir
+REGS_CONFIG = set(range(41, 70))
+# Registros de estado (30 = 43981)
+REGS_ESTADO = set(range(30, 40))
+
+
+def log(msg):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{ts}] {msg}"
+    try:
+        with open(LOG_FILE, "a") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
+    print(line)
+
+
+def parsear_backup(filepath):
+    """Parsea el backup TXT multi-fase y devuelve {slave_id: {reg: valor}}"""
+    fases = {}
+    current_slave = None
+    with open(filepath, "r") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("=== Fase"):
+                parts = line.split()
+                current_slave = int(parts[2])
+                fases[current_slave] = {}
+            elif current_slave is not None and line and not line.startswith("==="):
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    try:
+                        reg = int(parts[0].strip())
+                        val = int(parts[1].strip())
+                        fases[current_slave][reg] = val
+                    except ValueError:
+                        pass
+    return fases
+
+
+def check_port_free(port):
+    """Verifica que el puerto serie esté libre"""
+    try:
+        fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+        return True
+    except (OSError, IOError):
+        return False
+
+
+def activar_flag(client, reg, slave_id):
+    """Activa el flag necesario antes de escribir un registro"""
+    if reg in REGS_ESTADO:
+        # Flag de estado: reg 30 = 43981 (0xABCD)
+        client.write_register(address=30, value=43981, slave=slave_id)
+        time.sleep(0.05)
+    elif reg in REGS_CONFIG:
+        # Flag de configuración: reg 40 = 47818 (0xBACA)
+        client.write_register(address=40, value=47818, slave=slave_id)
+        time.sleep(0.05)
+
+
+def main():
+    # Buscar backup de referencia
+    user_home = None
+    for d in os.listdir("/home"):
+        config_dir = os.path.join("/home", d, "config")
+        if os.path.isdir(config_dir):
+            for f in sorted(os.listdir(config_dir), reverse=True):
+                if f.startswith("parametros_") and f.endswith(".txt"):
+                    user_home = os.path.join(config_dir, f)
+                    break
+        if user_home:
+            break
+
+    if not user_home:
+        log("ERROR: No hay backup de referencia en ~/config/")
+        sys.exit(1)
+
+    backup_data = parsear_backup(user_home)
+    if not backup_data:
+        log(f"ERROR: No se pudo parsear backup {user_home}")
+        sys.exit(1)
+
+    # Verificar puerto libre (si Node-RED lo tiene, esperar un poco)
+    if not check_port_free(SERIAL_PORT):
+        # Esperar hasta 5 segundos
+        for _ in range(5):
+            time.sleep(1)
+            if check_port_free(SERIAL_PORT):
+                break
+        else:
+            log("SKIP: Puerto serie ocupado, se reintentará en el próximo ciclo")
+            sys.exit(0)
+
+    try:
+        from pymodbus.client import ModbusSerialClient
+    except ImportError:
+        from pymodbus.client.sync import ModbusSerialClient
+
+    client = ModbusSerialClient(
+        port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE,
+        bytesize=8, parity='N', stopbits=1, timeout=1
+    )
+
+    if not client.connect():
+        log("ERROR: No se pudo conectar al puerto serie")
+        sys.exit(1)
+
+    try:
+        total_corruptos = 0
+        total_reparados = 0
+
+        for slave_id in [1, 2, 3]:
+            fase = f"L{slave_id}"
+
+            if slave_id not in backup_data:
+                continue
+
+            ref = backup_data[slave_id]
+            corruptos = []
+
+            # Leer registros críticos
+            for reg, nombre in REGISTROS_CRITICOS:
+                if reg not in ref:
+                    continue
+                try:
+                    result = client.read_holding_registers(address=reg, count=1, slave=slave_id)
+                    if result.isError():
+                        continue
+                    val_actual = result.registers[0]
+                    val_esperado = ref[reg]
+
+                    if val_actual != val_esperado:
+                        corruptos.append((reg, nombre, val_actual, val_esperado))
+                except Exception:
+                    pass
+                time.sleep(0.02)  # Pequeña pausa entre lecturas
+
+            if corruptos:
+                total_corruptos += len(corruptos)
+                log(f"ALERTA {fase}: {len(corruptos)} parámetro(s) corrupto(s)")
+                for reg, nombre, actual, esperado in corruptos:
+                    log(f"  {fase} Reg {reg} ({nombre}): actual={actual}, esperado={esperado}")
+
+                # Reparar: activar flag y reescribir
+                for reg, nombre, actual, esperado in corruptos:
+                    try:
+                        activar_flag(client, reg, slave_id)
+                        write_result = client.write_register(address=reg, value=esperado, slave=slave_id)
+                        time.sleep(0.05)
+
+                        if not write_result.isError():
+                            # Verificar
+                            verify = client.read_holding_registers(address=reg, count=1, slave=slave_id)
+                            if not verify.isError() and verify.registers[0] == esperado:
+                                log(f"  REPARADO {fase} Reg {reg} ({nombre}): {actual} -> {esperado}")
+                                total_reparados += 1
+                            else:
+                                v = verify.registers[0] if not verify.isError() else "?"
+                                log(f"  FALLO VERIFICACION {fase} Reg {reg}: escribí {esperado}, leí {v}")
+                        else:
+                            log(f"  FALLO ESCRITURA {fase} Reg {reg} ({nombre})")
+                    except Exception as e:
+                        log(f"  EXCEPCION {fase} Reg {reg}: {e}")
+                    time.sleep(0.05)
+
+        if total_corruptos == 0:
+            log(f"Watchdog check OK - L1/L2/L3 parámetros correctos")
+        else:
+            log(f"Watchdog check: {total_corruptos} corrupto(s), {total_reparados} reparado(s)")
+
+    finally:
+        client.close()
+
+
+if __name__ == "__main__":
+    main()
+EOFWATCHDOG
+                            sudo chmod +x /usr/local/bin/gesinne-watchdog.py
+
+                            # Detectar puerto serie para el script
+                            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0; do
+                                if [ -e "$port" ]; then
+                                    sudo sed -i "s|SERIAL_PORT = \"/dev/ttyAMA0\"|SERIAL_PORT = \"$port\"|" /usr/local/bin/gesinne-watchdog.py
+                                    break
+                                fi
+                            done
+
+                            # Crear servicio systemd
+                            sudo tee /etc/systemd/system/gesinne-watchdog.service > /dev/null << 'EOFSVC'
+[Unit]
+Description=Gesinne Watchdog - Vigila parámetros Modbus
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/bin/gesinne-watchdog.py
+TimeoutStartSec=60
+Nice=10
+EOFSVC
+
+                            # Crear timer systemd (cada 5 minutos)
+                            sudo tee /etc/systemd/system/gesinne-watchdog.timer > /dev/null << 'EOFTIMER'
+[Unit]
+Description=Ejecuta vigilancia de parámetros cada 5 minutos
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+EOFTIMER
+
+                            # Activar e iniciar
+                            sudo systemctl daemon-reload
+                            sudo systemctl enable gesinne-watchdog.timer
+                            sudo systemctl start gesinne-watchdog.timer
+
+                            echo "  [OK] Watchdog instalado y activo"
+                            echo ""
+                            echo "  Intervalo:  cada 5 minutos"
+                            echo "  Log:        /var/log/gesinne-watchdog.log"
+                            echo "  Referencia: $(basename $BACKUP_FILE)"
+                            echo ""
+                            echo "  Comandos útiles:"
+                            echo "    Ver estado:  sudo systemctl status gesinne-watchdog.timer"
+                            echo "    Ver log:     tail -f /var/log/gesinne-watchdog.log"
+                            echo "    Desactivar:  sudo systemctl stop gesinne-watchdog.timer"
+                            echo ""
+                        fi
+
+                        volver_menu
+                        continue
+                    fi
+
                     # Preguntar fase para reparar (solo 1) y restaurar (1 o todas)
                     if [ "$REPAIR_MODE" = "2" ]; then
                         echo ""
