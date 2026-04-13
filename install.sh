@@ -4615,9 +4615,54 @@ print_section("CALIBRACIÓN", 70, 87)
 print_section("CONTROL", 90, 97)
 print_section("INFO FW", 100, 112)
 
+# --- Enviar versión FW al servidor ---
+import json as json_mod
+try:
+    config_file = None
+    import glob
+    for f in glob.glob('/home/*/config/equipo_config.json'):
+        config_file = f
+        break
+    serie = '?'
+    if config_file:
+        with open(config_file) as cf:
+            serie = json_mod.load(cf).get('serie', '?')
+
+    fw_data = {
+        's_n': serie,
+        'fw_L1': data_all[1][100] if data_all[1] and data_all[1][100] is not None else None,
+        'fw_L2': data_all[2][100] if data_all[2] and data_all[2][100] is not None else None,
+        'fw_L3': data_all[3][100] if data_all[3] and data_all[3][100] is not None else None,
+        'tipo_fw_L1': data_all[1][101] if data_all[1] and data_all[1][101] is not None else None,
+        'tipo_fw_L2': data_all[2][101] if data_all[2] and data_all[2][101] is not None else None,
+        'tipo_fw_L3': data_all[3][101] if data_all[3] and data_all[3][101] is not None else None,
+        'placa_sn_L1': data_all[1][41] if data_all[1] and data_all[1][41] is not None else None,
+        'placa_sn_L2': data_all[2][41] if data_all[2] and data_all[2][41] is not None else None,
+        'placa_sn_L3': data_all[3][41] if data_all[3] and data_all[3][41] is not None else None,
+        'micro_L1': data_all[1][102] if data_all[1] and data_all[1][102] is not None else None,
+        'micro_L2': data_all[2][102] if data_all[2] and data_all[2][102] is not None else None,
+        'micro_L3': data_all[3][102] if data_all[3] and data_all[3][102] is not None else None,
+        '@timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+        'source': 'install.sh'
+    }
+    # Enviar a ES directamente via curl (no necesita mosquitto)
+    import subprocess as sp
+    fw_json = json_mod.dumps(fw_data)
+    doc_id = f"{serie}_{__import__('datetime').date.today().isoformat()}"
+    sp.run(['curl', '-sk', '-u', 'elastic:3WqB6gIQj2tnHeLn7J1J', '-X', 'PUT',
+        f'https://master1.gesinne.cloud:9200/equipos_firmware/_doc/{doc_id}',
+        '-H', 'Content-Type: application/json', '-d', fw_json],
+        capture_output=True, timeout=10)
+    print(f"\n  [OK] Enviado al servidor:")
+    print(f"       FW: L1={fw_data['fw_L1']} L2={fw_data['fw_L2']} L3={fw_data['fw_L3']}")
+    print(f"       Placa SN: L1={fw_data['placa_sn_L1']} L2={fw_data['placa_sn_L2']} L3={fw_data['placa_sn_L3']}")
+    print(f"       Micro: L1={fw_data['micro_L1']} L2={fw_data['micro_L2']} L3={fw_data['micro_L3']}")
+except Exception as e:
+    print(f"\n  [!] No se pudo enviar FW al servidor: {e}")
+
 print("")
 EOFCOL
-                
+
                 # Reiniciar servicios
                 echo ""
                 read -p "  ¿Reiniciar servicios ahora? [y/N]: " CONFIRMAR_RESTART
