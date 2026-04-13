@@ -4645,15 +4645,27 @@ try:
         '@timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
         'source': 'install.sh'
     }
-    # Enviar a ES directamente via curl (no necesita mosquitto)
-    import subprocess as sp
     fw_json = json_mod.dumps(fw_data)
-    doc_id = f"{serie}_{__import__('datetime').date.today().isoformat()}"
-    sp.run(['curl', '-sk', '-u', 'elastic:3WqB6gIQj2tnHeLn7J1J', '-X', 'PUT',
-        f'https://master1.gesinne.cloud:9200/equipos_firmware/_doc/{doc_id}',
-        '-H', 'Content-Type: application/json', '-d', fw_json],
-        capture_output=True, timeout=10)
-    print(f"\n  [OK] Enviado al servidor:")
+    import subprocess as sp
+    enviado = False
+
+    # Enviar a la API de Gesinne (IP directa para evitar Cloudflare)
+    for api_url in ['http://57.129.130.106:5000/api/firmware', 'https://app.gesinne.cloud/api/firmware']:
+        try:
+            r = sp.run(['curl', '-sk', '-X', 'POST', api_url,
+                '-H', 'Content-Type: application/json',
+                '-d', fw_json],
+                capture_output=True, timeout=10)
+            if r.returncode == 0 and b'"ok"' in r.stdout:
+                enviado = True
+                break
+        except:
+            pass
+
+    if enviado:
+        print(f"\n  [OK] Enviado al servidor:")
+    else:
+        print(f"\n  [!] Datos leidos (no se pudo enviar al servidor):")
     print(f"       FW: L1={fw_data['fw_L1']} L2={fw_data['fw_L2']} L3={fw_data['fw_L3']}")
     print(f"       Placa SN: L1={fw_data['placa_sn_L1']} L2={fw_data['placa_sn_L2']} L3={fw_data['placa_sn_L3']}")
     print(f"       Micro: L1={fw_data['micro_L1']} L2={fw_data['micro_L2']} L3={fw_data['micro_L3']}")
