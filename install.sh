@@ -4642,6 +4642,9 @@ try:
         'micro_L1': data_all[1][102] if data_all[1] and data_all[1][102] is not None else None,
         'micro_L2': data_all[2][102] if data_all[2] and data_all[2][102] is not None else None,
         'micro_L3': data_all[3][102] if data_all[3] and data_all[3][102] is not None else None,
+        'fw_version_L1': f"{data_all[1][100]//1000}.{(data_all[1][100]%1000)//100}.{data_all[1][100]%100:02d}" if data_all[1] and data_all[1][100] else None,
+        'fw_version_L2': f"{data_all[2][100]//1000}.{(data_all[2][100]%1000)//100}.{data_all[2][100]%100:02d}" if data_all[2] and data_all[2][100] else None,
+        'fw_version_L3': f"{data_all[3][100]//1000}.{(data_all[3][100]%1000)//100}.{data_all[3][100]%100:02d}" if data_all[3] and data_all[3][100] else None,
         '@timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
         'source': 'install.sh'
     }
