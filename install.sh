@@ -4645,7 +4645,7 @@ try:
         'fw_version_L1': f"{data_all[1][100]//1000}.{(data_all[1][100]%1000)//100}.{data_all[1][100]%100:02d}" if data_all[1] and data_all[1][100] else None,
         'fw_version_L2': f"{data_all[2][100]//1000}.{(data_all[2][100]%1000)//100}.{data_all[2][100]%100:02d}" if data_all[2] and data_all[2][100] else None,
         'fw_version_L3': f"{data_all[3][100]//1000}.{(data_all[3][100]%1000)//100}.{data_all[3][100]%100:02d}" if data_all[3] and data_all[3][100] else None,
-        '@timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+        '@timestamp': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
         'source': 'install.sh'
     }
     fw_json = json_mod.dumps(fw_data)
