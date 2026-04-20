@@ -53,6 +53,29 @@ EOFCMD
     echo "  [OK] Comando 'Actualizar' instalado"
 fi
 
+# Detectar versión del sistema operativo
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS_NAME="${PRETTY_NAME:-$NAME}"
+    OS_CODENAME="${VERSION_CODENAME:-?}"
+    OS_VERSION_ID="${VERSION_ID:-?}"
+    echo ""
+    echo "  [SO] $OS_NAME"
+    if [ -r /proc/device-tree/model ]; then
+        RPI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
+        echo "  [HW] $RPI_MODEL"
+    fi
+    ARCH=$(uname -m)
+    BITS=$(getconf LONG_BIT 2>/dev/null || echo "?")
+    echo "  [ARCH] $ARCH (${BITS}-bit)"
+    # Aviso si es Trixie (Debian 13) - puede haber incompatibilidades con PEP 668
+    if [ "$OS_CODENAME" = "trixie" ] || [ "$OS_VERSION_ID" = "13" ]; then
+        echo "  [!] Detectado Debian 13 (Trixie) - usando --break-system-packages para pip"
+        export PIP_BREAK_SYSTEM_PACKAGES=1
+    fi
+    echo ""
+fi
+
 # Auto-detectar si necesita clonar o actualizar el repo
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
 INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
