@@ -105,6 +105,21 @@ else
 fi
 [ -n "$PKG_MGR" ] && echo "  [PKG]  $PKG_MGR"
 
+# Detectar Node.js (necesario para Node-RED 4.x → Node 18+)
+if command -v node >/dev/null 2>&1; then
+    NODE_VER=$(node --version 2>/dev/null | sed 's/v//')
+    NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
+    if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 18 ] 2>/dev/null; then
+        echo "  [NODE] v$NODE_VER (OK)"
+    elif [ -n "$NODE_MAJOR" ]; then
+        echo "  [NODE] v$NODE_VER  [!] Versión antigua, Node-RED 4.x requiere Node 18+"
+        echo "         Para actualizar: bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
+    fi
+else
+    echo "  [NODE] No instalado  [!] Node-RED requiere Node.js"
+    echo "         Para instalar: bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
+fi
+
 # Helper para instalar paquetes según gestor
 pkg_install() {
     local pkg="$1"
