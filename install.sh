@@ -220,6 +220,10 @@ if [ "$OS_ID" = "debian" ] || [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "raspbian"
     fi
 fi
 echo ""
+echo "  ──────────────────────────────────────────────────────────────"
+echo "  Revisa la información del sistema arriba ↑"
+read -r -p "  Pulsa ENTER para continuar (o Ctrl+C para salir)... " _ </dev/tty 2>/dev/null || sleep 5
+echo ""
 
 # Auto-detectar si necesita clonar o actualizar el repo
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
