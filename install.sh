@@ -1738,10 +1738,15 @@ if chronos_id:
                     echo "  para detectar problemas con offsets, calibración y"
                     echo "  valores que no cambian (clavados)."
                     echo ""
-                    echo "  [!] Parando Node-RED temporalmente..."
-                    
+                    echo "  [!] Parando servicios temporalmente..."
+
                     sudo systemctl stop nodered 2>/dev/null
                     docker stop gesinne-rpi >/dev/null 2>&1 || true
+                    KIOSK_WAS_RUNNING=0
+                    if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                        KIOSK_WAS_RUNNING=1
+                        sudo systemctl stop kiosk.service 2>/dev/null
+                    fi
                     sleep 2
                     echo "  [OK] Servicios parados"
                     echo ""
@@ -2099,12 +2104,18 @@ EOFDIAG
                         echo "  [~] Reiniciando servicios..."
                         sudo systemctl start nodered
                         docker start gesinne-rpi 2>/dev/null || true
-                        echo "  [OK] Listo"
+                        if [ "$KIOSK_WAS_RUNNING" = "1" ]; then
+                            sudo systemctl start kiosk.service 2>/dev/null
+                            echo "  [OK] Node-RED, Docker y kiosko reiniciados"
+                        else
+                            echo "  [OK] Listo"
+                        fi
                     else
                         echo "  [!] Servicios NO reiniciados. Recuerda iniciarlos manualmente:"
                         echo "      sudo systemctl start nodered"
+                        [ "$KIOSK_WAS_RUNNING" = "1" ] && echo "      sudo systemctl start kiosk.service"
                     fi
-                    
+
                     volver_menu
                     continue
                     ;;
