@@ -91,6 +91,22 @@ if [ "$PIP_NEEDS_BREAK" = "1" ]; then
     echo "  [PIP]  Modo PEP 668 activo (PIP_BREAK_SYSTEM_PACKAGES=1)"
 fi
 
+# Avisos específicos Trixie (Debian 13) — gotchas conocidos
+if [ "$OS_CODENAME" = "trixie" ] || [ "$OS_VERSION_ID" = "13" ]; then
+    # /boot/firmware con ro en fstab impide updates (kernel/initramfs)
+    if grep -qE "/boot/firmware.*defaults,ro" /etc/fstab 2>/dev/null; then
+        echo "  [!]    Trixie: /etc/fstab tiene /boot/firmware en RO"
+        echo "         Los updates de kernel/initramfs FALLARÁN. Cambiar 'defaults,ro' por 'defaults'."
+    fi
+    # /boot/firmware montado RO actualmente
+    BOOT_OPTS=$(mount | grep -E " /boot/firmware " | grep -oE '\(([^)]+)\)' | tr -d '()')
+    if echo "$BOOT_OPTS" | grep -qE "^ro,|,ro,|,ro$|^ro$"; then
+        echo "  [!]    Trixie: /boot/firmware montado en RO ahora — corregir y remontar:"
+        echo "         sudo sed -i 's|defaults,ro|defaults|' /etc/fstab"
+        echo "         sudo systemctl daemon-reload && sudo mount -o remount,rw /boot/firmware"
+    fi
+fi
+
 # Detectar gestor de paquetes
 if command -v apt-get >/dev/null 2>&1; then
     PKG_MGR="apt-get"
@@ -109,15 +125,77 @@ fi
 if command -v node >/dev/null 2>&1; then
     NODE_VER=$(node --version 2>/dev/null | sed 's/v//')
     NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
-    if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 18 ] 2>/dev/null; then
-        echo "  [NODE] v$NODE_VER (OK)"
-    elif [ -n "$NODE_MAJOR" ]; then
+    if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -lt 18 ] 2>/dev/null; then
         echo "  [NODE] v$NODE_VER  [!] Versión antigua, Node-RED 4.x requiere Node 18+"
         echo "         Para actualizar: bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
+    elif [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null; then
+        echo "  [NODE] v$NODE_VER  [!] Demasiado nueva — node-red-contrib-modbus puede romper"
+        echo "         Recomendado: Node 20 LTS"
+        echo "         Bajar:  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt remove -y nodejs && sudo apt install -y nodejs && cd ~/.node-red && npm rebuild"
+    else
+        echo "  [NODE] v$NODE_VER (OK)"
     fi
 else
     echo "  [NODE] No instalado  [!] Node-RED requiere Node.js"
     echo "         Para instalar: bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
+fi
+
+# Compatibilidad sistema — chequeos rápidos (Trixie/Bookworm/RPi5/Wayland/etc.)
+PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>/dev/null)
+PY_MAJ=$(echo "$PY_VER" | cut -d. -f1)
+PY_MIN=$(echo "$PY_VER" | cut -d. -f2)
+if [ -n "$PY_VER" ]; then
+    if [ "$PY_MAJ" = "3" ] && [ "$PY_MIN" -ge 13 ] 2>/dev/null; then
+        echo "  [PY]   $PY_VER  [!] Python 3.13+ — algunas libs antiguas rompen (pymodbus<3.6, paho-mqtt 1.x)"
+    else
+        echo "  [PY]   $PY_VER"
+    fi
+fi
+
+KERN=$(uname -r)
+echo "  [KER]  $KERN"
+
+if command -v systemctl >/dev/null 2>&1; then
+    SD_VER=$(systemctl --version 2>/dev/null | head -1 | awk '{print $2}')
+    [ -n "$SD_VER" ] && echo "  [SYS]  systemd $SD_VER"
+fi
+
+BASH_V="${BASH_VERSION%%[^0-9.]*}"
+[ -n "$BASH_V" ] && echo "  [BSH]  bash $BASH_V"
+
+if command -v openssl >/dev/null 2>&1; then
+    SSL_VER=$(openssl version 2>/dev/null | awk '{print $2}')
+    [ -n "$SSL_VER" ] && echo "  [SSL]  OpenSSL $SSL_VER"
+fi
+
+# Servidor gráfico (relevante para modo kiosko Chromium)
+DISPLAY_SRV=""
+if [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+    DISPLAY_SRV="Wayland"
+elif [ -n "$DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "x11" ]; then
+    DISPLAY_SRV="X11"
+fi
+if [ -n "$DISPLAY_SRV" ]; then
+    if [ "$DISPLAY_SRV" = "Wayland" ]; then
+        echo "  [GUI]  Wayland  [!] xrandr/xdotool/wmctrl no funcionan — usar wlr-randr/ydotool"
+    else
+        echo "  [GUI]  $DISPLAY_SRV"
+    fi
+fi
+
+# RPi 5 detection — chip GPIO cambia (RP1 en gpiochip4)
+if [ -n "$RPI_MODEL" ]; then
+    if echo "$RPI_MODEL" | grep -qE "Raspberry Pi 5"; then
+        echo "  [GPIO] RPi 5 detectado — RP1 chip (gpiochip4); pinctrl reemplaza raspi-gpio"
+    fi
+fi
+
+# Repo NodeSource: en Trixie no hay rama 'trixie', usar 'bookworm'
+if [ "$OS_CODENAME" = "trixie" ] && [ -f /etc/apt/sources.list.d/nodesource.list ]; then
+    if grep -q "trixie" /etc/apt/sources.list.d/nodesource.list 2>/dev/null; then
+        echo "  [!]    NodeSource apunta a 'trixie' (no existe). Cambiar a 'bookworm':"
+        echo "         sudo sed -i 's/trixie/bookworm/g' /etc/apt/sources.list.d/nodesource.list && sudo apt update"
+    fi
 fi
 
 # Helper para instalar paquetes según gestor
@@ -1815,6 +1893,53 @@ if chronos_id:
                         else
                             echo "      Consola serie deshabilitada: ✓"
                         fi
+                    fi
+
+                    # /boot/firmware NO debe estar en read-only (impide updates de kernel/initramfs)
+                    BOOT_MNT_OPTS=$(mount | grep -E " /boot/firmware " | grep -oE '\(([^)]+)\)' | tr -d '()')
+                    if [ -n "$BOOT_MNT_OPTS" ]; then
+                        if echo "$BOOT_MNT_OPTS" | grep -qE "^ro,|,ro,|,ro$|^ro$"; then
+                            echo "      /boot/firmware en RW: ✗  (montado RO — impide updates de boot)"
+                            echo "                              corregir: editar /etc/fstab y cambiar 'defaults,ro' por 'defaults'"
+                        else
+                            echo "      /boot/firmware en RW: ✓"
+                        fi
+                    fi
+                    if grep -qE "/boot/firmware.*defaults,ro" /etc/fstab 2>/dev/null; then
+                        echo "      /etc/fstab boot RO: ✗  (cambiar 'defaults,ro' por 'defaults' en /etc/fstab)"
+                    fi
+
+                    # Pines GPIO 14/15 en alt0 (función UART) — sin esto el driver corre pero los pines no transmiten
+                    if command -v pinctrl >/dev/null 2>&1; then
+                        P14=$(pinctrl get 14 2>/dev/null | awk '{print $2}')
+                        P15=$(pinctrl get 15 2>/dev/null | awk '{print $2}')
+                        if [ "$P14" = "a0" ] && [ "$P15" = "a0" ]; then
+                            echo "      GPIO 14/15 en alt0 (UART): ✓"
+                        else
+                            echo "      GPIO 14/15 en alt0 (UART): ✗  (14=$P14 15=$P15 — esperado a0)"
+                            echo "                                    arreglar: sudo pinctrl set 14 a0 && sudo pinctrl set 15 a0"
+                        fi
+                    fi
+
+                    # Device tree status del PL011 (serial@7e201000)
+                    for dt_serial in /sys/firmware/devicetree/base/soc/serial@7e201000 /proc/device-tree/soc/serial@7e201000; do
+                        if [ -f "$dt_serial/status" ]; then
+                            DT_ST=$(tr -d '\0' < "$dt_serial/status" 2>/dev/null)
+                            if [ "$DT_ST" = "okay" ]; then
+                                echo "      PL011 (ttyAMA0) device tree: ✓ (okay)"
+                            else
+                                echo "      PL011 (ttyAMA0) device tree: ✗ ($DT_ST)"
+                            fi
+                            break
+                        fi
+                    done
+
+                    # Bluetooth desactivado a nivel servicio
+                    if systemctl is-active --quiet hciuart 2>/dev/null; then
+                        echo "      Servicio hciuart: ✗ (activo — puede acaparar UART)"
+                        echo "                          arreglar: sudo systemctl disable --now hciuart"
+                    else
+                        echo "      Servicio hciuart: ✓ (inactivo)"
                     fi
                     echo ""
                     
