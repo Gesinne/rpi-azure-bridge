@@ -419,6 +419,60 @@ npm_install_clean() {
     rm -f /tmp/npm_install_$$.log
 }
 
+# ─────────────────────────────────────────────────────────────────────
+# Helpers kiosko — funciona con Bookworm (kiosk.service) y Trixie/Wayland
+# (chromium --kiosk lanzado desde la sesión, sin systemd unit)
+# ─────────────────────────────────────────────────────────────────────
+kiosk_is_running() {
+    if systemctl list-unit-files kiosk.service &>/dev/null && systemctl is-active --quiet kiosk.service 2>/dev/null; then
+        return 0
+    fi
+    pgrep -f "chromium.*--kiosk" >/dev/null 2>&1
+}
+
+kiosk_stop() {
+    # Bookworm con kiosk.service
+    if systemctl list-unit-files kiosk.service &>/dev/null; then
+        sudo systemctl stop kiosk.service 2>/dev/null && return 0
+    fi
+    # Trixie/Wayland: chromium --kiosk como proceso de sesión
+    if pgrep -f "chromium.*--kiosk" >/dev/null 2>&1; then
+        pkill -f "chromium.*--kiosk" 2>/dev/null
+        sleep 1
+        return 0
+    fi
+    return 1
+}
+
+kiosk_start() {
+    # Bookworm con kiosk.service
+    if systemctl list-unit-files kiosk.service &>/dev/null; then
+        sudo systemctl start kiosk.service 2>/dev/null && return 0
+    fi
+    # Trixie/Wayland: relanzar chromium en la sesión del usuario
+    local LOGUSER LOGUID URL
+    LOGUSER="${SUDO_USER:-$(logname 2>/dev/null || echo "$USER")}"
+    LOGUID=$(id -u "$LOGUSER" 2>/dev/null)
+    URL="http://localhost:1880/dashboard/inicio"
+    if [ -n "$LOGUID" ] && command -v chromium >/dev/null 2>&1; then
+        sudo -u "$LOGUSER" \
+            XDG_RUNTIME_DIR="/run/user/$LOGUID" \
+            WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" \
+            nohup chromium --kiosk --noerrdialogs --disable-infobars \
+                --no-first-run --ozone-platform=wayland --no-sandbox \
+                --disable-features=Translate,OptimizationHints,MediaRouter \
+                "$URL" >/dev/null 2>&1 &
+        return 0
+    fi
+    return 1
+}
+
+kiosk_restart() {
+    kiosk_stop
+    sleep 2
+    kiosk_start
+}
+
 # Función para reiniciar Node-RED y kiosko
 reiniciar_nodered() {
     echo ""
@@ -428,17 +482,16 @@ reiniciar_nodered() {
         echo "      sudo systemctl restart nodered"
         return 0
     fi
-    
+
     echo "  [~] Reiniciando Node-RED..."
     sudo systemctl restart nodered 2>/dev/null
     sleep 3
     echo "  [OK] Node-RED reiniciado"
-    
-    # Iniciar kiosko si existe el servicio
-    if systemctl list-unit-files kiosk.service &>/dev/null; then
+
+    # Reiniciar kiosko si está corriendo
+    if kiosk_is_running; then
         echo "  [~] Reiniciando kiosko..."
-        sudo systemctl restart kiosk.service 2>/dev/null
-        sleep 2
+        kiosk_restart
         echo "  [OK] Kiosko reiniciado"
     fi
 }
@@ -1734,11 +1787,10 @@ if chronos_id:
                         sleep 5
                         echo "  [OK] Node-RED iniciado"
                         
-                        # Reiniciar kiosko si existe
-                        if systemctl list-unit-files kiosk.service &>/dev/null; then
+                        # Reiniciar kiosko si está corriendo
+                        if kiosk_is_running; then
                             echo "  [~] Reiniciando kiosko..."
-                            sudo systemctl restart kiosk.service 2>/dev/null
-                            sleep 2
+                            kiosk_restart
                             echo "  [OK] Kiosko reiniciado"
                         fi
                     else
@@ -1825,9 +1877,9 @@ if chronos_id:
                     sudo systemctl stop nodered 2>/dev/null
                     docker stop gesinne-rpi >/dev/null 2>&1 || true
                     KIOSK_WAS_RUNNING=0
-                    if systemctl is-active --quiet kiosk.service 2>/dev/null; then
+                    if kiosk_is_running; then
                         KIOSK_WAS_RUNNING=1
-                        sudo systemctl stop kiosk.service 2>/dev/null
+                        kiosk_stop
                     fi
                     sleep 2
                     echo "  [OK] Servicios parados"
@@ -2234,7 +2286,7 @@ EOFDIAG
                         sudo systemctl start nodered
                         docker start gesinne-rpi 2>/dev/null || true
                         if [ "$KIOSK_WAS_RUNNING" = "1" ]; then
-                            sudo systemctl start kiosk.service 2>/dev/null
+                            kiosk_start
                             echo "  [OK] Node-RED, Docker y kiosko reiniciados"
                         else
                             echo "  [OK] Listo"
@@ -2242,7 +2294,7 @@ EOFDIAG
                     else
                         echo "  [!] Servicios NO reiniciados. Recuerda iniciarlos manualmente:"
                         echo "      sudo systemctl start nodered"
-                        [ "$KIOSK_WAS_RUNNING" = "1" ] && echo "      sudo systemctl start kiosk.service"
+                        [ "$KIOSK_WAS_RUNNING" = "1" ] && echo "      (kiosko: pkill chromium o reboot)"
                     fi
 
                     volver_menu
@@ -4965,8 +5017,8 @@ EOFCOL
                     echo "  [~] Reiniciando servicios..."
                     sudo systemctl start nodered
                     docker start gesinne-rpi 2>/dev/null || true
-                    if systemctl is-active --quiet kiosk.service 2>/dev/null; then
-                        sudo systemctl restart kiosk.service
+                    if kiosk_is_running; then
+                        kiosk_restart
                     fi
                     echo "  [OK] Listo"
                 else
@@ -5400,11 +5452,11 @@ EOFTXT
                     docker start gesinne-rpi 2>/dev/null
                 fi
                 
-                # Reiniciar kiosko si existe
-                if systemctl is-active --quiet kiosk.service 2>/dev/null; then
-                    sudo systemctl restart kiosk.service
+                # Reiniciar kiosko si está corriendo
+                if kiosk_is_running; then
+                    kiosk_restart
                 fi
-                
+
                 echo "  [OK] Listo"
             else
                 echo "  [!] Servicios NO reiniciados. Recuerda iniciarlos manualmente:"
