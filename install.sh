@@ -1755,11 +1755,61 @@ if chronos_id:
                             break
                         fi
                     done
-                    
+
                     if [ -z "$DIAG_PORT" ]; then
                         echo "  [X] No se encontró ningún puerto serie"
                         volver_menu
                         continue
+                    fi
+
+                    # Diagnóstico del puerto serie
+                    echo "  [~] Verificando configuración..."
+
+                    # Permisos
+                    PERMS=$(ls -l "$DIAG_PORT" 2>/dev/null | awk '{print $1, $3, $4}')
+                    echo "      Permisos: $PERMS"
+
+                    # Usuario en grupo dialout
+                    if groups 2>/dev/null | grep -qw dialout; then
+                        echo "      Usuario en dialout: ✓"
+                    else
+                        echo "      Usuario en dialout: ✗  (sudo usermod -a -G dialout \$USER && reboot)"
+                    fi
+
+                    # Procesos usando el puerto
+                    USING=$(sudo lsof "$DIAG_PORT" 2>/dev/null | tail -n +2)
+                    if [ -n "$USING" ]; then
+                        echo "      [!] Puerto en uso por:"
+                        echo "$USING" | awk '{print "          " $1 " (PID " $2 ")"}'
+                    else
+                        echo "      Puerto libre: ✓"
+                    fi
+
+                    # Config UART en config.txt
+                    CFG_FILE="/boot/firmware/config.txt"
+                    [ ! -f "$CFG_FILE" ] && CFG_FILE="/boot/config.txt"
+                    if [ -f "$CFG_FILE" ]; then
+                        if grep -q "^enable_uart=1" "$CFG_FILE"; then
+                            echo "      enable_uart=1: ✓"
+                        else
+                            echo "      enable_uart=1: ✗  (añadir a $CFG_FILE)"
+                        fi
+                        if grep -q "^dtoverlay=disable-bt" "$CFG_FILE"; then
+                            echo "      Bluetooth deshabilitado: ✓"
+                        else
+                            echo "      Bluetooth deshabilitado: ✗  (añadir 'dtoverlay=disable-bt' a $CFG_FILE)"
+                        fi
+                    fi
+
+                    # Console en cmdline.txt (debe NO estar)
+                    CMDLINE="/boot/firmware/cmdline.txt"
+                    [ ! -f "$CMDLINE" ] && CMDLINE="/boot/cmdline.txt"
+                    if [ -f "$CMDLINE" ]; then
+                        if grep -q "console=serial0\|console=ttyAMA0" "$CMDLINE"; then
+                            echo "      Consola serie en cmdline: ✗  (eliminar console=serial0 de $CMDLINE)"
+                        else
+                            echo "      Consola serie deshabilitada: ✓"
+                        fi
                     fi
                     echo ""
                     
