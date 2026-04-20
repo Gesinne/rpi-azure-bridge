@@ -53,28 +53,80 @@ EOFCMD
     echo "  [OK] Comando 'Actualizar' instalado"
 fi
 
-# Detectar versión del sistema operativo
+# Detectar sistema operativo, hardware y arquitectura
+OS_ID=""
+OS_NAME=""
+OS_CODENAME=""
+OS_VERSION_ID=""
+ARCH=$(uname -m)
+BITS=$(getconf LONG_BIT 2>/dev/null || echo "?")
+
 if [ -f /etc/os-release ]; then
     . /etc/os-release
+    OS_ID="${ID:-unknown}"
     OS_NAME="${PRETTY_NAME:-$NAME}"
     OS_CODENAME="${VERSION_CODENAME:-?}"
     OS_VERSION_ID="${VERSION_ID:-?}"
-    echo ""
-    echo "  [SO] $OS_NAME"
-    if [ -r /proc/device-tree/model ]; then
-        RPI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
-        echo "  [HW] $RPI_MODEL"
-    fi
-    ARCH=$(uname -m)
-    BITS=$(getconf LONG_BIT 2>/dev/null || echo "?")
-    echo "  [ARCH] $ARCH (${BITS}-bit)"
-    # Aviso si es Trixie (Debian 13) - puede haber incompatibilidades con PEP 668
-    if [ "$OS_CODENAME" = "trixie" ] || [ "$OS_VERSION_ID" = "13" ]; then
-        echo "  [!] Detectado Debian 13 (Trixie) - usando --break-system-packages para pip"
-        export PIP_BREAK_SYSTEM_PACKAGES=1
-    fi
-    echo ""
 fi
+
+echo ""
+echo "  [SO]   ${OS_NAME:-Desconocido}"
+if [ -r /proc/device-tree/model ]; then
+    RPI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
+    echo "  [HW]   $RPI_MODEL"
+fi
+echo "  [ARCH] $ARCH (${BITS}-bit)"
+
+# Compatibilidad pip / PEP 668 (Bookworm 12, Trixie 13, Ubuntu 23.04+)
+PIP_NEEDS_BREAK=0
+case "$OS_VERSION_ID" in
+    12|13|14) PIP_NEEDS_BREAK=1 ;;
+esac
+if [ "$OS_ID" = "ubuntu" ]; then
+    UBUNTU_MAJOR=$(echo "$OS_VERSION_ID" | cut -d. -f1)
+    [ -n "$UBUNTU_MAJOR" ] && [ "$UBUNTU_MAJOR" -ge 23 ] && PIP_NEEDS_BREAK=1
+fi
+if [ "$PIP_NEEDS_BREAK" = "1" ]; then
+    export PIP_BREAK_SYSTEM_PACKAGES=1
+    echo "  [PIP]  Modo PEP 668 activo (PIP_BREAK_SYSTEM_PACKAGES=1)"
+fi
+
+# Detectar gestor de paquetes
+if command -v apt-get >/dev/null 2>&1; then
+    PKG_MGR="apt-get"
+elif command -v dnf >/dev/null 2>&1; then
+    PKG_MGR="dnf"
+elif command -v yum >/dev/null 2>&1; then
+    PKG_MGR="yum"
+elif command -v pacman >/dev/null 2>&1; then
+    PKG_MGR="pacman"
+else
+    PKG_MGR=""
+fi
+[ -n "$PKG_MGR" ] && echo "  [PKG]  $PKG_MGR"
+
+# Helper para instalar paquetes según gestor
+pkg_install() {
+    local pkg="$1"
+    case "$PKG_MGR" in
+        apt-get) sudo apt-get install -y "$pkg" ;;
+        dnf|yum) sudo "$PKG_MGR" install -y "$pkg" ;;
+        pacman) sudo pacman -S --noconfirm "$pkg" ;;
+        *) echo "  [!] No se puede instalar $pkg: gestor de paquetes desconocido"; return 1 ;;
+    esac
+}
+
+# Asegurar python3-venv (necesario en Debian/Ubuntu desde Bookworm)
+if [ "$OS_ID" = "debian" ] || [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "raspbian" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        if ! python3 -c "import venv" 2>/dev/null; then
+            echo "  [~] Instalando python3-venv..."
+            sudo apt-get update -qq 2>/dev/null
+            sudo apt-get install -y python3-venv python3-pip 2>&1 | tail -3
+        fi
+    fi
+fi
+echo ""
 
 # Auto-detectar si necesita clonar o actualizar el repo
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
