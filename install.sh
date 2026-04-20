@@ -53,6 +53,68 @@ EOFCMD
     echo "  [OK] Comando 'Actualizar' instalado"
 fi
 
+# ─────────────────────────────────────────────────────────────────────
+# PRIMER PASE: si no estamos ya en la versión "--updated", solo
+# descargamos el repo y nos re-ejecutamos. Todos los chequeos del
+# sistema y la pausa de revisión los hace el segundo pase, así no se
+# muestran dos veces.
+# ─────────────────────────────────────────────────────────────────────
+if [ "$1" != "--updated" ]; then
+    USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
+    INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
+
+    download_repo_fallback() {
+        local dest_dir="$1"
+        local tmp_tgz="/tmp/rpi_azure_bridge_${$}.tgz"
+        rm -rf "$dest_dir" 2>/dev/null || true
+        mkdir -p "$dest_dir"
+        if curl -fsSL "https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main" -o "$tmp_tgz" 2>/dev/null \
+           || wget -qO "$tmp_tgz" "https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main" 2>/dev/null; then
+            if tar -xzf "$tmp_tgz" -C "$dest_dir" --strip-components=1 2>/dev/null; then
+                rm -f "$tmp_tgz" 2>/dev/null || true
+                return 0
+            fi
+        fi
+        rm -f "$tmp_tgz" 2>/dev/null || true
+        return 1
+    }
+
+    echo ""
+    echo "  [~] Obteniendo última versión..."
+
+    rm -rf "$INSTALL_DIR" 2>/dev/null || true
+    if ! git clone https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null; then
+        if ! download_repo_fallback "$INSTALL_DIR"; then
+            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
+            exit 1
+        fi
+    fi
+
+    # Copiar scripts auxiliares al $HOME del usuario
+    [ -f "$INSTALL_DIR/enviar_email.py" ]    && cp "$INSTALL_DIR/enviar_email.py"    "$USER_HOME/enviar_email.py"    && echo "  [OK] enviar_email.py copiado"
+    [ -f "$INSTALL_DIR/leer_registros.py" ]  && cp "$INSTALL_DIR/leer_registros.py"  "$USER_HOME/leer_registros.py"  && echo "  [OK] leer_registros.py copiado"
+
+    # Script de alerta de reinicio
+    if [ -f "$INSTALL_DIR/alerta_reinicio.sh" ]; then
+        if [ -f /usr/local/bin/alerta_reinicio.sh ] && crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
+            cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
+            chmod +x /usr/local/bin/alerta_reinicio.sh
+            echo "  [OK] Script alerta_reinicio.sh actualizado (ya estaba instalado)"
+        else
+            cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
+            chmod +x /usr/local/bin/alerta_reinicio.sh
+            CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
+            (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
+            echo "  [OK] Script alerta_reinicio.sh instalado"
+        fi
+    fi
+
+    # Re-ejecutar con la versión recién descargada
+    exec bash "$INSTALL_DIR/install.sh" --updated
+fi
+
+# A partir de aquí estamos en el SEGUNDO PASE (--updated): banner+pausa+menú
+
 # Detectar sistema operativo, hardware y arquitectura
 OS_ID=""
 OS_NAME=""
@@ -225,73 +287,9 @@ echo "  Revisa la información del sistema arriba ↑"
 read -r -p "  Pulsa ENTER para continuar (o Ctrl+C para salir)... " _ </dev/tty 2>/dev/null || sleep 5
 echo ""
 
-# Auto-detectar si necesita clonar o actualizar el repo
+# Bootstrap (descarga + re-exec) ya hecho arriba en el primer pase
 USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
 INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
-
-download_repo_fallback() {
-    local dest_dir="$1"
-    local tmp_tgz="/tmp/rpi_azure_bridge_${$}.tgz"
-    rm -rf "$dest_dir" 2>/dev/null || true
-    mkdir -p "$dest_dir"
-
-    if curl -fsSL "https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main" -o "$tmp_tgz" 2>/dev/null || wget -qO "$tmp_tgz" "https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main" 2>/dev/null; then
-        if tar -xzf "$tmp_tgz" -C "$dest_dir" --strip-components=1 2>/dev/null; then
-            rm -f "$tmp_tgz" 2>/dev/null || true
-            return 0
-        fi
-    fi
-
-    rm -f "$tmp_tgz" 2>/dev/null || true
-    return 1
-}
-
-# Si no se ha actualizado aún (argumento --updated), actualizar y re-ejecutar desde el repo
-if [ "$1" != "--updated" ]; then
-    echo ""
-    echo "  [~] Obteniendo última versión..."
-    
-    # Borrar y clonar siempre
-    rm -rf "$INSTALL_DIR" 2>/dev/null || true
-    if ! git clone https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null; then
-        if ! download_repo_fallback "$INSTALL_DIR"; then
-            echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
-            exit 1
-        fi
-    fi
-    
-    # Copiar scripts de email y lectura de registros
-    if [ -f "$INSTALL_DIR/enviar_email.py" ]; then
-        cp "$INSTALL_DIR/enviar_email.py" "$USER_HOME/enviar_email.py"
-        echo "  [OK] enviar_email.py copiado"
-    fi
-    if [ -f "$INSTALL_DIR/leer_registros.py" ]; then
-        cp "$INSTALL_DIR/leer_registros.py" "$USER_HOME/leer_registros.py"
-        echo "  [OK] leer_registros.py copiado"
-    fi
-    
-    # Copiar y configurar script de alerta de reinicio
-    if [ -f "$INSTALL_DIR/alerta_reinicio.sh" ]; then
-        if [ -f /usr/local/bin/alerta_reinicio.sh ] && crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
-            # Ya instalado, solo actualizar el script
-            cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
-            chmod +x /usr/local/bin/alerta_reinicio.sh
-            echo "  [OK] Script alerta_reinicio.sh actualizado (ya estaba instalado)"
-        else
-            # Primera instalación
-            cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
-            chmod +x /usr/local/bin/alerta_reinicio.sh
-            
-            # Añadir a crontab @reboot si no existe
-            CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
-            (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
-            echo "  [OK] Script alerta_reinicio.sh instalado"
-        fi
-    fi
-    
-    # Ejecutar el script del repo con marca de actualizado
-    exec bash "$INSTALL_DIR/install.sh" --updated
-fi
 
 set -e
 cd "$INSTALL_DIR"
