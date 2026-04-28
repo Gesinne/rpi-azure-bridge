@@ -545,10 +545,31 @@ if changed:
     fi
     
     echo ""
+
+    # PATCH FLASH: parchea TensionInicialL{1,2,3} y EstadoInicialL{1,2,3}
+    # para evitar escrituras FLASH redundantes (causa de desparametrizacion en MC56F84789).
+    # El parche es idempotente: si ya esta aplicado, no hace nada.
+    PATCHER_PATH=""
+    for candidato in /opt/rpi-azure-bridge/patch_flow.py \
+                     /home/gesinne/rpi-azure-bridge/patch_flow.py \
+                     /home/pi/rpi-azure-bridge/patch_flow.py \
+                     "$(dirname "$0")/patch_flow.py"; do
+        if [ -f "$candidato" ]; then
+            PATCHER_PATH="$candidato"
+            break
+        fi
+    done
+    if [ -n "$PATCHER_PATH" ]; then
+        echo "  [~] Aplicando parche anti-desparametrizacion FLASH..."
+        python3 "$PATCHER_PATH" "$NODERED_DIR/flows.json"
+    else
+        echo "  [!] patch_flow.py no encontrado - flow sin parchear"
+    fi
+
     echo "  [~] Parando Node-RED..."
     sudo systemctl stop nodered
     sleep 1
-    
+
     # Añadir credenciales de chronos
     CHRONOS_CREDS=$(python3 -c "
 import json
