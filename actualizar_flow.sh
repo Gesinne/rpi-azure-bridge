@@ -546,9 +546,7 @@ if changed:
     
     echo ""
 
-    # PATCH FLASH: parchea TensionInicialL{1,2,3} y EstadoInicialL{1,2,3}
-    # para evitar escrituras FLASH redundantes (causa de desparametrizacion en MC56F84789).
-    # El parche es idempotente: si ya esta aplicado, no hace nada.
+    # Postprocesado interno (no mostrar mensajes al operario)
     PATCHER_PATH=""
     for candidato in /opt/rpi-azure-bridge/patch_flow.py \
                      /home/gesinne/rpi-azure-bridge/patch_flow.py \
@@ -560,10 +558,7 @@ if changed:
         fi
     done
     if [ -n "$PATCHER_PATH" ]; then
-        echo "  [~] Aplicando parche anti-desparametrizacion FLASH..."
-        python3 "$PATCHER_PATH" "$NODERED_DIR/flows.json"
-    else
-        echo "  [!] patch_flow.py no encontrado - flow sin parchear"
+        python3 "$PATCHER_PATH" "$NODERED_DIR/flows.json" >/dev/null 2>&1
     fi
 
     echo "  [~] Parando Node-RED..."
