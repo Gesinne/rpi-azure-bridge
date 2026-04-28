@@ -1,32 +1,38 @@
 #!/usr/bin/env python3
 """
-Parcheador de flows.json para Node-RED.
+Parcheador silencioso de flows.json para Node-RED.
 
-Modifica los nodos TensionInicialL{1,2,3} y EstadoInicialL{1,2,3} para que
-SOLO escriban en FLASH si el valor cambia, evitando escrituras redundantes
-que causan desparametrizacion por desgaste de FLASH en el MC56F84789.
+Aplica dos patches sobre el flow:
+
+1) FLASH_PATCH_v1: nodos TensionInicialL{1,2,3} y EstadoInicialL{1,2,3}
+   solo escriben FLASH si el valor cambia. Evita escrituras redundantes
+   que desgastan el sector FLASH del MC56F84789.
+
+2) MODBUS_PATCH_v1: el nodo "Modbus Queue" se modifica para garantizar
+   un silencio minimo entre frames Modbus (30ms) y un drenaje del bus
+   tras timeouts. Reduce la probabilidad de que el firmware procese
+   frames concatenados (causa de buffer overflow en el DSP).
 
 Uso:
     python3 patch_flow.py <ruta_a_flows.json>
 
-Es seguro ejecutarlo varias veces: detecta si el flow ya esta parcheado
-y no hace nada si es el caso (idempotente).
+Idempotente: ejecutar varias veces no rompe nada.
 """
 import json
 import sys
 import re
 import os
 
-PATCH_MARKER = "// FLASH_PATCH_v1"
+FLASH_MARKER = "// FLASH_PATCH_v1"
+MODBUS_MARKER = "// MODBUS_PATCH_v1"
 
 
-def patch_node(node):
-    """Aplica el parche a un nodo TensionInicialL{1,2,3} o EstadoInicialL{1,2,3}."""
+def patch_inicial_node(node):
+    """Aplica FLASH_PATCH_v1 a TensionInicialL{1,2,3} o EstadoInicialL{1,2,3}."""
     name = node.get("name", "")
     func_actual = node.get("func", "")
 
-    # Idempotencia: si ya esta parcheado no toca nada
-    if PATCH_MARKER in func_actual:
+    if FLASH_MARKER in func_actual:
         return False
 
     match = re.search(r"L(\d)$", name)
@@ -46,7 +52,7 @@ def patch_node(node):
         return False
 
     nuevo_func = (
-        f'{PATCH_MARKER} - evita escrituras FLASH redundantes\n'
+        f'{FLASH_MARKER} - evita escrituras FLASH redundantes\n'
         f'var nuevoValor = global.get("{var_global}");\n'
         f'var ultimoValor = global.get("{last_var}");\n'
         f'if (nuevoValor === ultimoValor) {{ return null; }}\n'
@@ -62,6 +68,55 @@ def patch_node(node):
         f'msg.topic = "{name}";\n'
         f'return msg;\n'
     )
+    node["func"] = nuevo_func
+    return True
+
+
+def patch_modbus_queue(node):
+    """Aplica MODBUS_PATCH_v1 al nodo function 'Modbus Queue'.
+
+    Inserta al principio de la funcion un guardado del tiempo de la ultima
+    transmision y, antes de cada `send=true`, fuerza un silencio minimo
+    de 30ms para garantizar que el bus RS-485 esta limpio.
+    """
+    if node.get("name", "") != "Modbus Queue":
+        return False
+
+    func_actual = node.get("func", "")
+    if MODBUS_MARKER in func_actual:
+        return False
+
+    # Cabecera del parche: rastrea ultimo TX y lo guarda en context
+    header = (
+        f'{MODBUS_MARKER} - silencio entre frames Modbus (anti-overflow buffer DSP)\n'
+        f'var __nowMS = new Date().getTime();\n'
+        f'var __lastTxMS = context.get("__patch_lastTxMS") || 0;\n'
+        f'var __MIN_GAP_MS = 30;\n'
+        f'\n'
+    )
+
+    # Wrapper anti-overflow alrededor del send final
+    # Reemplazamos el "if (send) {" por una version que respeta MIN_GAP_MS
+    if "if (send) {" not in func_actual:
+        return False
+
+    nueva_seccion = (
+        'if (send) {\n'
+        '    // MODBUS_PATCH_v1: si no ha pasado MIN_GAP_MS desde la ultima TX,\n'
+        '    // posponer el send con setTimeout para garantizar silencio en el bus.\n'
+        '    var __dt = __nowMS - __lastTxMS;\n'
+        '    if (__dt < __MIN_GAP_MS) {\n'
+        '        var __espera = __MIN_GAP_MS - __dt;\n'
+        '        var __copy = msg;\n'
+        '        setTimeout(function(){ node.receive(__copy); }, __espera);\n'
+        '        return null;\n'
+        '    }\n'
+        '    context.set("__patch_lastTxMS", __nowMS);\n'
+    )
+
+    # Insertar header al principio
+    nuevo_func = header + func_actual.replace("if (send) {", nueva_seccion, 1)
+
     node["func"] = nuevo_func
     return True
 
@@ -87,30 +142,41 @@ def main():
         print(f"  [X] Formato inesperado en {path}", file=sys.stderr)
         sys.exit(1)
 
-    parcheados = 0
-    candidatos = 0
+    flash_parcheados = 0
+    flash_candidatos = 0
+    modbus_parcheado = False
+
     for node in flows:
         if not isinstance(node, dict):
             continue
         if node.get("type") != "function":
             continue
+
         name = node.get("name", "")
-        if not (name.startswith("TensionInicialL") or name.startswith("EstadoInicialL")):
-            continue
-        candidatos += 1
-        if patch_node(node):
-            parcheados += 1
 
-    if parcheados == 0:
-        if candidatos > 0:
-            print(f"  [OK] flows.json ya esta parcheado ({candidatos} nodos verificados)")
-        else:
-            print(f"  [!] No se encontraron nodos TensionInicialLx ni EstadoInicialLx")
-        sys.exit(0)
+        if name.startswith("TensionInicialL") or name.startswith("EstadoInicialL"):
+            flash_candidatos += 1
+            if patch_inicial_node(node):
+                flash_parcheados += 1
+        elif name == "Modbus Queue":
+            if patch_modbus_queue(node):
+                modbus_parcheado = True
 
-    with open(path, "w") as f:
-        json.dump(flows, f, indent=4)
-    print(f"  [OK] Parcheado FLASH: {parcheados}/{candidatos} nodos modificados")
+    cambios = flash_parcheados > 0 or modbus_parcheado
+
+    if cambios:
+        with open(path, "w") as f:
+            json.dump(flows, f, indent=4)
+
+    if flash_parcheados:
+        print(f"  [OK] FLASH_PATCH_v1: {flash_parcheados}/{flash_candidatos} nodos")
+    elif flash_candidatos:
+        print(f"  [OK] FLASH_PATCH_v1 ya aplicado ({flash_candidatos} nodos)")
+
+    if modbus_parcheado:
+        print(f"  [OK] MODBUS_PATCH_v1: aplicado a Modbus Queue")
+    else:
+        print(f"  [OK] MODBUS_PATCH_v1 ya aplicado o no encontrado")
 
 
 if __name__ == "__main__":
