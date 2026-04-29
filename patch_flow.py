@@ -58,7 +58,10 @@ def patch_inicial_node(node):
 
 
 def patch_modbus_client(node):
-    """Sube commandDelay del modbus-client al menos a MIN_CMD_DELAY ms."""
+    """Forzar commandDelay = MIN_CMD_DELAY ms en modbus-client.
+
+    Si esta a otro valor (mayor o menor), lo deja en MIN_CMD_DELAY.
+    """
     if node.get("type", "") != "modbus-client":
         return False
 
@@ -66,10 +69,10 @@ def patch_modbus_client(node):
     try:
         actual_ms = int(actual)
     except (ValueError, TypeError):
-        actual_ms = 0
+        actual_ms = -1
 
-    if actual_ms >= MIN_CMD_DELAY:
-        return False  # Ya tiene un delay >= MIN_CMD_DELAY
+    if actual_ms == MIN_CMD_DELAY:
+        return False  # Ya esta exactamente en el valor deseado
 
     node["commandDelay"] = MIN_CMD_DELAY
     return True
