@@ -18,7 +18,7 @@ import sys
 import re
 import os
 
-MIN_CMD_DELAY = 100  # milliseconds
+MIN_CMD_DELAY = 50  # milliseconds (suficiente para silencio Modbus RTU)
 
 
 def patch_inicial_node(node):
