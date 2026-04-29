@@ -91,28 +91,54 @@ def patch_modbus_queue(node):
 
     # --- Variante refactorizada (usa sendNextCommand) ---
     if "function sendNextCommand()" in func_actual:
-        # Insertamos al principio del cuerpo de sendNextCommand un check de silencio.
-        # Si la ultima TX fue hace menos de 30ms, programamos reinyeccion via setTimeout
-        # con node.receive({topic:"next"}) y salimos sin tocar outputs.
-        marker_func = "function sendNextCommand() {"
-        if marker_func not in func_actual:
-            return False
-        cabeza = (
-            'function sendNextCommand() {\n'
-            '    // MODBUS_PATCH_v1: silencio entre frames Modbus (anti-overflow buffer DSP)\n'
-            '    var __nowMS = Date.now();\n'
-            '    var __lastTxMS = context.get("__patch_lastTxMS") || 0;\n'
-            '    var __MIN_GAP_MS = 30;\n'
-            '    if (queue.length > 0 && (__nowMS - __lastTxMS) < __MIN_GAP_MS) {\n'
-            '        var __espera = __MIN_GAP_MS - (__nowMS - __lastTxMS);\n'
-            '        setTimeout(function(){ node.receive({topic:"next", payload:{}}); }, __espera);\n'
-            '        return;\n'
-            '    }\n'
-            '    context.set("__patch_lastTxMS", __nowMS);\n'
+        # Reemplazamos la funcion sendNextCommand entera por una version con
+        # silencio de 30ms. Si __dt < 30ms, programa el envio diferido via
+        # setTimeout(node.send,...) sin necesidad de node.receive() (que no
+        # esta disponible en algunas versiones de Node-RED).
+        nueva_funcion = '''function sendNextCommand() {
+    if (queue.length === 0) return;
+    var __nowMS = Date.now();
+    var __lastTxMS = context.get("__patch_lastTxMS") || 0;
+    var __MIN_GAP_MS = 30;
+    var __dt = __nowMS - __lastTxMS;
+
+    let newmsg = queue.shift();
+    contextData.sent = true;
+    contextData.lastmsg = newmsg;
+    contextData.queue = queue;
+    let isRead = CONFIG.readFCs.includes(newmsg.payload.fc);
+    let outputIndex = isRead && OUTPUT_MAP[newmsg.payload.unitid] !== undefined ? OUTPUT_MAP[newmsg.payload.unitid] : 1;
+
+    if (__dt < __MIN_GAP_MS) {
+        // MODBUS_PATCH_v1: posponer el envio para garantizar silencio en el bus
+        var __espera = __MIN_GAP_MS - __dt;
+        var __outputsDelay = [null, null, null, null, null];
+        __outputsDelay[outputIndex] = newmsg;
+        setTimeout(function(){
+            node.send(__outputsDelay);
+            context.set("__patch_lastTxMS", Date.now());
+        }, __espera);
+        updateStatus("yellow", "ring", "Delayed " + __espera + "ms");
+        return;
+    }
+
+    context.set("__patch_lastTxMS", __nowMS);
+    outputs[outputIndex] = newmsg;
+    updateStatus("green", "dot", isRead ? (OUTPUT_MAP[newmsg.payload.unitid] ? `Read L${newmsg.payload.unitid} sent!` : `Read sent!`) : "Write sent!");
+}'''
+
+        # Encontrar el bloque de la funcion original y reemplazarlo
+        # Buscamos desde "function sendNextCommand() {" hasta el cierre "}"
+        match = re.search(
+            r'function sendNextCommand\(\) \{[^}]*(?:\{[^}]*\}[^}]*)*\}',
+            func_actual,
+            re.DOTALL
         )
+        if not match:
+            return False
         nuevo_func = (
             f'{MODBUS_MARKER} - silencio 30ms entre frames Modbus (variante refactorizada)\n'
-            + func_actual.replace(marker_func, cabeza, 1)
+            + func_actual[:match.start()] + nueva_funcion + func_actual[match.end():]
         )
         node["func"] = nuevo_func
         return True
@@ -126,15 +152,12 @@ def patch_modbus_queue(node):
             f'var __MIN_GAP_MS = 30;\n'
             f'\n'
         )
+        # Sin setTimeout aqui (variante clasica): si bus no esta libre,
+        # simplemente saltamos esta iteracion. La cola se procesara en la
+        # siguiente "default" o "next" event.
         nueva_seccion = (
             'if (send) {\n'
-            '    var __dt = __nowMS - __lastTxMS;\n'
-            '    if (__dt < __MIN_GAP_MS) {\n'
-            '        var __espera = __MIN_GAP_MS - __dt;\n'
-            '        var __copy = msg;\n'
-            '        setTimeout(function(){ node.receive(__copy); }, __espera);\n'
-            '        return null;\n'
-            '    }\n'
+            '    if (__nowMS - __lastTxMS < __MIN_GAP_MS) { return null; }\n'
             '    context.set("__patch_lastTxMS", __nowMS);\n'
         )
         nuevo_func = header + func_actual.replace("if (send) {", nueva_seccion, 1)
