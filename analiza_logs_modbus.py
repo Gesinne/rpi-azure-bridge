@@ -259,6 +259,67 @@ def main():
         print("  (sin rachas largas)")
 
     print()
+    print("=" * 78)
+    print("  DIAGNOSTICO AUTOMATICO")
+    print("=" * 78)
+
+    if not timeouts:
+        print("  Sin timeouts -> bus sano. No hay nada que arreglar.")
+    else:
+        peor = max(timeouts.items(), key=lambda x: x[1])
+        mejor = min(timeouts.items(), key=lambda x: x[1])
+        peor_h = peor[1] / duracion if duracion > 0 else 0
+        mejor_h = max(mejor[1] / duracion if duracion > 0 else 0, 0.1)
+        ratio = peor_h / mejor_h
+        total_h = sum(timeouts.values()) / duracion if duracion > 0 else 0
+
+        print(f"  Tasa total:    {total_h:.1f} timeouts/h")
+        print(f"  Asimetria:     {ratio:.0f}x  (peor={label(peor[0], serials)}, mejor={label(mejor[0], serials)})")
+        print()
+
+        if ratio > 10 and total_h > 30:
+            print("  PATRON: ASIMETRICO ALTO")
+            print(f"  Causa probable: bus daisy-chain con extremo abierto (sin R 120Ohm).")
+            print(f"  La placa peor ({label(peor[0], serials)}) esta al EXTREMO del bus.")
+            print(f"  La placa mejor ({label(mejor[0], serials)}) esta cerca del HAT.")
+            print()
+            print(f"  ACCION:")
+            print(f"    Anadir R 120Ohm 1/4W entre A y B en la borna RS-485")
+            print(f"    de la PCB del slave {peor[0]}.")
+            print()
+            print(f"  PREDICCION TRAS FIX:")
+            print(f"    {label(peor[0], serials)} pasa de {peor_h:.0f}/h a <5/h.")
+            print(f"    {label(mejor[0], serials)} sigue como esta.")
+        elif ratio < 3 and total_h > 30:
+            print("  PATRON: SIMETRICO (todas fallan por igual)")
+            print("  Causa probable: bus mal terminado en LOS DOS extremos,")
+            print("  o sobreterminado (mas de 2 R), o EMI/masa comun a las 3.")
+            print()
+            print("  ACCION:")
+            print("    1) Medir A-B con polimetro y todo apagado:")
+            print("       - 40 Ohm -> sobreterminado, quitar 1 R de PCB cerca del HAT")
+            print("       - 120 Ohm -> falta R en final del bus, anadir externa")
+            print("       - >1 kOhm -> sin R en ningun extremo, anadir 2 R o activar HAT")
+        elif total_h > 30:
+            print(f"  PATRON: ASIMETRIA MODERADA ({ratio:.1f}x)")
+            print("  Causa probable: bus mal terminado mas algun otro factor")
+            print("  (EMI, contencion del flow, o terminacion en sitio incorrecto).")
+            print()
+            print("  ACCION: medir A-B con polimetro para confirmar terminacion total.")
+        else:
+            print(f"  PATRON: tasa baja ({total_h:.1f}/h), bus relativamente sano.")
+            print("  Sin urgencia. Repetir captura en 1 semana para ver tendencia.")
+
+        print()
+        print("  NOTA: identificar 'la placa con R interna' requiere polimetro:")
+        print("    - Apagar todo")
+        print("    - Soltar el cable de la borna RS-485 de cada PCB")
+        print("    - Medir A-B en la borna SIN cable:")
+        print("      120 Ohm = la PCB tiene R interna")
+        print("      >10 kOhm = la PCB no tiene R")
+
+    print("=" * 78)
+    print()
 
 
 if __name__ == "__main__":
