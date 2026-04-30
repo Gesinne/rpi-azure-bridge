@@ -48,6 +48,9 @@ def lee_registro(ser, slave: int, addr: int, intentos: int = 3):
 
 REGS = [
     (41, "Numero de serie",  "S/N de la PCB"),
+    (48, "Modbus ID",        "ID configurado en la PCB (debe coincidir con slave)"),
+    (42, "V nominal (dV)",   "tension nominal de la PCB"),
+    (46, "Topologia",        "tipo de chopper (0=elev, 1=red, 2=bidir)"),
     (0,  "Estado",           "0=bypass 1=off 2=regulando"),
     (2,  "Alarmas",          "bitfield"),
     (3,  "V salida (dV)",    "decivoltios"),
@@ -124,21 +127,37 @@ def main():
 
     print()
     print("  Resumen rapido:")
+    print(f"    {'Slave':<6} {'S/N':<8} {'ID':<5} {'Estado':<8} {'Alarmas':<14} {'DeadT':<10} {'CC':<10} ST")
     for sl in slaves:
+        sn = valores.get((sl, 41))
+        mid = valores.get((sl, 48))
         cc = valores.get((sl, 54))
         st = valores.get((sl, 59))
         dt = valores.get((sl, 47))
         est = valores.get((sl, 0))
         alm = valores.get((sl, 2))
+        sn_s = str(sn) if sn is not None else "??"
+        mid_s = str(mid) if mid is not None else "??"
         cc_s = f"CC={cc}" if cc is not None else "CC=??"
         st_s = f"ST={st}" if st is not None else "ST=??"
         dt_s = f"DT={dt}" if dt is not None else "DT=??"
         est_map = {0: "BYPASS", 1: "OFF", 2: "REGULA"}
         est_s = est_map.get(est, f"est={est}")
         alm_s = "OK" if alm == 0 else (f"ALM=0x{alm:04X}" if alm is not None else "??")
-        print(f"    L{sl}: {est_s:<8} {alm_s:<14} {dt_s:<10} {cc_s:<10} {st_s}")
+        # Marca discrepancia entre slave y ID configurado
+        id_warn = " !" if (mid is not None and mid != sl) else ""
+        print(f"    L{sl}    {sn_s:<8} {mid_s+id_warn:<5} {est_s:<8} {alm_s:<14} {dt_s:<10} {cc_s:<10} {st_s}")
 
     print()
+    # Aviso si algun ID Modbus no coincide con el slave
+    discrepancias = [(sl, valores.get((sl, 48))) for sl in slaves
+                     if valores.get((sl, 48)) is not None
+                        and valores.get((sl, 48)) != sl]
+    if discrepancias:
+        print("  !! AVISO: discrepancia entre slave-ID consultado y ID configurado en PCB:")
+        for sl, mid in discrepancias:
+            print(f"     Slave {sl} responde pero su ID configurado es {mid}")
+        print()
 
 
 if __name__ == "__main__":
