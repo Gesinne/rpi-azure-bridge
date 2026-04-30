@@ -47,6 +47,7 @@ def lee_registro(ser, slave: int, addr: int, intentos: int = 3):
 
 
 REGS = [
+    (41, "Numero de serie",  "S/N de la PCB"),
     (0,  "Estado",           "0=bypass 1=off 2=regulando"),
     (2,  "Alarmas",          "bitfield"),
     (3,  "V salida (dV)",    "decivoltios"),
