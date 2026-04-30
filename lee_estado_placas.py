@@ -48,7 +48,7 @@ def lee_registro(ser, slave: int, addr: int, intentos: int = 3):
 
 REGS = [
     (41, "Numero de serie",  "S/N de la PCB"),
-    (48, "Modbus ID",        "ID configurado en la PCB (debe coincidir con slave)"),
+    (48, "Modbus ID",        "ID configurado en la PCB"),
     (42, "V nominal (dV)",   "tension nominal de la PCB"),
     (46, "Topologia",        "tipo de chopper (0=elev, 1=red, 2=bidir)"),
     (0,  "Estado",           "0=bypass 1=off 2=regulando"),
@@ -58,8 +58,18 @@ REGS = [
     (17, "Temp interna",     "°C"),
     (20, "T. rest. alarma",  "s"),
     (47, "Dead-time",        "valor PWM (~2047 normal)"),
+    (49, "InE",              "Relacion trafo I salida equipo"),
+    (50, "InC",              "Relacion trafo I salida chopper"),
+    (51, "Imax RMS",         "Umbral I maxima RMS"),
+    (52, "Imax pico",        "Umbral I maxima pico/derivada"),
+    (53, "T apagado CC",     "tiempo apagado tras CC"),
     (54, "Contador CC",      "n maniobras por sobrecorriente"),
     (59, "Contador ST",      "n maniobras por sobretemperatura"),
+    (63, "Ang cargas ALTAS", "angulo cambio tension cargas altas"),
+    (64, "Ang cargas BAJAS", "angulo cambio tension cargas bajas"),
+    (65, "% carga BAJA",     "% I maxima para carga baja"),
+    (66, "Sens transit Vin", "% sensibilidad a transitorios Vin"),
+    (67, "Sens deriv I",     "sensibilidad deteccion derivada"),
 ]
 
 
