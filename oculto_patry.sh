@@ -19,9 +19,10 @@ echo "  3) Revisar el JSON"
 echo "  4) Actualizar software"
 echo "  5) Reparar placas desparametrizadas"
 echo "  6) Activar persistencia de variables (anti-desparametrización)"
+echo "  7) Quitar parche dedup TensionInicial/EstadoInicial del flow vivo"
 echo "  0) Salir"
 echo ""
-read -p "  Opción [0-6]: " PATRY_OPT
+read -p "  Opción [0-7]: " PATRY_OPT
 
 case $PATRY_OPT in
     1)
@@ -1979,6 +1980,81 @@ for val in sorted(valores.keys()):
             else
                 echo "  [!] No se encontró configuración de memoria para cambiar"
                 echo "      El archivo puede tener un formato diferente"
+            fi
+        fi
+        ;;
+    7)
+        # ─── Gestionar parche dedup TensionInicial/EstadoInicial ───
+        echo ""
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Parche deduplicación TensionInicial / EstadoInicial"
+        echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+
+        # Localizar flow vivo y patcher
+        FLOW_LIVE=""
+        for f in /home/*/.node-red/flows.json; do
+            [ -f "$f" ] && FLOW_LIVE="$f" && break
+        done
+        if [ -z "$FLOW_LIVE" ]; then
+            echo "  [X] No se encontró flows.json en ninguna home."
+            echo ""
+            read -p "  Enter para continuar..."
+            exit 0
+        fi
+
+        PATCHER_LOC=""
+        for c in /opt/rpi-azure-bridge/patch_flow.py \
+                 /home/gesinne/rpi-azure-bridge/patch_flow.py \
+                 /home/pi/rpi-azure-bridge/patch_flow.py \
+                 "$(dirname "$0")/patch_flow.py"; do
+            [ -f "$c" ] && PATCHER_LOC="$c" && break
+        done
+        if [ -z "$PATCHER_LOC" ]; then
+            echo "  [X] patch_flow.py no encontrado."
+            echo ""
+            read -p "  Enter para continuar..."
+            exit 0
+        fi
+
+        # Detectar si está aplicado
+        if python3 "$PATCHER_LOC" "$FLOW_LIVE" --check 2>/dev/null; then
+            echo "  Estado actual: PARCHE APLICADO"
+            echo ""
+            echo "  Si lo quitas, los nodos TensionInicial/EstadoInicial volverán al"
+            echo "  comportamiento original (escriben en cada ciclo, no comparan con"
+            echo "  el valor anterior)."
+            echo ""
+            read -p "  ¿Quitar el parche? (s/N): " RESP
+            if [ "$RESP" = "s" ] || [ "$RESP" = "S" ]; then
+                echo ""
+                echo "  [~] Parando Node-RED..."
+                sudo systemctl stop nodered
+                sleep 1
+                python3 "$PATCHER_LOC" "$FLOW_LIVE" --remove
+                sudo systemctl start nodered
+                echo "  [OK] Parche quitado. Node-RED reiniciado."
+            else
+                echo "  [i] Operación cancelada"
+            fi
+        else
+            echo "  Estado actual: PARCHE NO APLICADO"
+            echo ""
+            echo "  Aplicar el parche hace que los nodos TensionInicial/EstadoInicial"
+            echo "  solo escriban a las placas cuando el valor cambia (deduplica)."
+            echo "  Esto reduce escrituras a la FLASH y silencia el bus Modbus."
+            echo ""
+            read -p "  ¿Aplicar el parche? (s/N): " RESP
+            if [ "$RESP" = "s" ] || [ "$RESP" = "S" ]; then
+                echo ""
+                echo "  [~] Parando Node-RED..."
+                sudo systemctl stop nodered
+                sleep 1
+                python3 "$PATCHER_LOC" "$FLOW_LIVE" --apply
+                sudo systemctl start nodered
+                echo "  [OK] Parche aplicado. Node-RED reiniciado."
+            else
+                echo "  [i] Operación cancelada"
             fi
         fi
         ;;

@@ -555,7 +555,9 @@ if changed:
     
     echo ""
 
-    # Postprocesado interno (no mostrar mensajes al operario)
+    # Parche: aplicar SOLO commandDelay (estabilidad Modbus, no afecta a lógica
+    # de TensionInicial/EstadoInicial) y QUITAR la deduplicación si quedaba.
+    # El compañero pidió control total: la dedup NUNCA se aplica al actualizar.
     PATCHER_PATH=""
     for candidato in /opt/rpi-azure-bridge/patch_flow.py \
                      /home/gesinne/rpi-azure-bridge/patch_flow.py \
@@ -567,7 +569,10 @@ if changed:
         fi
     done
     if [ -n "$PATCHER_PATH" ]; then
-        python3 "$PATCHER_PATH" "$NODERED_DIR/flows.json" >/dev/null 2>&1
+        # Aplicamos commandDelay y a continuación revertimos la dedup,
+        # quedando: commandDelay=50ms + nodos TensionInicial/EstadoInicial limpios.
+        python3 "$PATCHER_PATH" "$NODERED_DIR/flows.json" --apply  >/dev/null 2>&1
+        python3 "$PATCHER_PATH" "$NODERED_DIR/flows.json" --remove >/dev/null 2>&1
     fi
 
     echo "  [~] Parando Node-RED..."
