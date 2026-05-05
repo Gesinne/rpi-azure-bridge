@@ -575,7 +575,7 @@ if changed:
         REMOVED_OUT=${REMOVED_OUT:-0}
         echo ""
         if [ "$REMOVED_OUT" -gt 0 ]; then
-            echo "  [OK] Parche dedup TensionInicial/EstadoInicial QUITADO ($REMOVED_OUT nodos limpiados)"
+            echo "  [OK] Parche dedup TensionInicial/EstadoInicial QUITADO"
         else
             echo "  [i] Parche dedup ya no está"
         fi
