@@ -266,20 +266,29 @@ if [ $i -eq 1 ]; then
 fi
 
 echo ""
-read -p "  Selecciona versión [1-$((i-1))]: " VERSION_CHOICE
-
-VERSION_NAME="${VERSION_ARRAY[$VERSION_CHOICE]}"
-if [ -n "$VERSION_NAME" ] && [ -f "$TEMP_DIR/$VERSION_NAME" ]; then
-    FLOW_FILE="$TEMP_DIR/$VERSION_NAME"
-else
-    FLOW_FILE=""
-fi
-
-if [ -z "$FLOW_FILE" ]; then
-    echo "  [X] Opción no válida"
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
+while true; do
+    read -p "  Selecciona versión [1-$((i-1))]: " VERSION_CHOICE
+    if [ -z "$VERSION_CHOICE" ]; then
+        echo "  [X] Debes seleccionar una versión. Introduce un número entre 1 y $((i-1))."
+        continue
+    fi
+    if ! [[ "$VERSION_CHOICE" =~ ^[0-9]+$ ]]; then
+        echo "  [X] Opción no válida. Introduce un número entre 1 y $((i-1))."
+        continue
+    fi
+    if [ "$VERSION_CHOICE" -lt 1 ] || [ "$VERSION_CHOICE" -gt $((i-1)) ]; then
+        echo "  [X] Fuera de rango. Introduce un número entre 1 y $((i-1))."
+        continue
+    fi
+    VERSION_NAME="${VERSION_ARRAY[$VERSION_CHOICE]}"
+    if [ -n "$VERSION_NAME" ] && [ -f "$TEMP_DIR/$VERSION_NAME" ]; then
+        FLOW_FILE="$TEMP_DIR/$VERSION_NAME"
+        break
+    else
+        echo "  [X] No se pudo cargar la versión seleccionada."
+        continue
+    fi
+done
 
 # OPTIMIZACIÓN: Detectar si es la misma versión
 SELECTED_DATE=$(echo "$VERSION_NAME" | grep -oE '^[0-9]{8}' || echo "00000000")
