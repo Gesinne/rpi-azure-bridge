@@ -32,7 +32,7 @@ def patch_inicial_node(node):
     fase = match.group(1)
 
     if name.startswith("TensionInicialL"):
-        var_global = "consigna"
+        var_global = "inicial"   # Reg 56 escribe el valor del global "inicial" (NO consigna)
         last_var = f"_lastTIL{fase}"
         addr = 56
     elif name.startswith("EstadoInicialL"):
