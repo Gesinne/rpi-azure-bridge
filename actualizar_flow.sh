@@ -569,16 +569,15 @@ if changed:
         fi
     done
     if [ -n "$PATCHER_PATH" ]; then
-        # Aplicamos commandDelay (estabilidad Modbus). No afecta a la lógica.
-        python3 "$PATCHER_PATH" "$NODERED_DIR/flows.json" --apply  >/dev/null 2>&1
-        # Quitamos dedup TensionInicial/EstadoInicial (compañero quiere control).
+        # Asegurar que el flow NO tiene la dedup TensionInicial/EstadoInicial.
+        # Si el flow venía limpio del repo, removed=0 (no hace nada).
         REMOVED_OUT=$(python3 "$PATCHER_PATH" "$NODERED_DIR/flows.json" --remove 2>/dev/null | grep -oE 'removed=[0-9]+' | cut -d= -f2)
         REMOVED_OUT=${REMOVED_OUT:-0}
         echo ""
         if [ "$REMOVED_OUT" -gt 0 ]; then
             echo "  [OK] Parche dedup TensionInicial/EstadoInicial QUITADO ($REMOVED_OUT nodos limpiados)"
         else
-            echo "  [i] Parche dedup no estaba aplicado (flow limpio)"
+            echo "  [i] Parche dedup ya no está"
         fi
     fi
 
