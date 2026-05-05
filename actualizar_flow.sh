@@ -577,7 +577,6 @@ if changed:
         echo ""
         if [ "$REMOVED_OUT" -gt 0 ]; then
             echo "  [OK] Parche dedup TensionInicial/EstadoInicial QUITADO ($REMOVED_OUT nodos limpiados)"
-            echo "       Para volver a aplicarlo: oculto_patry.sh → opción 7"
         else
             echo "  [i] Parche dedup no estaba aplicado (flow limpio)"
         fi
