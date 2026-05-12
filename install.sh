@@ -193,76 +193,26 @@ else
     PKG_MGR=""
 fi
 
-# --- Resumen compacto (1 línea) ---
-SUMMARY="${OS_NAME:-Desconocido}"
-[ -n "$RPI_MODEL" ] && SUMMARY="$SUMMARY / $RPI_MODEL"
-SUMMARY="$SUMMARY / $ARCH"
-echo ""
-echo "  $SUMMARY"
+# --- Auto-fix: cosas que romperían apt/kernel si se dejan ---
 
-# --- Avisos accionables (solo si hay algo que avisar) ---
-WARN_COUNT=0
-warn() {
-    [ "$WARN_COUNT" = "0" ] && echo ""
-    WARN_COUNT=$((WARN_COUNT + 1))
-    echo "$@"
-}
-
-# Trixie: /boot/firmware en RO impide updates de kernel/initramfs
+# Trixie: /boot/firmware en RO rompe apt upgrade de kernel/initramfs
 if [ "$OS_CODENAME" = "trixie" ] || [ "$OS_VERSION_ID" = "13" ]; then
     if grep -qE "/boot/firmware.*defaults,ro" /etc/fstab 2>/dev/null; then
-        warn "  [!] Trixie: /etc/fstab tiene /boot/firmware en RO"
-        echo "      Los updates de kernel/initramfs FALLARÁN. Cambiar 'defaults,ro' por 'defaults'."
-    fi
-    BOOT_OPTS=$(mount | grep -E " /boot/firmware " | grep -oE '\(([^)]+)\)' | tr -d '()')
-    if echo "$BOOT_OPTS" | grep -qE "^ro,|,ro,|,ro$|^ro$"; then
-        warn "  [!] Trixie: /boot/firmware montado en RO ahora — corregir y remontar:"
-        echo "      sudo sed -i 's|defaults,ro|defaults|' /etc/fstab"
-        echo "      sudo systemctl daemon-reload && sudo mount -o remount,rw /boot/firmware"
+        sudo cp /etc/fstab "/etc/fstab.bak.$(date +%Y%m%d_%H%M%S)" 2>/dev/null
+        sudo sed -i 's|defaults,ro|defaults|' /etc/fstab
+        sudo systemctl daemon-reload 2>/dev/null
+        sudo mount -o remount,rw /boot/firmware 2>/dev/null
+        echo "  [OK] /boot/firmware: corregido fstab (era RO) y remontado RW"
     fi
 fi
 
-# Node.js (Node-RED 4.x requiere 18+; contrib-modbus rompe en 22+)
-if command -v node >/dev/null 2>&1; then
-    NODE_VER=$(node --version 2>/dev/null | sed 's/v//')
-    NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
-    if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -lt 18 ] 2>/dev/null; then
-        warn "  [!] Node v$NODE_VER antigua — Node-RED 4.x requiere Node 18+"
-        echo "      bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
-    elif [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null; then
-        warn "  [!] Node v$NODE_VER demasiado nueva — node-red-contrib-modbus puede romper (recomendado: Node 20 LTS)"
-        echo "      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -"
-        echo "      sudo apt remove -y nodejs && sudo apt install -y nodejs"
-        echo "      cd ~/.node-red && npm rebuild"
-    fi
-else
-    warn "  [!] Node.js no instalado — Node-RED lo requiere"
-    echo "      bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
-fi
-
-# Python 3.13+ rompe libs antiguas
-PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>/dev/null)
-PY_MAJ=$(echo "$PY_VER" | cut -d. -f1)
-PY_MIN=$(echo "$PY_VER" | cut -d. -f2)
-if [ -n "$PY_VER" ] && [ "$PY_MAJ" = "3" ] && [ "$PY_MIN" -ge 13 ] 2>/dev/null; then
-    warn "  [!] Python $PY_VER — libs antiguas pueden romper (pymodbus<3.6, paho-mqtt 1.x)"
-fi
-
-# Wayland: herramientas X11 no funcionan
-if [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-    warn "  [!] Wayland: xrandr/xdotool/wmctrl no funcionan — usar wlr-randr/ydotool"
-fi
-
-# RPi 5: GPIO cambia (informativo)
-if [ -n "$RPI_MODEL" ] && echo "$RPI_MODEL" | grep -qE "Raspberry Pi 5"; then
-    warn "  [i] RPi 5: RP1 chip (gpiochip4); pinctrl reemplaza raspi-gpio"
-fi
-
-# Repo NodeSource: en Trixie no hay rama 'trixie', usar 'bookworm'
+# Repo NodeSource: en Trixie no hay rama 'trixie' → apt update falla
 if [ "$OS_CODENAME" = "trixie" ] && [ -f /etc/apt/sources.list.d/nodesource.list ]; then
     if grep -q "trixie" /etc/apt/sources.list.d/nodesource.list 2>/dev/null; then
-        warn "  [!] NodeSource apunta a 'trixie' (no existe). Cambiar a 'bookworm':"
-        echo "      sudo sed -i 's/trixie/bookworm/g' /etc/apt/sources.list.d/nodesource.list && sudo apt update"
+        sudo cp /etc/apt/sources.list.d/nodesource.list "/etc/apt/sources.list.d/nodesource.list.bak.$(date +%Y%m%d_%H%M%S)" 2>/dev/null
+        sudo sed -i 's/trixie/bookworm/g' /etc/apt/sources.list.d/nodesource.list
+        sudo apt-get update -qq 2>/dev/null
+        echo "  [OK] NodeSource: cambiado de 'trixie' a 'bookworm'"
     fi
 fi
 
@@ -286,11 +236,6 @@ if [ "$OS_ID" = "debian" ] || [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "raspbian"
             sudo apt-get install -y python3-venv python3-pip 2>&1 | tail -3
         fi
     fi
-fi
-# Pausa solo si hubo avisos accionables que el usuario debería leer
-if [ "$WARN_COUNT" -gt 0 ]; then
-    echo ""
-    read -r -p "  Pulsa ENTER para continuar (o Ctrl+C para salir)... " _ </dev/tty 2>/dev/null || sleep 3
 fi
 echo ""
 
