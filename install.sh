@@ -3243,37 +3243,30 @@ EOFOSCILA
                     fi
                     echo ""
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                    echo "  Reparar memoria corrupta (ChopperAC)"
+                    echo "  Reparar memoria corrupta"
                     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                     echo ""
-                    echo "  1) Diagnosticar las 3 fases (no escribe nada)"
-                    echo "  2) Diagnosticar y reparar una fase"
-                    echo "  3) Guardar backup (3 fases)"
-                    echo "  4) Restaurar desde backup"
-                    echo "  0) Volver"
+                    echo "  Sin riesgo (no escribe en la placa):"
+                    echo "    1) Diagnosticar las 3 fases"
+                    echo "    2) Guardar backup"
                     echo ""
-                    echo "  NOTA: Para reparar/restaurar, pon el equipo en"
-                    echo "        BYPASS desde Node-RED ANTES de continuar"
+                    echo "  Reparación (requiere BYPASS desde Node-RED):"
+                    echo "    3) Restaurar desde backup           [recomendado si hay backup]"
+                    echo "    4) Reparar con valores por defecto  [solo si no hay backup]"
+                    echo ""
+                    echo "    0) Volver"
                     echo ""
                     read -p "  Opción [0-4]: " REPAIR_MODE
-                    
+
                     if [ "$REPAIR_MODE" = "0" ]; then
                         continue
                     fi
 
-
-                    # Preguntar fase para reparar (solo 1) y restaurar (1 o todas)
-                    if [ "$REPAIR_MODE" = "2" ]; then
+                    # Preguntar fase para reparar (3) restore o (4) fix; el resto va a las 3
+                    if [ "$REPAIR_MODE" = "3" ] || [ "$REPAIR_MODE" = "4" ]; then
                         echo ""
                         echo "  ¿Qué fase?"
-                        echo "  1) Fase 1    2) Fase 2    3) Fase 3"
-                        echo ""
-                        read -p "  Fase [1-3]: " REPAIR_PLACA
-                        REPAIR_SLAVES="$REPAIR_PLACA"
-                    elif [ "$REPAIR_MODE" = "4" ]; then
-                        echo ""
-                        echo "  ¿Qué quieres restaurar?"
-                        echo "  1) Fase 1    2) Fase 2    3) Fase 3    4) Las 3 fases"
+                        echo "    1) Fase 1    2) Fase 2    3) Fase 3    4) Las 3 fases"
                         echo ""
                         read -p "  Opción [1-4]: " REPAIR_PLACA
                         if [ "$REPAIR_PLACA" = "4" ]; then
@@ -3284,13 +3277,13 @@ EOFOSCILA
                     else
                         REPAIR_SLAVES="1 2 3"
                     fi
-                    
+
                     # Remap modo al formato del script Python
                     case $REPAIR_MODE in
                         1) REPAIR_FIX_MODE="diag" ;;
-                        2) REPAIR_FIX_MODE="fix" ;;
-                        3) REPAIR_FIX_MODE="backup" ;;
-                        4) REPAIR_FIX_MODE="restore" ;;
+                        2) REPAIR_FIX_MODE="backup" ;;
+                        3) REPAIR_FIX_MODE="restore" ;;
+                        4) REPAIR_FIX_MODE="fix" ;;
                         *) echo "  [X] Opción no válida"; continue ;;
                     esac
                     
