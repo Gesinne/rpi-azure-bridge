@@ -623,7 +623,7 @@ while true; do
     clear
     echo ""
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  [*] Gesinne RPI Azure Bridge - Instalador"
+    echo "  GESINNE"
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     
@@ -650,14 +650,12 @@ while true; do
         fi
     fi
     echo ""
-    echo "  ¿Qué deseas hacer?"
-    echo ""
-    echo "  1) Modo de conexión (Azure IoT / Servidor Remoto)"
-    echo "  2) Actualizar Flow Node-RED"
-    echo "  3) Ver/Modificar configuración equipo"
-    echo "  4) Ver/Modificar registros de la placa"
-    echo "  5) Revisar espacio y logs"
-    echo "  6) Gestionar paleta Node-RED"
+    echo "  1) Modo de conexión"
+    echo "  2) Actualizar Flow"
+    echo "  3) Configuración equipo"
+    echo "  4) Registros de la placa"
+    echo "  5) Espacio y logs"
+    echo "  6) Paleta Node-RED"
     echo "  0) Salir"
     echo ""
     read -p "  Opción [0-6]: " OPTION
