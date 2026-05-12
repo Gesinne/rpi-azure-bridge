@@ -3470,7 +3470,7 @@ def leer_registro(client, reg, slave_id):
     for retry in range(MAX_RETRIES):
         try:
             time.sleep(0.08)
-            resp = client.read_holding_registers(reg, 1, slave=slave_id)
+            resp = client.read_holding_registers(address=reg, count=1, slave=slave_id)
             if not resp.isError():
                 return resp.registers[0]
             if retry < MAX_RETRIES - 1:
@@ -3487,7 +3487,7 @@ def escribir_registro(client, reg, valor, slave_id, verbose=False):
     for retry in range(MAX_RETRIES):
         try:
             time.sleep(0.1)
-            resp = client.write_register(reg, valor, slave=slave_id)
+            resp = client.write_register(address=reg, value=valor, slave=slave_id)
             if not resp.isError():
                 return True
             if verbose or retry == MAX_RETRIES - 1:
