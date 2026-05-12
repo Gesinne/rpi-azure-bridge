@@ -12,15 +12,14 @@
 
 # Función de limpieza al salir (interrupción, error, etc.)
 cleanup_on_exit() {
-    echo ""
-    echo "  [~] Ajustando permisos de Node-RED..."
+    # Housekeeping silencioso: ajustar permisos de node_modules tras
+    # cualquier instalacion/cambio. No mostramos nada al usuario.
     for d in /home/*/.node-red/node_modules; do
         if [ -d "$d" ]; then
             OWNER=$(stat -c '%U:%G' "$(dirname "$d")" 2>/dev/null)
             sudo chown -R "$OWNER" "$d" 2>/dev/null || true
         fi
     done
-    echo "  [OK] Permisos ajustados"
 }
 
 # Capturar señales de interrupción (Ctrl+C, cierre terminal, etc.)
