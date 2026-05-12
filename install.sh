@@ -166,15 +166,10 @@ if [ -f /etc/os-release ]; then
     OS_VERSION_ID="${VERSION_ID:-?}"
 fi
 
-echo ""
-echo "  [SO]   ${OS_NAME:-Desconocido}"
-if [ -r /proc/device-tree/model ]; then
-    RPI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
-    echo "  [HW]   $RPI_MODEL"
-fi
-echo "  [ARCH] $ARCH (${BITS}-bit)"
+RPI_MODEL=""
+[ -r /proc/device-tree/model ] && RPI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null)
 
-# Compatibilidad pip / PEP 668 (Bookworm 12, Trixie 13, Ubuntu 23.04+)
+# Compatibilidad pip / PEP 668 (Bookworm 12, Trixie 13, Ubuntu 23.04+) — silencioso
 PIP_NEEDS_BREAK=0
 case "$OS_VERSION_ID" in
     12|13|14) PIP_NEEDS_BREAK=1 ;;
@@ -183,28 +178,9 @@ if [ "$OS_ID" = "ubuntu" ]; then
     UBUNTU_MAJOR=$(echo "$OS_VERSION_ID" | cut -d. -f1)
     [ -n "$UBUNTU_MAJOR" ] && [ "$UBUNTU_MAJOR" -ge 23 ] && PIP_NEEDS_BREAK=1
 fi
-if [ "$PIP_NEEDS_BREAK" = "1" ]; then
-    export PIP_BREAK_SYSTEM_PACKAGES=1
-    echo "  [PIP]  Modo PEP 668 activo (PIP_BREAK_SYSTEM_PACKAGES=1)"
-fi
+[ "$PIP_NEEDS_BREAK" = "1" ] && export PIP_BREAK_SYSTEM_PACKAGES=1
 
-# Avisos específicos Trixie (Debian 13) — gotchas conocidos
-if [ "$OS_CODENAME" = "trixie" ] || [ "$OS_VERSION_ID" = "13" ]; then
-    # /boot/firmware con ro en fstab impide updates (kernel/initramfs)
-    if grep -qE "/boot/firmware.*defaults,ro" /etc/fstab 2>/dev/null; then
-        echo "  [!]    Trixie: /etc/fstab tiene /boot/firmware en RO"
-        echo "         Los updates de kernel/initramfs FALLARÁN. Cambiar 'defaults,ro' por 'defaults'."
-    fi
-    # /boot/firmware montado RO actualmente
-    BOOT_OPTS=$(mount | grep -E " /boot/firmware " | grep -oE '\(([^)]+)\)' | tr -d '()')
-    if echo "$BOOT_OPTS" | grep -qE "^ro,|,ro,|,ro$|^ro$"; then
-        echo "  [!]    Trixie: /boot/firmware montado en RO ahora — corregir y remontar:"
-        echo "         sudo sed -i 's|defaults,ro|defaults|' /etc/fstab"
-        echo "         sudo systemctl daemon-reload && sudo mount -o remount,rw /boot/firmware"
-    fi
-fi
-
-# Detectar gestor de paquetes
+# Detectar gestor de paquetes (silencioso)
 if command -v apt-get >/dev/null 2>&1; then
     PKG_MGR="apt-get"
 elif command -v dnf >/dev/null 2>&1; then
@@ -216,85 +192,77 @@ elif command -v pacman >/dev/null 2>&1; then
 else
     PKG_MGR=""
 fi
-[ -n "$PKG_MGR" ] && echo "  [PKG]  $PKG_MGR"
 
-# Detectar Node.js (necesario para Node-RED 4.x → Node 18+)
+# --- Resumen compacto (1 línea) ---
+SUMMARY="${OS_NAME:-Desconocido}"
+[ -n "$RPI_MODEL" ] && SUMMARY="$SUMMARY / $RPI_MODEL"
+SUMMARY="$SUMMARY / $ARCH"
+echo ""
+echo "  $SUMMARY"
+
+# --- Avisos accionables (solo si hay algo que avisar) ---
+WARN_COUNT=0
+warn() {
+    [ "$WARN_COUNT" = "0" ] && echo ""
+    WARN_COUNT=$((WARN_COUNT + 1))
+    echo "$@"
+}
+
+# Trixie: /boot/firmware en RO impide updates de kernel/initramfs
+if [ "$OS_CODENAME" = "trixie" ] || [ "$OS_VERSION_ID" = "13" ]; then
+    if grep -qE "/boot/firmware.*defaults,ro" /etc/fstab 2>/dev/null; then
+        warn "  [!] Trixie: /etc/fstab tiene /boot/firmware en RO"
+        echo "      Los updates de kernel/initramfs FALLARÁN. Cambiar 'defaults,ro' por 'defaults'."
+    fi
+    BOOT_OPTS=$(mount | grep -E " /boot/firmware " | grep -oE '\(([^)]+)\)' | tr -d '()')
+    if echo "$BOOT_OPTS" | grep -qE "^ro,|,ro,|,ro$|^ro$"; then
+        warn "  [!] Trixie: /boot/firmware montado en RO ahora — corregir y remontar:"
+        echo "      sudo sed -i 's|defaults,ro|defaults|' /etc/fstab"
+        echo "      sudo systemctl daemon-reload && sudo mount -o remount,rw /boot/firmware"
+    fi
+fi
+
+# Node.js (Node-RED 4.x requiere 18+; contrib-modbus rompe en 22+)
 if command -v node >/dev/null 2>&1; then
     NODE_VER=$(node --version 2>/dev/null | sed 's/v//')
     NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
     if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -lt 18 ] 2>/dev/null; then
-        echo "  [NODE] v$NODE_VER  [!] Versión antigua, Node-RED 4.x requiere Node 18+"
-        echo "         Para actualizar: bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
+        warn "  [!] Node v$NODE_VER antigua — Node-RED 4.x requiere Node 18+"
+        echo "      bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
     elif [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null; then
-        echo "  [NODE] v$NODE_VER  [!] Demasiado nueva — node-red-contrib-modbus puede romper"
-        echo "         Recomendado: Node 20 LTS. Para bajar:"
-        echo "           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -"
-        echo "           sudo apt remove -y nodejs && sudo apt install -y nodejs"
-        echo "           cd ~/.node-red && npm rebuild"
-    else
-        echo "  [NODE] v$NODE_VER (OK)"
+        warn "  [!] Node v$NODE_VER demasiado nueva — node-red-contrib-modbus puede romper (recomendado: Node 20 LTS)"
+        echo "      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -"
+        echo "      sudo apt remove -y nodejs && sudo apt install -y nodejs"
+        echo "      cd ~/.node-red && npm rebuild"
     fi
 else
-    echo "  [NODE] No instalado  [!] Node-RED requiere Node.js"
-    echo "         Para instalar: bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
+    warn "  [!] Node.js no instalado — Node-RED lo requiere"
+    echo "      bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
 fi
 
-# Compatibilidad sistema — chequeos rápidos (Trixie/Bookworm/RPi5/Wayland/etc.)
+# Python 3.13+ rompe libs antiguas
 PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')" 2>/dev/null)
 PY_MAJ=$(echo "$PY_VER" | cut -d. -f1)
 PY_MIN=$(echo "$PY_VER" | cut -d. -f2)
-if [ -n "$PY_VER" ]; then
-    if [ "$PY_MAJ" = "3" ] && [ "$PY_MIN" -ge 13 ] 2>/dev/null; then
-        echo "  [PY]   $PY_VER  [!] Python 3.13+ — libs antiguas pueden romper"
-        echo "         (afecta: pymodbus<3.6, paho-mqtt 1.x)"
-    else
-        echo "  [PY]   $PY_VER"
-    fi
+if [ -n "$PY_VER" ] && [ "$PY_MAJ" = "3" ] && [ "$PY_MIN" -ge 13 ] 2>/dev/null; then
+    warn "  [!] Python $PY_VER — libs antiguas pueden romper (pymodbus<3.6, paho-mqtt 1.x)"
 fi
 
-KERN=$(uname -r)
-echo "  [KER]  $KERN"
-
-if command -v systemctl >/dev/null 2>&1; then
-    SD_VER=$(systemctl --version 2>/dev/null | head -1 | awk '{print $2}')
-    [ -n "$SD_VER" ] && echo "  [SYS]  systemd $SD_VER"
-fi
-
-BASH_V="${BASH_VERSION%%[^0-9.]*}"
-[ -n "$BASH_V" ] && echo "  [BSH]  bash $BASH_V"
-
-if command -v openssl >/dev/null 2>&1; then
-    SSL_VER=$(openssl version 2>/dev/null | awk '{print $2}')
-    [ -n "$SSL_VER" ] && echo "  [SSL]  OpenSSL $SSL_VER"
-fi
-
-# Servidor gráfico (relevante para modo kiosko Chromium)
-DISPLAY_SRV=""
+# Wayland: herramientas X11 no funcionan
 if [ -n "$WAYLAND_DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-    DISPLAY_SRV="Wayland"
-elif [ -n "$DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "x11" ]; then
-    DISPLAY_SRV="X11"
-fi
-if [ -n "$DISPLAY_SRV" ]; then
-    if [ "$DISPLAY_SRV" = "Wayland" ]; then
-        echo "  [GUI]  Wayland  [!] xrandr/xdotool/wmctrl no funcionan — usar wlr-randr/ydotool"
-    else
-        echo "  [GUI]  $DISPLAY_SRV"
-    fi
+    warn "  [!] Wayland: xrandr/xdotool/wmctrl no funcionan — usar wlr-randr/ydotool"
 fi
 
-# RPi 5 detection — chip GPIO cambia (RP1 en gpiochip4)
-if [ -n "$RPI_MODEL" ]; then
-    if echo "$RPI_MODEL" | grep -qE "Raspberry Pi 5"; then
-        echo "  [GPIO] RPi 5 detectado — RP1 chip (gpiochip4); pinctrl reemplaza raspi-gpio"
-    fi
+# RPi 5: GPIO cambia (informativo)
+if [ -n "$RPI_MODEL" ] && echo "$RPI_MODEL" | grep -qE "Raspberry Pi 5"; then
+    warn "  [i] RPi 5: RP1 chip (gpiochip4); pinctrl reemplaza raspi-gpio"
 fi
 
 # Repo NodeSource: en Trixie no hay rama 'trixie', usar 'bookworm'
 if [ "$OS_CODENAME" = "trixie" ] && [ -f /etc/apt/sources.list.d/nodesource.list ]; then
     if grep -q "trixie" /etc/apt/sources.list.d/nodesource.list 2>/dev/null; then
-        echo "  [!]    NodeSource apunta a 'trixie' (no existe). Cambiar a 'bookworm':"
-        echo "         sudo sed -i 's/trixie/bookworm/g' /etc/apt/sources.list.d/nodesource.list && sudo apt update"
+        warn "  [!] NodeSource apunta a 'trixie' (no existe). Cambiar a 'bookworm':"
+        echo "      sudo sed -i 's/trixie/bookworm/g' /etc/apt/sources.list.d/nodesource.list && sudo apt update"
     fi
 fi
 
@@ -319,10 +287,11 @@ if [ "$OS_ID" = "debian" ] || [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "raspbian"
         fi
     fi
 fi
-echo ""
-echo "  ──────────────────────────────────────────────────────────────"
-echo "  Revisa la información del sistema arriba ↑"
-read -r -p "  Pulsa ENTER para continuar (o Ctrl+C para salir)... " _ </dev/tty 2>/dev/null || sleep 5
+# Pausa solo si hubo avisos accionables que el usuario debería leer
+if [ "$WARN_COUNT" -gt 0 ]; then
+    echo ""
+    read -r -p "  Pulsa ENTER para continuar (o Ctrl+C para salir)... " _ </dev/tty 2>/dev/null || sleep 3
+fi
 echo ""
 
 # Bootstrap (descarga + re-exec) ya hecho arriba en el primer pase
