@@ -4113,7 +4113,14 @@ def parsear_backup_txt(filepath):
 
 
 def restaurar_desde_backup(client, slave_id, filepath=None):
-    """Restaura registros de una fase desde un fichero TXT multi-fase"""
+    """Restaura registros de una fase desde un fichero TXT multi-fase.
+
+    Hace lo mismo que reparar() pero usando los valores del backup en vez
+    de defaults: intenta borrar alarma MR, reescribe TODOS los registros
+    (no solo los diferentes) para forzar recalculo del CRC, y activa el
+    flag de proteccion antes de cada escritura (la placa lo desactiva
+    despues de cada una). Respeta PRESERVAR (N.Serie, Dir Modbus, contadores).
+    """
     if filepath is None:
         filepath = buscar_ultimo_backup()
         if filepath is None:
@@ -4145,12 +4152,18 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         print(f"\n  [X] No se pudieron leer registros de Fase {slave_id}")
         return
 
-    # Comparar con valores actuales
+    # Leer alarma actual para detectar MR
+    alarma = leer_registro(client, 2, slave_id)
+    hay_alarma_mr = alarma is not None and bool(alarma & (1 << 10))
+    if hay_alarma_mr:
+        print(f"  [!] Alarma MR activa (reg 2 = {alarma}) - se intentara borrar antes de escribir")
+
+    # Comparar con valores actuales (informativo)
     print(f"\n  Comparacion backup vs actual:")
     print(f"  {'Reg':<5} {'Nombre':<12} {'Backup':<8} {'Actual':<8} {'Estado'}")
     print(f"  {'-'*55}")
 
-    diferentes = {}
+    n_dif = 0
     for reg in ORDEN_ESCRITURA:
         if reg not in registros:
             continue
@@ -4161,25 +4174,27 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
 
         if val_actual is None:
             print(f">>{reg:<5} {nombre:<12} {val_backup:<8} {'ERR':<8} No se pudo leer")
-            diferentes[reg] = val_backup
+            n_dif += 1
         elif val_actual != val_backup:
             print(f">>{reg:<5} {nombre:<12} {val_backup:<8} {val_actual:<8} DIFERENTE")
-            diferentes[reg] = val_backup
+            n_dif += 1
         else:
             print(f"  {reg:<5} {nombre:<12} {val_backup:<8} {val_actual:<8} OK")
 
-    if not diferentes:
-        print(f"\n  [OK] Todos los registros coinciden con el backup")
+    if n_dif == 0 and not hay_alarma_mr:
+        print(f"\n  [OK] Todos los registros coinciden con el backup y no hay alarma MR")
         return
 
-    print(f"\n  [!] {len(diferentes)} registros diferentes")
+    if n_dif:
+        print(f"\n  [!] {n_dif} registros diferentes")
+    print(f"  [!] Se reescribiran TODOS los registros del backup para forzar recalculo de CRC")
 
-    resp = input("\n  Restaurar estos registros? (s/N): ").strip().lower()
+    resp = input("\n  Restaurar? (s/N): ").strip().lower()
     if resp != 's':
         print("  Cancelado")
         return
 
-    # 1. Verificar que esta en bypass
+    # Verificar bypass
     estado = leer_registro(client, 0, slave_id)
     if estado is None or estado != 0:
         print(f"\n  [X] Fase {slave_id} NO esta en bypass (estado = {estado})")
@@ -4187,20 +4202,69 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         return
     print(f"\n  [OK] Fase {slave_id} en bypass")
 
-    # 2. Activar flags
-    if not activar_flags(client, slave_id):
-        print("  [!] ATENCION: Algun flag no se activo correctamente")
+    # Intentar borrar alarma MR si esta activa
+    if hay_alarma_mr:
+        print(f"\n  [~] Intentando borrar alarma MR antes de escribir...")
+        # Intento 1: escribir 0 en reg 2
+        print(f"      Intento 1: Escribir 0 en reg 2...")
+        escribir_registro(client, 2, 0, slave_id)
+        time.sleep(1)
+        alarma_check = leer_registro(client, 2, slave_id)
+        print(f"      Alarma despues: {alarma_check}")
 
-    # 3. Escribir en orden correcto
+        if alarma_check and alarma_check & (1 << 10):
+            sin_mr = alarma & ~(1 << 10)
+            print(f"      Intento 2: Escribir {sin_mr} en reg 2 (sin bit MR)...")
+            escribir_registro(client, 2, sin_mr, slave_id)
+            time.sleep(1)
+            alarma_check = leer_registro(client, 2, slave_id)
+            print(f"      Alarma despues: {alarma_check}")
+
+        if alarma_check and alarma_check & (1 << 10):
+            print(f"      Intento 3: Ciclo bypass->regulacion->bypass...")
+            escribir_registro(client, 31, 2, slave_id)
+            time.sleep(3)
+            escribir_registro(client, 31, 0, slave_id)
+            time.sleep(2)
+            alarma_check = leer_registro(client, 2, slave_id)
+            print(f"      Alarma despues: {alarma_check}")
+
+        if alarma_check is None or not (alarma_check & (1 << 10)):
+            print(f"  [OK] Alarma MR borrada antes de escribir")
+        else:
+            print(f"  [!] Alarma MR persiste, intentando escribir de todas formas...")
+
+    # Reescribir TODOS los registros del backup (excepto PRESERVAR)
+    # con activacion de flag antes de cada uno (la placa lo desactiva tras cada escritura)
     ok_count = 0
     err_count = 0
 
+    print(f"\n  [~] Reescribiendo TODOS los registros del backup...")
     for reg in ORDEN_ESCRITURA:
-        if reg not in diferentes:
+        if reg in PRESERVAR:
+            continue
+        if reg not in registros:
             continue
 
-        valor = diferentes[reg]
+        valor = registros[reg]
         nombre = nombre_registro(reg)
+
+        # Activar flag correspondiente ANTES de cada escritura
+        if reg in CONFIGURACION or (41 <= reg <= 69):
+            escribir_registro(client, 40, 0, slave_id)
+            time.sleep(0.15)
+            escribir_registro(client, 40, 47818, slave_id)
+            time.sleep(0.2)
+        elif reg in CALIBRACION or (70 <= reg <= 89):
+            escribir_registro(client, 40, 0, slave_id)
+            time.sleep(0.15)
+            escribir_registro(client, 40, 47818, slave_id)
+            time.sleep(0.15)
+            escribir_registro(client, 70, 51898, slave_id)
+            time.sleep(0.2)
+        elif reg in CONTROL or (90 <= reg <= 95):
+            escribir_registro(client, 90, 56010, slave_id)
+            time.sleep(0.2)
 
         print(f"  [~] Reg {reg:>3} ({nombre:<12}): -> {valor}...", end=" ", flush=True)
         if escribir_registro(client, reg, valor, slave_id):
@@ -4210,29 +4274,27 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
                 print("[OK]")
                 ok_count += 1
             else:
-                print(f"[!] Verificacion: leido={leido}")
+                print(f"[!] Verificacion fallo: leido={leido}")
                 err_count += 1
         else:
             print("[X] Error escritura")
             err_count += 1
 
-    # 4. Desactivar flags
+    # Desactivar flags
     desactivar_flags(client, slave_id)
 
-    if err_count > 0:
-        print(f"\n{'='*75}")
-        print(f"  RESULTADO: {ok_count} escritos, {err_count} errores")
-        print(f"  [!] Hubo errores. Revisar manualmente")
-        print(f"{'='*75}")
-        return
-
-    # 5. Resultado
+    # Resumen
     print(f"\n{'='*75}")
-    print(f"  RESULTADO: {ok_count} registros escritos en Fase {slave_id}")
-    print(f"  [OK] Restauracion completada")
-    print(f"")
-    print(f"  IMPORTANTE: Pon el equipo en REGULACION desde Node-RED")
-    print(f"  para que los valores se guarden en la placa")
+    print(f"  RESULTADO: {ok_count} escritos OK, {err_count} errores")
+    if err_count == 0:
+        print(f"  [OK] Restauracion completada")
+        if hay_alarma_mr:
+            verificar_alarma_mr(client, slave_id)
+        print(f"")
+        print(f"  IMPORTANTE: Pon el equipo en REGULACION desde Node-RED")
+        print(f"  para que los valores se guarden en la placa")
+    else:
+        print(f"  [!] Hubo errores. Revisar manualmente")
     print(f"{'='*75}")
 
 
