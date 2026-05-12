@@ -1,5 +1,6 @@
 # No subir configuración con secrets
 docker-compose.override.yml
+fix_mqtt_credentials.sh
 
 # Python
 __pycache__/
@@ -7,3 +8,12 @@ __pycache__/
 
 # Logs
 *.log
+
+# Backups de editor
+*.save
+*.swp
+*~
+
+# Repos anidados / dirs auxiliares locales
+nodered-patry/
+docs/
