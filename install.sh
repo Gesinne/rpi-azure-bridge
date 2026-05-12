@@ -90,20 +90,57 @@ if [ "$1" != "--updated" ]; then
         fi
     fi
 
-    # Copiar scripts auxiliares al $HOME del usuario
-    [ -f "$INSTALL_DIR/enviar_email.py" ]    && cp "$INSTALL_DIR/enviar_email.py"    "$USER_HOME/enviar_email.py"    && echo "  [OK] enviar_email.py copiado"
-    [ -f "$INSTALL_DIR/leer_registros.py" ]  && cp "$INSTALL_DIR/leer_registros.py"  "$USER_HOME/leer_registros.py"  && echo "  [OK] leer_registros.py copiado"
+    # Detectar qué scripts cambiaron respecto a los ya instalados
+    file_needs_update() {
+        local src="$1" dst="$2"
+        [ ! -f "$dst" ] && return 0
+        ! cmp -s "$src" "$dst"
+    }
 
-    # Script de alerta de reinicio
-    if [ -f "$INSTALL_DIR/alerta_reinicio.sh" ]; then
-        cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
-        chmod +x /usr/local/bin/alerta_reinicio.sh
-        if crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
-            echo "  [OK] Script alerta_reinicio.sh actualizado (ya estaba instalado)"
+    UPDATES=()
+    [ -f "$INSTALL_DIR/enviar_email.py" ]   && file_needs_update "$INSTALL_DIR/enviar_email.py"   "$USER_HOME/enviar_email.py"          && UPDATES+=("enviar_email.py")
+    [ -f "$INSTALL_DIR/leer_registros.py" ] && file_needs_update "$INSTALL_DIR/leer_registros.py" "$USER_HOME/leer_registros.py"        && UPDATES+=("leer_registros.py")
+    [ -f "$INSTALL_DIR/alerta_reinicio.sh" ] && file_needs_update "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh   && UPDATES+=("alerta_reinicio.sh")
+
+    ALERT_CRON_MISSING=0
+    if [ -f "$INSTALL_DIR/alerta_reinicio.sh" ] && ! crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
+        ALERT_CRON_MISSING=1
+    fi
+
+    if [ ${#UPDATES[@]} -eq 0 ] && [ "$ALERT_CRON_MISSING" = "0" ]; then
+        echo "  [=] Scripts ya están al día (no hay cambios)"
+    else
+        if [ ${#UPDATES[@]} -gt 0 ]; then
+            echo "  [~] Cambios disponibles en: ${UPDATES[*]}"
+        fi
+        [ "$ALERT_CRON_MISSING" = "1" ] && echo "  [~] Falta configurar cron @reboot de alerta_reinicio.sh"
+
+        RESP=""
+        read -r -p "  ¿Aplicar actualizaciones? [S/n] " RESP </dev/tty 2>/dev/null || RESP="s"
+        [ -z "$RESP" ] && RESP="s"
+
+        if [[ "$RESP" =~ ^[sSyY]$ ]]; then
+            for f in "${UPDATES[@]}"; do
+                case "$f" in
+                    enviar_email.py|leer_registros.py)
+                        cp "$INSTALL_DIR/$f" "$USER_HOME/$f"
+                        echo "  [OK] $f copiado"
+                        ;;
+                    alerta_reinicio.sh)
+                        cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
+                        chmod +x /usr/local/bin/alerta_reinicio.sh
+                        echo "  [OK] alerta_reinicio.sh actualizado"
+                        ;;
+                esac
+            done
+            if [ "$ALERT_CRON_MISSING" = "1" ]; then
+                [ ! -f /usr/local/bin/alerta_reinicio.sh ] && cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh && chmod +x /usr/local/bin/alerta_reinicio.sh
+                CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
+                (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
+                echo "  [OK] cron @reboot configurado"
+            fi
         else
-            CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
-            (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
-            echo "  [OK] Script alerta_reinicio.sh instalado"
+            echo "  [~] Actualización omitida"
         fi
     fi
 
