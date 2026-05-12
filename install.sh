@@ -96,13 +96,11 @@ if [ "$1" != "--updated" ]; then
 
     # Script de alerta de reinicio
     if [ -f "$INSTALL_DIR/alerta_reinicio.sh" ]; then
-        if [ -f /usr/local/bin/alerta_reinicio.sh ] && crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
-            cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
-            chmod +x /usr/local/bin/alerta_reinicio.sh
+        cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
+        chmod +x /usr/local/bin/alerta_reinicio.sh
+        if crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
             echo "  [OK] Script alerta_reinicio.sh actualizado (ya estaba instalado)"
         else
-            cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
-            chmod +x /usr/local/bin/alerta_reinicio.sh
             CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
             (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
             echo "  [OK] Script alerta_reinicio.sh instalado"
@@ -192,8 +190,10 @@ if command -v node >/dev/null 2>&1; then
         echo "         Para actualizar: bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)"
     elif [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 22 ] 2>/dev/null; then
         echo "  [NODE] v$NODE_VER  [!] Demasiado nueva — node-red-contrib-modbus puede romper"
-        echo "         Recomendado: Node 20 LTS"
-        echo "         Bajar:  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt remove -y nodejs && sudo apt install -y nodejs && cd ~/.node-red && npm rebuild"
+        echo "         Recomendado: Node 20 LTS. Para bajar:"
+        echo "           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -"
+        echo "           sudo apt remove -y nodejs && sudo apt install -y nodejs"
+        echo "           cd ~/.node-red && npm rebuild"
     else
         echo "  [NODE] v$NODE_VER (OK)"
     fi
@@ -208,7 +208,8 @@ PY_MAJ=$(echo "$PY_VER" | cut -d. -f1)
 PY_MIN=$(echo "$PY_VER" | cut -d. -f2)
 if [ -n "$PY_VER" ]; then
     if [ "$PY_MAJ" = "3" ] && [ "$PY_MIN" -ge 13 ] 2>/dev/null; then
-        echo "  [PY]   $PY_VER  [!] Python 3.13+ — algunas libs antiguas rompen (pymodbus<3.6, paho-mqtt 1.x)"
+        echo "  [PY]   $PY_VER  [!] Python 3.13+ — libs antiguas pueden romper"
+        echo "         (afecta: pymodbus<3.6, paho-mqtt 1.x)"
     else
         echo "  [PY]   $PY_VER"
     fi
