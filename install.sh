@@ -327,15 +327,7 @@ volver_menu() {
     read -p "  Pulsa ENTER para volver al menú (0 para salir): " VOLVER
     if [ "$VOLVER" = "0" ]; then
         echo ""
-        echo "  [~] Ajustando permisos de Node-RED..."
-        for d in /home/*/.node-red/node_modules; do
-            if [ -d "$d" ]; then
-                OWNER=$(stat -c '%U:%G' "$(dirname "$d")" 2>/dev/null)
-                sudo chown -R "$OWNER" "$d" 2>/dev/null || true
-            fi
-        done
         echo "  [B] ¡Hasta luego!"
-        echo ""
         exit 0
     fi
 }
@@ -663,15 +655,7 @@ while true; do
     case $OPTION in
         0)
             echo ""
-            echo "  [~] Ajustando permisos de Node-RED..."
-            for d in /home/*/.node-red/node_modules; do
-                if [ -d "$d" ]; then
-                    OWNER=$(stat -c '%U:%G' "$(dirname "$d")" 2>/dev/null)
-                    sudo chown -R "$OWNER" "$d" 2>/dev/null || true
-                fi
-            done
             echo "  [B] ¡Hasta luego!"
-            echo ""
             exit 0
             ;;
     1)
