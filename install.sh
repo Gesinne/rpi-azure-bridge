@@ -4162,6 +4162,8 @@ def restaurar_desde_backup(client, slave_id, filepath=None, fast=False):
     print(f"  {'-'*55}")
 
     n_dif = 0
+    n_dif_preservar = 0
+    preservar_dif = {}  # reg -> (actual, backup)
     for reg in ORDEN_ESCRITURA:
         if reg not in registros:
             continue
@@ -4169,23 +4171,55 @@ def restaurar_desde_backup(client, slave_id, filepath=None, fast=False):
         val_backup = registros[reg]
         val_actual = leer_registro(client, reg, slave_id)
         nombre = nombre_registro(reg)
+        is_preservar = reg in PRESERVAR
+        tag_pres = " *" if is_preservar else ""
 
         if val_actual is None:
-            print(f">>{reg:<5} {nombre:<12} {val_backup:<8} {'ERR':<8} No se pudo leer")
-            n_dif += 1
+            print(f">>{reg:<5} {nombre:<12} {val_backup:<8} {'ERR':<8} No se pudo leer{tag_pres}")
+            if is_preservar:
+                n_dif_preservar += 1
+                preservar_dif[reg] = (None, val_backup)
+            else:
+                n_dif += 1
         elif val_actual != val_backup:
-            print(f">>{reg:<5} {nombre:<12} {val_backup:<8} {val_actual:<8} DIFERENTE")
-            n_dif += 1
+            print(f">>{reg:<5} {nombre:<12} {val_backup:<8} {val_actual:<8} DIFERENTE{tag_pres}")
+            if is_preservar:
+                n_dif_preservar += 1
+                preservar_dif[reg] = (val_actual, val_backup)
+            else:
+                n_dif += 1
         else:
-            print(f"  {reg:<5} {nombre:<12} {val_backup:<8} {val_actual:<8} OK")
+            print(f"  {reg:<5} {nombre:<12} {val_backup:<8} {val_actual:<8} OK{tag_pres}")
 
-    if n_dif == 0 and not hay_alarma_mr:
+    if n_dif_preservar:
+        print(f"\n  (*) PRESERVAR — por defecto NO se sobreescriben (IDs unicos de placa)")
+
+    if n_dif == 0 and n_dif_preservar == 0 and not hay_alarma_mr:
         print(f"\n  [OK] Todos los registros coinciden con el backup y no hay alarma MR")
         return
 
     if n_dif:
         print(f"\n  [!] {n_dif} registros diferentes")
-    print(f"  [!] Se reescribiran TODOS los registros del backup para forzar recalculo de CRC")
+    if n_dif_preservar:
+        print(f"  [!] {n_dif_preservar} registros PRESERVAR diferentes (no se tocaran salvo override)")
+    if not fast:
+        print(f"  [!] Modo Robusto: se reescribiran TODOS los registros del backup para forzar recalculo de CRC")
+
+    # Preguntar override de PRESERVAR si hay diferencias en ellos
+    override_preservar = False
+    if n_dif_preservar > 0:
+        print(f"\n  Registros PRESERVAR con diferencias:")
+        for reg, (val_act, val_back) in sorted(preservar_dif.items()):
+            nombre = nombre_registro(reg)
+            print(f"    Reg {reg:>3} ({nombre}): actual={val_act} -> backup={val_back}")
+        print(f"\n  Estos registros NO se tocan por defecto para no sobrescribir IDs unicos")
+        print(f"  (N.Serie, Dir Modbus, contadores) si el backup es de OTRA placa.")
+        print(f"  Si este backup es de ESTA misma placa y los valores actuales estan")
+        print(f"  corruptos, puedes activar el override:")
+        resp_ov = input(f"\n  Sobrescribir TAMBIEN los registros PRESERVAR? (s/N): ").strip().lower()
+        if resp_ov == 's':
+            override_preservar = True
+            print(f"  [OK] Override activado — se escribiran tambien los PRESERVAR")
 
     resp = input("\n  Restaurar? (s/N): ").strip().lower()
     if resp != 's':
@@ -4204,7 +4238,7 @@ def restaurar_desde_backup(client, slave_id, filepath=None, fast=False):
     if fast:
         diferentes = {}
         for reg in ORDEN_ESCRITURA:
-            if reg in PRESERVAR:
+            if reg in PRESERVAR and not override_preservar:
                 continue
             if reg not in registros:
                 continue
@@ -4317,7 +4351,7 @@ def restaurar_desde_backup(client, slave_id, filepath=None, fast=False):
 
     print(f"\n  [~] Reescribiendo TODOS los registros del backup...")
     for reg in ORDEN_ESCRITURA:
-        if reg in PRESERVAR:
+        if reg in PRESERVAR and not override_preservar:
             continue
         if reg not in registros:
             continue
