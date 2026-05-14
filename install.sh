@@ -3273,7 +3273,21 @@ EOFOSCILA
                         4) REPAIR_FIX_MODE="fix" ;;
                         *) echo "  [X] Opción no válida"; continue ;;
                     esac
-                    
+
+                    # Submodo para restore: rápido (solo diferentes) vs robusto (todos)
+                    RESTORE_SUBMODE="robust"
+                    if [ "$REPAIR_MODE" = "3" ]; then
+                        echo ""
+                        echo "  Modo de restauración:"
+                        echo "    1) Robusto — reescribe TODOS los registros (60-90s, fuerza recálculo CRC) [recomendado]"
+                        echo "    2) Rápido  — solo los registros diferentes (10-30s, sin forzar CRC)"
+                        echo ""
+                        read -p "  Opción [1-2] (Enter = 1): " RESTORE_SUB
+                        if [ "$RESTORE_SUB" = "2" ]; then
+                            RESTORE_SUBMODE="fast"
+                        fi
+                    fi
+
                     echo ""
                     echo "  [!] Parando Node-RED temporalmente..."
                     sudo systemctl stop nodered 2>/dev/null
@@ -4092,14 +4106,18 @@ def parsear_backup_txt(filepath):
     return todas_fases
 
 
-def restaurar_desde_backup(client, slave_id, filepath=None):
+def restaurar_desde_backup(client, slave_id, filepath=None, fast=False):
     """Restaura registros de una fase desde un fichero TXT multi-fase.
 
-    Hace lo mismo que reparar() pero usando los valores del backup en vez
-    de defaults: intenta borrar alarma MR, reescribe TODOS los registros
-    (no solo los diferentes) para forzar recalculo del CRC, y activa el
-    flag de proteccion antes de cada escritura (la placa lo desactiva
-    despues de cada una). Respeta PRESERVAR (N.Serie, Dir Modbus, contadores).
+    fast=False (robusto): borra alarma MR + reescribe TODOS los registros
+        para forzar recalculo del CRC. Lento (~60-90s) pero seguro.
+
+    fast=True: solo escribe los registros que difieren del backup. Rapido
+        (~10-30s). NO fuerza recalculo de CRC. NO intenta borrar MR (asume
+        que se borrara sola al recalcular). Si la placa queda inconsistente,
+        relanzar con modo robusto.
+
+    Ambos respetan PRESERVAR (N.Serie, Dir Modbus, contadores).
     """
     if filepath is None:
         filepath = buscar_ultimo_backup()
@@ -4182,6 +4200,84 @@ def restaurar_desde_backup(client, slave_id, filepath=None):
         return
     print(f"\n  [OK] Fase {slave_id} en bypass")
 
+    # === MODO RAPIDO: solo escribir los registros diferentes ===
+    if fast:
+        diferentes = {}
+        for reg in ORDEN_ESCRITURA:
+            if reg in PRESERVAR:
+                continue
+            if reg not in registros:
+                continue
+            val_backup = registros[reg]
+            val_actual = leer_registro(client, reg, slave_id)
+            if val_actual is None or val_actual != val_backup:
+                diferentes[reg] = val_backup
+
+        if not diferentes:
+            print(f"\n  [OK] Modo rapido: no hay registros diferentes (solo PRESERVAR difieren). Nada que escribir.")
+            if hay_alarma_mr:
+                print(f"  [!] Pero hay alarma MR. Considera usar modo Robusto si la placa no levanta.")
+            return
+
+        print(f"\n  [~] Modo RAPIDO: escribiendo {len(diferentes)} registros diferentes...")
+        ok_count = 0
+        err_count = 0
+        for reg, valor in sorted(diferentes.items()):
+            # Activar flag correspondiente ANTES de cada escritura
+            if reg in CONFIGURACION or (41 <= reg <= 69):
+                escribir_registro(client, 40, 0, slave_id)
+                time.sleep(0.15)
+                escribir_registro(client, 40, 47818, slave_id)
+                time.sleep(0.2)
+            elif reg in CALIBRACION or (70 <= reg <= 89):
+                escribir_registro(client, 40, 0, slave_id)
+                time.sleep(0.15)
+                escribir_registro(client, 40, 47818, slave_id)
+                time.sleep(0.15)
+                escribir_registro(client, 70, 51898, slave_id)
+                time.sleep(0.2)
+            elif reg in CONTROL or (90 <= reg <= 95):
+                escribir_registro(client, 90, 56010, slave_id)
+                time.sleep(0.2)
+
+            nombre = nombre_registro(reg)
+            print(f"  [~] Reg {reg:>3} ({nombre:<12}): -> {valor}...", end=" ", flush=True)
+            if escribir_registro(client, reg, valor, slave_id):
+                time.sleep(0.1)
+                leido = leer_registro(client, reg, slave_id)
+                if leido == valor:
+                    print("[OK]")
+                    ok_count += 1
+                else:
+                    print(f"[!] verif fallo: leido={leido}")
+                    err_count += 1
+            else:
+                print("[X] error escritura")
+                err_count += 1
+
+        desactivar_flags(client, slave_id)
+
+        print(f"\n{'='*75}")
+        print(f"  RESULTADO RAPIDO L{slave_id}: {ok_count} OK, {err_count} errores")
+
+        # Verificar si MR se borro tras las escrituras
+        if hay_alarma_mr:
+            time.sleep(1)
+            alarma_final = leer_registro(client, 2, slave_id)
+            if alarma_final is not None and (alarma_final & (1 << 10)):
+                print(f"  [!] Alarma MR PERSISTE tras escrituras (reg 2 = {alarma_final})")
+                print(f"      Relanzar con modo Robusto si la placa no levanta")
+            else:
+                print(f"  [OK] Alarma MR borrada tras las escrituras (reg 2 = {alarma_final})")
+
+        if err_count == 0:
+            print(f"")
+            print(f"  IMPORTANTE: Pon el equipo en REGULACION desde Node-RED")
+            print(f"  para que los valores se guarden en la placa")
+        print(f"{'='*75}")
+        return
+
+    # === MODO ROBUSTO: continuar con la logica original ===
     # Intentar borrar alarma MR si esta activa
     if hay_alarma_mr:
         print(f"\n  [~] Intentando borrar alarma MR antes de escribir...")
@@ -4285,6 +4381,7 @@ if len(sys.argv) < 3:
 
 slaves_str = sys.argv[1]
 mode = sys.argv[2]  # "diag", "fix", "backup", "restore"
+submode = sys.argv[3] if len(sys.argv) > 3 else "robust"  # "fast" o "robust" (solo para restore)
 
 # Esperar a que el puerto serie este libre
 print(f"  [~] Comprobando que el puerto {port} esta libre...")
@@ -4328,8 +4425,13 @@ try:
             print(f"      Primero haz un backup con la opcion 3")
         else:
             print(f"\n  Backup encontrado: {os.path.basename(filepath)}")
+            fast_mode = (submode == "fast")
+            if fast_mode:
+                print(f"  Modo: RAPIDO (solo registros diferentes)")
+            else:
+                print(f"  Modo: ROBUSTO (reescribe TODOS, fuerza recalculo CRC)")
             for slave_id in slaves:
-                restaurar_desde_backup(client, slave_id, filepath)
+                restaurar_desde_backup(client, slave_id, filepath, fast=fast_mode)
     else:
         for slave_id in slaves:
             corruptos, hay_alarma_mr = diagnosticar(client, slave_id)
@@ -4344,7 +4446,7 @@ finally:
 EOFREPAIR
                     
                     # Ejecutar como archivo (no heredoc) para que input() funcione
-                    python3 "$REPAIR_SCRIPT" "$REPAIR_SLAVES" "$REPAIR_FIX_MODE"
+                    python3 "$REPAIR_SCRIPT" "$REPAIR_SLAVES" "$REPAIR_FIX_MODE" "$RESTORE_SUBMODE"
                     rm -f "$REPAIR_SCRIPT"
                     
                     echo ""
