@@ -76,10 +76,18 @@ fi
 echo
 echo "=== 4. Verificación ==="
 sleep 20
-errors=$(journalctl -u nodered --since "20 sec ago" --no-pager 2>&1 | grep -iE "error|crash" | grep -v "Timed out" | wc -l)
+# Subshell + || echo 0: la pipeline puede devolver exit!=0 si grep no matchea
+# (con pipefail). Capturamos cero errores correctamente sin abortar el script.
+errors=$( ( journalctl -u nodered --since "20 sec ago" --no-pager 2>&1 \
+            | grep -iE "error|crash" \
+            | grep -v "Timed out" \
+            | wc -l ) || echo 0 )
 if [ "$errors" -gt 0 ]; then
   echo "ALERTA: $errors errores tras restart (no-timeout). Revisa:"
-  journalctl -u nodered --since "20 sec ago" --no-pager | grep -iE "error|crash" | grep -v "Timed out" | head -10
+  journalctl -u nodered --since "20 sec ago" --no-pager 2>&1 \
+    | grep -iE "error|crash" \
+    | grep -v "Timed out" \
+    | head -10 || true
 else
   echo "OK: sin errores tras restart"
 fi
