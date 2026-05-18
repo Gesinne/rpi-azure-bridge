@@ -17,3 +17,7 @@ __pycache__/
 # Repos anidados / dirs auxiliares locales
 nodered-patry/
 docs/
+
+# Backups locales auto-generados por install.sh / actualizar_flow.sh
+*.backup_*
+*.bak
