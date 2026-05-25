@@ -119,7 +119,17 @@ if [ "$1" != "--updated" ]; then
         [ "$ALERT_CRON_MISSING" = "1" ] && echo "  [~] Falta configurar cron @reboot de alerta_reinicio.sh"
 
         RESP=""
-        read -r -p "  ¿Aplicar actualizaciones? [S/n] " RESP </dev/tty 2>/dev/null || RESP="s"
+        # En shells no-interactivas (Raspberry Pi Connect, scripts), /dev/tty
+        # puede bloquear el read indefinidamente. Detectamos si hay tty y,
+        # si no, aplicamos por defecto sin preguntar. Si hay tty pero el
+        # usuario no responde en 15s, también aplicamos (el default es Sí).
+        if [ -t 0 ] && [ -r /dev/tty ]; then
+            read -r -t 15 -p "  ¿Aplicar actualizaciones? [S/n] " RESP </dev/tty 2>/dev/null || RESP="s"
+            echo ""  # newline tras el read (sea respuesta o timeout)
+        else
+            echo "  [~] Sin tty interactivo: aplicando por defecto"
+            RESP="s"
+        fi
         [ -z "$RESP" ] && RESP="s"
 
         if [[ "$RESP" =~ ^[sSyY]$ ]]; then
