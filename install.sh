@@ -99,6 +99,10 @@ if [ "$1" != "--updated" ]; then
     UPDATES=()
     [ -f "$INSTALL_DIR/enviar_email.py" ]   && file_needs_update "$INSTALL_DIR/enviar_email.py"   "$USER_HOME/enviar_email.py"          && UPDATES+=("enviar_email.py")
     [ -f "$INSTALL_DIR/leer_registros.py" ] && file_needs_update "$INSTALL_DIR/leer_registros.py" "$USER_HOME/leer_registros.py"        && UPDATES+=("leer_registros.py")
+    # modbus_helper.py: dependencia de leer_registros.py y enviar_email.py
+    # (autodetección + cache de baudrate Modbus). Sin esto, los .py de arriba
+    # rompen con ImportError.
+    [ -f "$INSTALL_DIR/modbus_helper.py" ]  && file_needs_update "$INSTALL_DIR/modbus_helper.py"  "$USER_HOME/modbus_helper.py"         && UPDATES+=("modbus_helper.py")
     [ -f "$INSTALL_DIR/alerta_reinicio.sh" ] && file_needs_update "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh   && UPDATES+=("alerta_reinicio.sh")
 
     ALERT_CRON_MISSING=0
@@ -121,7 +125,7 @@ if [ "$1" != "--updated" ]; then
         if [[ "$RESP" =~ ^[sSyY]$ ]]; then
             for f in "${UPDATES[@]}"; do
                 case "$f" in
-                    enviar_email.py|leer_registros.py)
+                    enviar_email.py|leer_registros.py|modbus_helper.py)
                         cp "$INSTALL_DIR/$f" "$USER_HOME/$f"
                         echo "  [OK] $f copiado"
                         ;;
