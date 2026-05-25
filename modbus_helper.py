@@ -22,10 +22,10 @@ from datetime import datetime
 
 DEFAULT_PORT = "/dev/ttyAMA0"
 DEFAULT_BAUDRATE = 115200
-BAUDRATES_PROBE = [115200, 57600, 38400, 19200, 9600]
+BAUDRATES_PROBE = [115200, 57600, 38400]   # registro 61 valores 0=115200, 1=57600, 2=38400
 SLAVES_PROBE = (1,)         # Solo slave 1: si está apagado, los demás también.
 PROBE_REGISTER = 0          # Registro 0 = Estado actual del chopper (siempre presente)
-PROBE_TIMEOUT = 0.3         # 5 baudrates × 1 slave × 0.3 ≈ 1.5s peor caso (solo cache miss)
+PROBE_TIMEOUT = 0.3         # 3 baudrates × 1 slave × 0.3 ≈ 0.9s peor caso (solo cache miss)
 
 
 def _cache_path():

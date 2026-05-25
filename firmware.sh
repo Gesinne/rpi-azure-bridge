@@ -485,6 +485,190 @@ EOFREPARAR
     echo "  [OK] Servicios reiniciados"
 }
 
+# Cambiar velocidad Modbus de las 3 placas (registro 61)
+# Mapeo firmware: 0 = 115200, 1 = 57600, 2 = 38400
+cambiar_velocidad_modbus() {
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Cambiar velocidad Modbus de las placas"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Valores del registro 61:"
+    echo "    0 = 115200 baud"
+    echo "    1 =  57600 baud"
+    echo "    2 =  38400 baud"
+    echo ""
+    read -p "  Nuevo valor [0/1/2]: " NEW_VEL
+    if [[ ! "$NEW_VEL" =~ ^[012]$ ]]; then
+        echo "  [X] Valor no válido (debe ser 0, 1 o 2)"
+        return 1
+    fi
+    echo ""
+    read -p "  ¿Confirmas escribir reg 61=$NEW_VEL en L1, L2 y L3? [s/N]: " CONFIRM
+    if [[ ! "$CONFIRM" =~ ^[sSyY]$ ]]; then
+        echo "  [~] Cancelado"
+        return 1
+    fi
+
+    echo ""
+    echo "  [!]  Parando Node-RED temporalmente..."
+    sudo systemctl stop nodered 2>/dev/null
+    docker stop gesinne-rpi >/dev/null 2>&1 || true
+    sleep 2
+    echo "  [OK] Servicios parados"
+    echo ""
+
+    export NEW_VEL
+    python3 << EOFVEL
+import sys, os, time
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    from pymodbus.client.sync import ModbusSerialClient
+
+sys.path.insert(0, os.environ.get('RPI_BRIDGE_DIR', '.'))
+try:
+    from modbus_helper import open_modbus_client, redetect_and_open_modbus_client, _cache_path
+    HAS_HELPER = True
+except ImportError:
+    HAS_HELPER = False
+
+BAUD_MAP = {0: 115200, 1: 57600, 2: 38400}
+NEW_VEL = int(os.environ['NEW_VEL'])
+NEW_BAUD = BAUD_MAP[NEW_VEL]
+
+# --- Conectar a velocidad actual (con autodetección si hay helper) ---
+if HAS_HELPER:
+    client = open_modbus_client(port='/dev/ttyAMA0', timeout=2)
+else:
+    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200,
+                                 bytesize=8, parity='N', stopbits=1, timeout=2)
+
+if not client.connect():
+    print("  [X] No se pudo abrir puerto serie")
+    sys.exit(1)
+
+# --- Leer reg 61 actual de las 3 placas ---
+print("  [M] Leyendo velocidad actual de las 3 placas...")
+actual = {}
+for slave in (1, 2, 3):
+    try:
+        rr = client.read_holding_registers(address=61, count=1, slave=slave)
+        if rr is None or rr.isError():
+            print(f"    L{slave}: sin respuesta")
+        else:
+            v = rr.registers[0]
+            b = BAUD_MAP.get(v, '?')
+            actual[slave] = v
+            print(f"    L{slave}: reg61={v} ({b} baud)")
+    except Exception as e:
+        print(f"    L{slave}: error - {e}")
+
+if len(actual) != 3:
+    print("  [X] No se pudieron leer las 3 placas — abortando")
+    client.close()
+    sys.exit(1)
+if len(set(actual.values())) != 1:
+    print("  [X] Las 3 placas tienen velocidades distintas — abortando (estado inconsistente)")
+    client.close()
+    sys.exit(1)
+
+if list(actual.values())[0] == NEW_VEL:
+    print(f"  [=] Ya están a reg61={NEW_VEL} ({NEW_BAUD} baud). Nada que hacer.")
+    client.close()
+    sys.exit(0)
+
+# --- Habilitar config (reg 40 = 47818) y escribir reg 61 en las 3 placas ---
+print("")
+print(f"  [W] Escribiendo reg61={NEW_VEL} ({NEW_BAUD} baud) en las 3 placas...")
+fallos = []
+for slave in (1, 2, 3):
+    try:
+        # Habilitar escritura de parámetros (reg 40 = 47818)
+        client.write_register(address=40, value=47818, slave=slave)
+        time.sleep(0.1)
+        wr = client.write_register(address=61, value=NEW_VEL, slave=slave)
+        if wr is None or wr.isError():
+            fallos.append(slave)
+            print(f"    L{slave}: ERROR escribiendo")
+        else:
+            print(f"    L{slave}: OK")
+    except Exception as e:
+        fallos.append(slave)
+        print(f"    L{slave}: ERROR - {e}")
+
+client.close()
+
+if fallos:
+    print(f"  [X] Falló la escritura en L{fallos} — algunas placas pueden haberse quedado en la velocidad nueva")
+    print(f"      Las placas que cambiaron quedaron a {NEW_BAUD} baud, las que fallaron siguen a la velocidad anterior.")
+    print(f"      INTERVENCION MANUAL REQUERIDA.")
+    sys.exit(2)
+
+# --- Borrar cache helper y esperar a que las placas tomen efecto ---
+if HAS_HELPER:
+    try:
+        os.remove(_cache_path())
+        print(f"  [~] Cache helper borrado: {_cache_path()}")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"  [!] No se pudo borrar cache: {e}")
+
+print("  [~] Esperando 3s para que las placas apliquen la nueva velocidad...")
+time.sleep(3)
+
+# --- Reconectar a NUEVA velocidad y verificar ---
+print("")
+print(f"  [V] Verificando con velocidad {NEW_BAUD} baud...")
+if HAS_HELPER:
+    client2 = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
+else:
+    client2 = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=NEW_BAUD,
+                                  bytesize=8, parity='N', stopbits=1, timeout=2)
+
+if not client2.connect():
+    print(f"  [X] No se pudo reconectar a {NEW_BAUD} baud. Estado incierto.")
+    sys.exit(3)
+
+ok = 0
+for slave in (1, 2, 3):
+    try:
+        rr = client2.read_holding_registers(address=61, count=1, slave=slave)
+        if rr is None or rr.isError():
+            print(f"    L{slave}: sin respuesta a {NEW_BAUD} baud")
+        else:
+            v = rr.registers[0]
+            if v == NEW_VEL:
+                print(f"    L{slave}: OK (reg61={v})")
+                ok += 1
+            else:
+                print(f"    L{slave}: reg61={v} (esperaba {NEW_VEL})")
+    except Exception as e:
+        print(f"    L{slave}: error - {e}")
+
+client2.close()
+
+if ok == 3:
+    print("")
+    print(f"  [OK] Las 3 placas a {NEW_BAUD} baud y verificadas")
+    sys.exit(0)
+else:
+    print(f"  [X] Solo {ok}/3 placas verificadas a la nueva velocidad")
+    sys.exit(4)
+EOFVEL
+
+    PY_EXIT=$?
+
+    echo ""
+    echo "  [~] Reiniciando Node-RED..."
+    sudo systemctl start nodered 2>/dev/null
+    docker start gesinne-rpi >/dev/null 2>&1 || true
+    sleep 3
+    echo "  [OK] Servicios reiniciados"
+    return $PY_EXIT
+}
+
 # Si se llama con argumento "verificar", ejecutar directamente
 if [ "$1" = "verificar" ]; then
     verificar_parametrizacion
@@ -495,6 +679,12 @@ fi
 if [ "$1" = "reparar" ]; then
     reparar_placas
     exit 0
+fi
+
+# Si se llama con argumento "velocidad", cambiar velocidad Modbus
+if [ "$1" = "velocidad" ]; then
+    cambiar_velocidad_modbus
+    exit $?
 fi
 
 # Función para enviar comando y leer respuesta
@@ -771,9 +961,10 @@ main_menu() {
         echo "  3) Actualizar L1, L2, L3 (guiado)"
         echo "  4) Detectar micro conectado"
         echo "  5) Enviar comando manual"
+        echo "  6) Cambiar velocidad Modbus (reg 61)"
         echo "  0) Salir"
         echo ""
-        read -p "  Opcion [0-5]: " OPTION
+        read -p "  Opcion [0-6]: " OPTION
         
         case "$OPTION" in
             1)
@@ -850,6 +1041,9 @@ main_menu() {
                 response=$(send_command "?$CMD" 2)
                 echo "  Respuesta:"
                 echo "$response" | head -20
+                ;;
+            6)
+                cambiar_velocidad_modbus
                 ;;
             0)
                 echo ""
