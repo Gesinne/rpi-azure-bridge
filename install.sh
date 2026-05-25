@@ -89,72 +89,41 @@ if [ "$1" != "--updated" ]; then
         fi
     fi
 
-    # Detectar qué scripts cambiaron respecto a los ya instalados
-    file_needs_update() {
-        local src="$1" dst="$2"
-        [ ! -f "$dst" ] && return 0
-        ! cmp -s "$src" "$dst"
-    }
+    # Sobrescritura directa: borra el local y copia el del repo SIEMPRE.
+    # Más rápido que comparar+preguntar, sin posibilidad de cuelgue en
+    # shells no-interactivas (Raspberry Pi Connect, scripts, cron).
+    # Lista de scripts a sincronizar siempre desde el repo.
+    SYNC_HOME=(
+        enviar_email.py
+        leer_registros.py
+        modbus_helper.py
+    )
+    SYNC_BIN=(
+        alerta_reinicio.sh
+    )
 
-    UPDATES=()
-    [ -f "$INSTALL_DIR/enviar_email.py" ]   && file_needs_update "$INSTALL_DIR/enviar_email.py"   "$USER_HOME/enviar_email.py"          && UPDATES+=("enviar_email.py")
-    [ -f "$INSTALL_DIR/leer_registros.py" ] && file_needs_update "$INSTALL_DIR/leer_registros.py" "$USER_HOME/leer_registros.py"        && UPDATES+=("leer_registros.py")
-    # modbus_helper.py: dependencia de leer_registros.py y enviar_email.py
-    # (autodetección + cache de baudrate Modbus). Sin esto, los .py de arriba
-    # rompen con ImportError.
-    [ -f "$INSTALL_DIR/modbus_helper.py" ]  && file_needs_update "$INSTALL_DIR/modbus_helper.py"  "$USER_HOME/modbus_helper.py"         && UPDATES+=("modbus_helper.py")
-    [ -f "$INSTALL_DIR/alerta_reinicio.sh" ] && file_needs_update "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh   && UPDATES+=("alerta_reinicio.sh")
-
-    ALERT_CRON_MISSING=0
-    if [ -f "$INSTALL_DIR/alerta_reinicio.sh" ] && ! crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
-        ALERT_CRON_MISSING=1
-    fi
-
-    if [ ${#UPDATES[@]} -eq 0 ] && [ "$ALERT_CRON_MISSING" = "0" ]; then
-        echo "  [=] Scripts ya están al día (no hay cambios)"
-    else
-        if [ ${#UPDATES[@]} -gt 0 ]; then
-            echo "  [~] Cambios disponibles en: ${UPDATES[*]}"
+    REAL_USER=$(basename "$USER_HOME")
+    echo "  [~] Sincronizando scripts desde el repo..."
+    for f in "${SYNC_HOME[@]}"; do
+        if [ -f "$INSTALL_DIR/$f" ]; then
+            cp -f "$INSTALL_DIR/$f" "$USER_HOME/$f"
+            chown "$REAL_USER:$REAL_USER" "$USER_HOME/$f" 2>/dev/null || true
+            echo "  [OK] $f"
         fi
-        [ "$ALERT_CRON_MISSING" = "1" ] && echo "  [~] Falta configurar cron @reboot de alerta_reinicio.sh"
-
-        RESP=""
-        # En shells no-interactivas (Raspberry Pi Connect, scripts), /dev/tty
-        # puede bloquear el read indefinidamente. Detectamos si hay tty y,
-        # si no, aplicamos por defecto sin preguntar. Si hay tty pero el
-        # usuario no responde en 15s, también aplicamos (el default es Sí).
-        if [ -t 0 ] && [ -r /dev/tty ]; then
-            read -r -t 15 -p "  ¿Aplicar actualizaciones? [S/n] " RESP </dev/tty 2>/dev/null || RESP="s"
-            echo ""  # newline tras el read (sea respuesta o timeout)
-        else
-            echo "  [~] Sin tty interactivo: aplicando por defecto"
-            RESP="s"
+    done
+    for f in "${SYNC_BIN[@]}"; do
+        if [ -f "$INSTALL_DIR/$f" ]; then
+            cp -f "$INSTALL_DIR/$f" "/usr/local/bin/$f"
+            chmod +x "/usr/local/bin/$f"
+            echo "  [OK] $f -> /usr/local/bin"
         fi
-        [ -z "$RESP" ] && RESP="s"
+    done
 
-        if [[ "$RESP" =~ ^[sSyY]$ ]]; then
-            for f in "${UPDATES[@]}"; do
-                case "$f" in
-                    enviar_email.py|leer_registros.py|modbus_helper.py)
-                        cp "$INSTALL_DIR/$f" "$USER_HOME/$f"
-                        echo "  [OK] $f copiado"
-                        ;;
-                    alerta_reinicio.sh)
-                        cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh
-                        chmod +x /usr/local/bin/alerta_reinicio.sh
-                        echo "  [OK] alerta_reinicio.sh actualizado"
-                        ;;
-                esac
-            done
-            if [ "$ALERT_CRON_MISSING" = "1" ]; then
-                [ ! -f /usr/local/bin/alerta_reinicio.sh ] && cp "$INSTALL_DIR/alerta_reinicio.sh" /usr/local/bin/alerta_reinicio.sh && chmod +x /usr/local/bin/alerta_reinicio.sh
-                CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
-                (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
-                echo "  [OK] cron @reboot configurado"
-            fi
-        else
-            echo "  [~] Actualización omitida"
-        fi
+    # cron @reboot de alerta_reinicio.sh (si falta)
+    if [ -f /usr/local/bin/alerta_reinicio.sh ] && ! crontab -l 2>/dev/null | grep -q "alerta_reinicio.sh"; then
+        CRON_LINE="@reboot /usr/local/bin/alerta_reinicio.sh >> /var/log/alerta_reinicio.log 2>&1"
+        (crontab -l 2>/dev/null | grep -v "alerta_reinicio.sh"; echo "$CRON_LINE") | crontab -
+        echo "  [OK] cron @reboot alerta_reinicio.sh configurado"
     fi
 
     # Re-ejecutar con la versión recién descargada
