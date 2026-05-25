@@ -642,17 +642,93 @@ if not client.connect():
     print("  [X] No se pudo abrir puerto serie para escritura")
     sys.exit(1)
 
-# --- Habilitar config (reg 40 = 47818) y escribir reg 61 con reintentos ---
-# Estrategia (opción A):
-#   - Hasta MAX_RETRIES por placa antes de declarar fallo.
-#   - Si tras los reintentos una placa falla, intentamos ROLLBACK de las que
-#     ya cambiaron a la velocidad anterior (CURRENT_VEL del env). Así el bus
-#     queda consistente en la velocidad vieja en vez de partido.
-#   - Si el rollback también falla en alguna placa: estado partido real,
-#     se reporta cuáles quedaron a qué velocidad → intervención manual.
 CURRENT_VEL = int(os.environ.get('CURRENT_VEL', '-1'))
 MAX_RETRIES = 4
 RETRY_SLEEP = 0.3
+
+
+def verificar_3_placas(port, baud_target):
+    """Abre cliente a baud_target y devuelve dict {slave: reg61_value} de las que respondieron OK."""
+    if HAS_HELPER:
+        c = redetect_and_open_modbus_client(port=port, timeout=2)
+    else:
+        c = ModbusSerialClient(port=port, baudrate=baud_target,
+                                bytesize=8, parity='N', stopbits=1, timeout=2)
+    if not c.connect():
+        return None  # no se pudo abrir
+    out = {}
+    for slave in (1, 2, 3):
+        try:
+            rr = c.read_holding_registers(address=61, count=1, slave=slave)
+            if rr is not None and not rr.isError():
+                out[slave] = rr.registers[0]
+        except Exception:
+            pass
+    c.close()
+    return out
+
+
+# === INTENTO 1: BROADCAST (slave=0) ===
+# Modbus permite write a slave=0 que las 3 placas procesan a la vez.
+# No hay ACK con broadcast → verificamos después leyendo reg 61.
+# Si funciona: cambio atómico sincronizado, listo. Si no: fallback al individual.
+print("")
+print("  [B] Intento 1: BROADCAST (slave=0) — cambio sincronizado")
+broadcast_ok = False
+try:
+    client.write_register(address=40, value=47818, slave=0)
+    time.sleep(0.05)
+    client.write_register(address=61, value=NEW_VEL, slave=0)
+    client.close()
+    print("  [B] Broadcast enviado, esperando 2s a que las placas apliquen...")
+    time.sleep(2)
+
+    verif = verificar_3_placas('/dev/ttyAMA0', NEW_BAUD)
+    if verif is None:
+        print("  [~] No se pudo abrir puerto a nueva velocidad — fallback individual")
+    else:
+        ok_slaves = [s for s, v in verif.items() if v == NEW_VEL]
+        if len(ok_slaves) == 3:
+            print(f"  [OK] Broadcast exitoso — las 3 placas a {NEW_BAUD} baud")
+            broadcast_ok = True
+        elif len(ok_slaves) > 0:
+            partidas = [s for s in (1, 2, 3) if s not in ok_slaves]
+            print(f"  [X] Broadcast PARCIAL: L{ok_slaves} a nueva, L{partidas} sin cambiar")
+            print(f"      BUS PARTIDO. Intervención manual requerida.")
+            print(f"      Próximo intento desde el menú detectará y abortará por seguridad.")
+            sys.exit(2)
+        else:
+            print("  [~] Broadcast no aplicado (0/3 a nueva velocidad) — fallback individual")
+except Exception as e:
+    try: client.close()
+    except: pass
+    print(f"  [~] Broadcast falló: {e} — fallback individual")
+
+if broadcast_ok:
+    if HAS_HELPER:
+        try:
+            os.remove(_cache_path())
+            print(f"  [~] Cache helper borrado: {_cache_path()}")
+        except FileNotFoundError:
+            pass
+    print("")
+    print(f"  [OK] Las 3 placas a {NEW_BAUD} baud (broadcast)")
+    sys.exit(0)
+
+
+# === INTENTO 2: INDIVIDUAL CON REINTENTOS + ROLLBACK ===
+# Reabrir a velocidad vieja (las placas siguen ahí porque el broadcast no funcionó)
+print("")
+print("  [I] Intento 2: INDIVIDUAL con reintentos + rollback")
+if HAS_HELPER:
+    client = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
+else:
+    OLD_BAUD = BAUD_MAP.get(CURRENT_VEL, 115200)
+    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=OLD_BAUD,
+                                 bytesize=8, parity='N', stopbits=1, timeout=2)
+if not client.connect():
+    print("  [X] No se pudo reabrir puerto para fallback individual")
+    sys.exit(1)
 
 def write_velocidad(client, slave, value):
     """Intenta escribir reg 61 con habilitación previa. Devuelve True/False."""
