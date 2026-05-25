@@ -1363,6 +1363,51 @@ if [ "$1" = "velocidad" ]; then
     exit $?
 fi
 
+# Si se llama con argumento "nodered-baud", solo actualizar flows.json
+# (sin tocar las placas). Útil para alinear Node-RED si quedó desincronizado.
+if [ "$1" = "nodered-baud" ]; then
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Cambiar baudrate de Node-RED (flows.json)"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  NO toca las placas — solo modifica flows.json y reinicia Node-RED."
+    echo ""
+    echo "  Baudrates válidos:"
+    echo "    0 = 115200 baud"
+    echo "    1 =  57600 baud"
+    echo "    2 =  38400 baud"
+    echo ""
+    read -p "  Valor [0/1/2] (ENTER para cancelar): " NR_VAL
+    if [ -z "$NR_VAL" ]; then
+        echo "  [~] Cancelado"
+        exit 0
+    fi
+    case "$NR_VAL" in
+        0) NR_BAUD="115200" ;;
+        1) NR_BAUD="57600"  ;;
+        2) NR_BAUD="38400"  ;;
+        *) echo "  [X] Valor no válido"; exit 1 ;;
+    esac
+
+    echo ""
+    echo "  [!]  Parando Node-RED temporalmente..."
+    sudo systemctl stop nodered 2>/dev/null
+    docker stop gesinne-rpi >/dev/null 2>&1 || true
+    sleep 2
+    echo "  [OK] Servicios parados"
+
+    actualizar_baudrate_nodered "$NR_BAUD"
+
+    echo ""
+    echo "  [~] Reiniciando Node-RED..."
+    sudo systemctl start nodered 2>/dev/null
+    docker start gesinne-rpi >/dev/null 2>&1 || true
+    sleep 3
+    echo "  [OK] Servicios reiniciados"
+    exit 0
+fi
+
 # Función para enviar comando y leer respuesta
 send_command() {
     local cmd="$1"
