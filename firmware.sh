@@ -627,7 +627,7 @@ for baudrate in BAUDRATES:
     sys.stderr.flush()
     try:
         c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baudrate,
-                                bytesize=8, parity='N', stopbits=1, timeout=1.5)
+                                bytesize=8, parity='N', stopbits=1, timeout=2)
         if c.connect():
             # Probar lectura del slave 1 para verificar comunicación
             r = c.read_holding_registers(address=61, count=1, slave=1)
@@ -1108,7 +1108,7 @@ for slave in (1, 2, 3):
         sys.stderr.write(f"    L{slave} @ {baud}... ")
         sys.stderr.flush()
         c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baud,
-                                bytesize=8, parity='N', stopbits=1, timeout=0.5)
+                                bytesize=8, parity='N', stopbits=1, timeout=2)
         if not c.connect():
             sys.stderr.write("no conecta\n")
             continue
