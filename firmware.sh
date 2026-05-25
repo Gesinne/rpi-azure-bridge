@@ -711,222 +711,138 @@ def restaurar_bypass(client_para_restaurar, baud_str):
             print(f"    L{slave}: error restaurando reg31 - {e}")
 
 
-# === INTENTO 1: BROADCAST (slave=0) ===
-# Modbus permite write a slave=0 que las 3 placas procesan a la vez.
-# No hay ACK con broadcast → verificamos después leyendo reg 61.
-# Si funciona: cambio atómico sincronizado, listo. Si no: fallback al individual.
+# === ESCRITURA REG 61 ===
+# IMPORTANTE: la placa contesta el ACK del write a la NUEVA velocidad
+# (cambia inmediatamente al recibir el comando). El master sigue a la
+# velocidad vieja → ve bytes basura interpretados como "Exception 134/0".
+# Por eso IGNORAMOS la respuesta del write y juzgamos éxito por la
+# verificación posterior leyendo reg 61 a la nueva velocidad.
+
+def write_silencioso(client, slave, address, value):
+    """Hace write sin importar la respuesta. Silencia cualquier excepción."""
+    try:
+        client.write_register(address=address, value=value, slave=slave)
+    except Exception:
+        pass
+
+
+# --- Intento 1: BROADCAST (slave=0) — 1 frame para las 3 placas ---
 print("")
 print("  [B] Intento 1: BROADCAST (slave=0) — cambio sincronizado")
-broadcast_ok = False
-try:
-    client.write_register(address=61, value=NEW_VEL, slave=0)
-    client.close()
-    print("  [B] Broadcast enviado, esperando 2s a que las placas apliquen...")
-    time.sleep(2)
+write_silencioso(client, 0, 61, NEW_VEL)
+try: client.close()
+except: pass
 
-    verif = verificar_3_placas('/dev/ttyAMA0', NEW_BAUD)
-    if verif is None:
-        print("  [~] No se pudo abrir puerto a nueva velocidad — fallback individual")
+print("  [B] Esperando 2s a que las placas apliquen la nueva velocidad...")
+time.sleep(2)
+
+verif = verificar_3_placas('/dev/ttyAMA0', NEW_BAUD)
+broadcast_ok = (verif is not None and len([s for s, v in verif.items() if v == NEW_VEL]) == 3)
+
+if not broadcast_ok:
+    # --- Intento 2: INDIVIDUAL a vieja velocidad ---
+    # Algunas placas pueden no haber recibido el broadcast (ruido, terminación, etc.).
+    # Reabrimos a la velocidad que aún tengan las que no cambiaron.
+    print("  [~] Broadcast no aplicó completamente — pasando a INDIVIDUAL")
+    OLD_BAUD = BAUD_MAP.get(CURRENT_VEL, 115200)
+    print(f"  [I] Reabriendo a velocidad anterior {OLD_BAUD} baud para escribir individual...")
+    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=OLD_BAUD,
+                                 bytesize=8, parity='N', stopbits=1, timeout=2)
+    if client.connect():
+        # Solo escribimos a las placas que NO se verificaron a NEW_BAUD
+        ya_ok = {s for s, v in (verif or {}).items() if v == NEW_VEL}
+        for slave in (1, 2, 3):
+            if slave in ya_ok:
+                print(f"    L{slave}: ya estaba OK por broadcast, salto")
+                continue
+            write_silencioso(client, slave, 61, NEW_VEL)
+            print(f"    L{slave}: write enviado (sin esperar ACK)")
+            time.sleep(0.3)
+        client.close()
     else:
-        ok_slaves = [s for s, v in verif.items() if v == NEW_VEL]
-        if len(ok_slaves) == 3:
-            print(f"  [OK] Broadcast exitoso — las 3 placas a {NEW_BAUD} baud")
-            broadcast_ok = True
-        elif len(ok_slaves) > 0:
-            partidas = [s for s in (1, 2, 3) if s not in ok_slaves]
-            print(f"  [X] Broadcast PARCIAL: L{ok_slaves} a nueva, L{partidas} sin cambiar")
-            print(f"      BUS PARTIDO. Intervención manual requerida.")
-            print(f"      Próximo intento desde el menú detectará y abortará por seguridad.")
-            sys.exit(2)
-        else:
-            print("  [~] Broadcast no aplicado (0/3 a nueva velocidad) — fallback individual")
-except Exception as e:
-    try: client.close()
-    except: pass
-    print(f"  [~] Broadcast falló: {e} — fallback individual")
+        print(f"  [!] No se pudo reabrir a {OLD_BAUD} baud — algunas placas pueden estar ya a {NEW_BAUD}")
 
-if broadcast_ok:
-    # Restaurar reg 31 a nueva velocidad
+    print("  [V] Esperando 2s y verificando...")
+    time.sleep(2)
+    verif = verificar_3_placas('/dev/ttyAMA0', NEW_BAUD)
+
+
+# --- Evaluación final por verificación ---
+print("")
+print(f"  [V] Verificación final con velocidad {NEW_BAUD} baud:")
+if verif is None:
+    print(f"    [X] No se pudo abrir puerto a {NEW_BAUD} baud. Estado del bus desconocido.")
+    print(f"    INTERVENCION MANUAL REQUERIDA.")
+    sys.exit(3)
+
+ok_slaves = []
+for slave in (1, 2, 3):
+    v = verif.get(slave)
+    if v is None:
+        print(f"    L{slave}: sin respuesta a {NEW_BAUD} baud")
+    elif v == NEW_VEL:
+        print(f"    L{slave}: OK (reg61={v})")
+        ok_slaves.append(slave)
+    else:
+        print(f"    L{slave}: reg61={v} (esperaba {NEW_VEL})")
+
+# Borrar cache helper (la velocidad ha cambiado o intentamos cambiarla)
+if HAS_HELPER:
+    try:
+        os.remove(_cache_path())
+    except FileNotFoundError:
+        pass
+
+# Restaurar reg 31 (bypass) — a NEW_BAUD si todas OK, intentando ambas si parcial
+print("")
+if len(ok_slaves) == 3:
+    print(f"  [BP] Restaurando reg 31 al estado anterior (a {NEW_BAUD} baud)...")
     if HAS_HELPER:
         client_r = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
     else:
         client_r = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=NEW_BAUD,
                                        bytesize=8, parity='N', stopbits=1, timeout=2)
     if client_r.connect():
-        restaurar_bypass(client_r, str(NEW_BAUD))
+        for slave in (1, 2, 3):
+            prev = estado31_previo.get(slave)
+            if prev is None or prev == 0:
+                continue
+            write_silencioso(client_r, slave, 31, prev)
+            print(f"    L{slave}: reg31 restaurado a {prev}")
+            time.sleep(0.1)
         client_r.close()
 
-    if HAS_HELPER:
-        try:
-            os.remove(_cache_path())
-            print(f"  [~] Cache helper borrado: {_cache_path()}")
-        except FileNotFoundError:
-            pass
-    print("")
-    print(f"  [OK] Las 3 placas a {NEW_BAUD} baud (broadcast)")
-    sys.exit(0)
-
-
-# === INTENTO 2: INDIVIDUAL CON REINTENTOS + ROLLBACK ===
-# Reabrir a velocidad vieja (las placas siguen ahí porque el broadcast no funcionó)
-print("")
-print("  [I] Intento 2: INDIVIDUAL con reintentos + rollback")
-if HAS_HELPER:
-    client = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
-else:
-    OLD_BAUD = BAUD_MAP.get(CURRENT_VEL, 115200)
-    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=OLD_BAUD,
-                                 bytesize=8, parity='N', stopbits=1, timeout=2)
-if not client.connect():
-    print("  [X] No se pudo reabrir puerto para fallback individual")
-    sys.exit(1)
-
-def write_velocidad(client, slave, value):
-    """Escribe reg 61. Bypass ya aplicado al inicio. Devuelve True/False."""
-    try:
-        wr = client.write_register(address=61, value=value, slave=slave)
-        return wr is not None and not wr.isError()
-    except Exception:
-        return False
-
-print("")
-print(f"  [W] Escribiendo reg61={NEW_VEL} ({NEW_BAUD} baud) en las 3 placas (con reintentos)...")
-cambiadas = []
-fallidas = []
-for slave in (1, 2, 3):
-    ok = False
-    for intento in range(1, MAX_RETRIES + 1):
-        if write_velocidad(client, slave, NEW_VEL):
-            ok = True
-            tag = "OK" if intento == 1 else f"OK (intento {intento})"
-            print(f"    L{slave}: {tag}")
-            cambiadas.append(slave)
-            break
-        if intento < MAX_RETRIES:
-            time.sleep(RETRY_SLEEP)
-    if not ok:
-        print(f"    L{slave}: ERROR tras {MAX_RETRIES} intentos")
-        fallidas.append(slave)
-        break  # No seguimos con la siguiente: minimizar daño
-
-# Si hubo fallos a mitad, intentar rollback de las cambiadas
-if fallidas:
-    print("")
-    print(f"  [!] Falló L{fallidas}. Intentando ROLLBACK de L{cambiadas} a velocidad anterior (reg61={CURRENT_VEL})...")
-    rollback_fallidas = []
-    for slave in cambiadas:
-        # El rollback se hace a la velocidad NUEVA porque la placa ya cambió.
-        # Necesitamos reabrir el cliente a NEW_BAUD para hablarle.
-        # IMPORTANTE: el cliente actual sigue a velocidad vieja; lo cerramos y abrimos uno nuevo.
-        pass
-    client.close()
-
-    if HAS_HELPER:
-        client_new = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
-    else:
-        client_new = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=NEW_BAUD,
-                                         bytesize=8, parity='N', stopbits=1, timeout=2)
-    if not client_new.connect():
-        print(f"  [X] No se pudo abrir puerto a {NEW_BAUD} baud para rollback")
-        print(f"      Estado del bus: L{cambiadas} a {NEW_BAUD} baud, L{fallidas} a velocidad anterior. PARTIDO.")
-        print(f"      INTERVENCION MANUAL REQUERIDA.")
-        sys.exit(2)
-
-    for slave in cambiadas:
-        rb_ok = False
-        for intento in range(1, MAX_RETRIES + 1):
-            if write_velocidad(client_new, slave, CURRENT_VEL):
-                rb_ok = True
-                print(f"    L{slave}: rollback OK")
-                break
-            time.sleep(RETRY_SLEEP)
-        if not rb_ok:
-            print(f"    L{slave}: rollback FALLO")
-            rollback_fallidas.append(slave)
-    client_new.close()
-
-    if rollback_fallidas:
-        print("")
-        print(f"  [X] BUS PARTIDO: L{rollback_fallidas} quedaron a {NEW_BAUD} baud (sin poder revertir).")
-        print(f"      Las demás están a velocidad anterior. INTERVENCION MANUAL REQUERIDA.")
-        sys.exit(2)
-    else:
-        print("")
-        print(f"  [~] Rollback completo. Las 3 placas vuelven a velocidad anterior (reg61={CURRENT_VEL}).")
-        print(f"      No se cambió nada. Revisa la conexión y reintenta.")
-        # Borrar cache para forzar nueva detección (puede haber quedado stale)
-        if HAS_HELPER:
-            try:
-                os.remove(_cache_path())
-            except Exception:
-                pass
-        # Restaurar reg 31 (bypass) en velocidad anterior antes de salir
-        OLD_BAUD = BAUD_MAP.get(CURRENT_VEL, 115200)
-        if HAS_HELPER:
-            client_r = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
-        else:
-            client_r = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=OLD_BAUD,
-                                           bytesize=8, parity='N', stopbits=1, timeout=2)
-        if client_r.connect():
-            restaurar_bypass(client_r, str(OLD_BAUD))
-            client_r.close()
-        sys.exit(1)
-
-client.close()
-
-# --- Borrar cache helper y esperar a que las placas tomen efecto ---
-if HAS_HELPER:
-    try:
-        os.remove(_cache_path())
-        print(f"  [~] Cache helper borrado: {_cache_path()}")
-    except FileNotFoundError:
-        pass
-    except Exception as e:
-        print(f"  [!] No se pudo borrar cache: {e}")
-
-print("  [~] Esperando 3s para que las placas apliquen la nueva velocidad...")
-time.sleep(3)
-
-# --- Reconectar a NUEVA velocidad y verificar ---
-print("")
-print(f"  [V] Verificando con velocidad {NEW_BAUD} baud...")
-if HAS_HELPER:
-    client2 = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
-else:
-    client2 = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=NEW_BAUD,
-                                  bytesize=8, parity='N', stopbits=1, timeout=2)
-
-if not client2.connect():
-    print(f"  [X] No se pudo reconectar a {NEW_BAUD} baud. Estado incierto.")
-    sys.exit(3)
-
-ok = 0
-for slave in (1, 2, 3):
-    try:
-        rr = client2.read_holding_registers(address=61, count=1, slave=slave)
-        if rr is None or rr.isError():
-            print(f"    L{slave}: sin respuesta a {NEW_BAUD} baud")
-        else:
-            v = rr.registers[0]
-            if v == NEW_VEL:
-                print(f"    L{slave}: OK (reg61={v})")
-                ok += 1
-            else:
-                print(f"    L{slave}: reg61={v} (esperaba {NEW_VEL})")
-    except Exception as e:
-        print(f"    L{slave}: error - {e}")
-
-# Restaurar reg 31 (bypass) al estado anterior antes de cerrar
-restaurar_bypass(client2, str(NEW_BAUD))
-client2.close()
-
-if ok == 3:
     print("")
     print(f"  [OK] Las 3 placas a {NEW_BAUD} baud y verificadas")
     sys.exit(0)
+
+# Caso parcial o ninguna OK
+print("")
+if not ok_slaves:
+    print(f"  [X] Ninguna placa cambió a {NEW_BAUD} baud.")
 else:
-    print(f"  [X] Solo {ok}/3 placas verificadas a la nueva velocidad")
-    sys.exit(4)
+    no_ok = [s for s in (1, 2, 3) if s not in ok_slaves]
+    print(f"  [X] BUS PARTIDO: L{ok_slaves} a {NEW_BAUD} baud, L{no_ok} sin verificar.")
+
+print(f"      Restaurando bypass en ambas velocidades por seguridad...")
+# Intentar restaurar bypass en NEW_BAUD (para las que cambiaron)
+for baud_intentar in (NEW_BAUD, BAUD_MAP.get(CURRENT_VEL, 115200)):
+    try:
+        cr = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baud_intentar,
+                                 bytesize=8, parity='N', stopbits=1, timeout=2)
+        if cr.connect():
+            for slave in (1, 2, 3):
+                prev = estado31_previo.get(slave)
+                if prev is None or prev == 0:
+                    continue
+                write_silencioso(cr, slave, 31, prev)
+                time.sleep(0.1)
+            cr.close()
+    except Exception:
+        pass
+
+print(f"      INTERVENCION MANUAL REQUERIDA.")
+sys.exit(2)
 EOFVEL
 
     PY_EXIT=$?
