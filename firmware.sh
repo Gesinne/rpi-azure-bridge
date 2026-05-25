@@ -1373,29 +1373,108 @@ if [ "$1" = "nodered-baud" ]; then
     echo ""
     echo "  NO toca las placas — solo modifica flows.json y reinicia Node-RED."
     echo ""
-    echo "  Baudrates válidos:"
-    echo "    0 = 115200 baud"
-    echo "    1 =  57600 baud"
-    echo "    2 =  38400 baud"
-    echo ""
-    read -p "  Valor [0/1/2] (ENTER para cancelar): " NR_VAL
-    if [ -z "$NR_VAL" ]; then
-        echo "  [~] Cancelado"
-        exit 0
-    fi
-    case "$NR_VAL" in
-        0) NR_BAUD="115200" ;;
-        1) NR_BAUD="57600"  ;;
-        2) NR_BAUD="38400"  ;;
-        *) echo "  [X] Valor no válido"; exit 1 ;;
-    esac
 
-    echo ""
+    # PARO Node-RED para poder hablar al bus
     echo "  [!]  Parando Node-RED temporalmente..."
     sudo systemctl stop nodered 2>/dev/null
     docker stop gesinne-rpi >/dev/null 2>&1 || true
     sleep 2
     echo "  [OK] Servicios parados"
+    echo ""
+
+    # Detectar baudrate REAL de las placas (igual que opción 4)
+    echo "  [D] Detectando baudrate REAL de las placas..."
+    BAUD_PLACAS=$(python3 << 'EOFNR_DET'
+import sys
+from pymodbus.client import ModbusSerialClient
+for baud in [115200, 57600, 38400]:
+    sys.stderr.write(f"    Probando @ {baud} baud... ")
+    sys.stderr.flush()
+    try:
+        c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baud,
+                                bytesize=8, parity='N', stopbits=1, timeout=2)
+        if c.connect():
+            r = c.read_holding_registers(address=0, count=1, slave=1)
+            if r is not None and not r.isError():
+                sys.stderr.write("OK\n")
+                c.close()
+                print(baud)
+                sys.exit(0)
+            c.close()
+        sys.stderr.write("sin respuesta\n")
+    except Exception:
+        sys.stderr.write("sin respuesta\n")
+print("X")
+EOFNR_DET
+)
+    BAUD_PLACAS=$(echo "$BAUD_PLACAS" | tail -1)
+
+    # Leer baudrate actual de flows.json runtime + cache
+    echo ""
+    echo "  [D] Leyendo baudrate actual de flows.json..."
+    for FPATH in /home/*/.node-red/flows.json /opt/nodered-flows-cache/flows.json; do
+        [ -f "$FPATH" ] || continue
+        FVAL=$(sudo python3 -c "
+import json
+flows = json.load(open('$FPATH'))
+for n in flows:
+    if isinstance(n, dict) and n.get('type') == 'modbus-client':
+        print(n.get('serialBaudrate', '?'))
+        break
+" 2>/dev/null)
+        echo "    $FPATH → serialBaudrate=$FVAL"
+    done
+
+    echo ""
+    if [ "$BAUD_PLACAS" = "X" ]; then
+        echo "  [!] Las placas NO responden a ningún baudrate."
+        echo "      Puedes igual cambiar Node-RED, pero quizás haya un problema físico."
+    else
+        echo "  [i] Las PLACAS están a $BAUD_PLACAS baud"
+    fi
+
+    echo ""
+    echo "  Baudrates válidos para flows.json:"
+    echo "    0 = 115200 baud"
+    echo "    1 =  57600 baud"
+    echo "    2 =  38400 baud"
+    echo ""
+    # Default = velocidad de las placas (si se detectó)
+    case "$BAUD_PLACAS" in
+        115200) DEFAULT_VAL="0" ;;
+        57600)  DEFAULT_VAL="1" ;;
+        38400)  DEFAULT_VAL="2" ;;
+        *)      DEFAULT_VAL=""  ;;
+    esac
+    if [ -n "$DEFAULT_VAL" ]; then
+        read -p "  Valor [0/1/2] (ENTER para usar el de las placas = $DEFAULT_VAL): " NR_VAL
+        [ -z "$NR_VAL" ] && NR_VAL="$DEFAULT_VAL"
+    else
+        read -p "  Valor [0/1/2] (ENTER para cancelar): " NR_VAL
+        if [ -z "$NR_VAL" ]; then
+            echo "  [~] Cancelado"
+            sudo systemctl start nodered 2>/dev/null
+            exit 0
+        fi
+    fi
+    case "$NR_VAL" in
+        0) NR_BAUD="115200" ;;
+        1) NR_BAUD="57600"  ;;
+        2) NR_BAUD="38400"  ;;
+        *) echo "  [X] Valor no válido"; sudo systemctl start nodered 2>/dev/null; exit 1 ;;
+    esac
+
+    if [ -n "$BAUD_PLACAS" ] && [ "$BAUD_PLACAS" != "X" ] && [ "$BAUD_PLACAS" != "$NR_BAUD" ]; then
+        echo ""
+        echo "  [!] AVISO: vas a poner Node-RED a $NR_BAUD pero las PLACAS están a $BAUD_PLACAS."
+        echo "      Node-RED NO podrá comunicarse con las placas hasta igualar velocidades."
+        read -p "  ¿Continuar igual? [s/N]: " CONF
+        if [[ ! "$CONF" =~ ^[sSyY]$ ]]; then
+            echo "  [~] Cancelado"
+            sudo systemctl start nodered 2>/dev/null
+            exit 0
+        fi
+    fi
 
     actualizar_baudrate_nodered "$NR_BAUD"
 
