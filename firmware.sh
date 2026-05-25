@@ -613,7 +613,7 @@ EOFLEER
 
     # --- Paso 2: escribir y verificar ---
     echo ""
-    export NEW_VEL
+    export NEW_VEL CURRENT_VEL
     python3 << EOFVEL
 import sys, os, time
 try:
@@ -642,32 +642,102 @@ if not client.connect():
     print("  [X] No se pudo abrir puerto serie para escritura")
     sys.exit(1)
 
-# --- Habilitar config (reg 40 = 47818) y escribir reg 61 en las 3 placas ---
-print("")
-print(f"  [W] Escribiendo reg61={NEW_VEL} ({NEW_BAUD} baud) en las 3 placas...")
-fallos = []
-for slave in (1, 2, 3):
+# --- Habilitar config (reg 40 = 47818) y escribir reg 61 con reintentos ---
+# Estrategia (opción A):
+#   - Hasta MAX_RETRIES por placa antes de declarar fallo.
+#   - Si tras los reintentos una placa falla, intentamos ROLLBACK de las que
+#     ya cambiaron a la velocidad anterior (CURRENT_VEL del env). Así el bus
+#     queda consistente en la velocidad vieja en vez de partido.
+#   - Si el rollback también falla en alguna placa: estado partido real,
+#     se reporta cuáles quedaron a qué velocidad → intervención manual.
+CURRENT_VEL = int(os.environ.get('CURRENT_VEL', '-1'))
+MAX_RETRIES = 4
+RETRY_SLEEP = 0.3
+
+def write_velocidad(client, slave, value):
+    """Intenta escribir reg 61 con habilitación previa. Devuelve True/False."""
     try:
-        # Habilitar escritura de parámetros (reg 40 = 47818)
         client.write_register(address=40, value=47818, slave=slave)
-        time.sleep(0.1)
-        wr = client.write_register(address=61, value=NEW_VEL, slave=slave)
-        if wr is None or wr.isError():
-            fallos.append(slave)
-            print(f"    L{slave}: ERROR escribiendo")
-        else:
-            print(f"    L{slave}: OK")
-    except Exception as e:
-        fallos.append(slave)
-        print(f"    L{slave}: ERROR - {e}")
+        time.sleep(0.05)
+        wr = client.write_register(address=61, value=value, slave=slave)
+        return wr is not None and not wr.isError()
+    except Exception:
+        return False
+
+print("")
+print(f"  [W] Escribiendo reg61={NEW_VEL} ({NEW_BAUD} baud) en las 3 placas (con reintentos)...")
+cambiadas = []
+fallidas = []
+for slave in (1, 2, 3):
+    ok = False
+    for intento in range(1, MAX_RETRIES + 1):
+        if write_velocidad(client, slave, NEW_VEL):
+            ok = True
+            tag = "OK" if intento == 1 else f"OK (intento {intento})"
+            print(f"    L{slave}: {tag}")
+            cambiadas.append(slave)
+            break
+        if intento < MAX_RETRIES:
+            time.sleep(RETRY_SLEEP)
+    if not ok:
+        print(f"    L{slave}: ERROR tras {MAX_RETRIES} intentos")
+        fallidas.append(slave)
+        break  # No seguimos con la siguiente: minimizar daño
+
+# Si hubo fallos a mitad, intentar rollback de las cambiadas
+if fallidas:
+    print("")
+    print(f"  [!] Falló L{fallidas}. Intentando ROLLBACK de L{cambiadas} a velocidad anterior (reg61={CURRENT_VEL})...")
+    rollback_fallidas = []
+    for slave in cambiadas:
+        # El rollback se hace a la velocidad NUEVA porque la placa ya cambió.
+        # Necesitamos reabrir el cliente a NEW_BAUD para hablarle.
+        # IMPORTANTE: el cliente actual sigue a velocidad vieja; lo cerramos y abrimos uno nuevo.
+        pass
+    client.close()
+
+    if HAS_HELPER:
+        client_new = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
+    else:
+        client_new = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=NEW_BAUD,
+                                         bytesize=8, parity='N', stopbits=1, timeout=2)
+    if not client_new.connect():
+        print(f"  [X] No se pudo abrir puerto a {NEW_BAUD} baud para rollback")
+        print(f"      Estado del bus: L{cambiadas} a {NEW_BAUD} baud, L{fallidas} a velocidad anterior. PARTIDO.")
+        print(f"      INTERVENCION MANUAL REQUERIDA.")
+        sys.exit(2)
+
+    for slave in cambiadas:
+        rb_ok = False
+        for intento in range(1, MAX_RETRIES + 1):
+            if write_velocidad(client_new, slave, CURRENT_VEL):
+                rb_ok = True
+                print(f"    L{slave}: rollback OK")
+                break
+            time.sleep(RETRY_SLEEP)
+        if not rb_ok:
+            print(f"    L{slave}: rollback FALLO")
+            rollback_fallidas.append(slave)
+    client_new.close()
+
+    if rollback_fallidas:
+        print("")
+        print(f"  [X] BUS PARTIDO: L{rollback_fallidas} quedaron a {NEW_BAUD} baud (sin poder revertir).")
+        print(f"      Las demás están a velocidad anterior. INTERVENCION MANUAL REQUERIDA.")
+        sys.exit(2)
+    else:
+        print("")
+        print(f"  [~] Rollback completo. Las 3 placas vuelven a velocidad anterior (reg61={CURRENT_VEL}).")
+        print(f"      No se cambió nada. Revisa la conexión y reintenta.")
+        # Borrar cache para forzar nueva detección (puede haber quedado stale)
+        if HAS_HELPER:
+            try:
+                os.remove(_cache_path())
+            except Exception:
+                pass
+        sys.exit(1)
 
 client.close()
-
-if fallos:
-    print(f"  [X] Falló la escritura en L{fallos} — algunas placas pueden haberse quedado en la velocidad nueva")
-    print(f"      Las placas que cambiaron quedaron a {NEW_BAUD} baud, las que fallaron siguen a la velocidad anterior.")
-    print(f"      INTERVENCION MANUAL REQUERIDA.")
-    sys.exit(2)
 
 # --- Borrar cache helper y esperar a que las placas tomen efecto ---
 if HAS_HELPER:
