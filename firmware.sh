@@ -668,6 +668,49 @@ def verificar_3_placas(port, baud_target):
     return out
 
 
+# === PASO PREVIO: poner las 3 placas en BYPASS (reg 31 = 0) ===
+# La placa rechaza la escritura de reg 61 si no está en bypass. Guardamos
+# el estado previo de reg 31 para restaurarlo al final.
+print("")
+print("  [BP] Leyendo estado actual (reg 31) y poniendo placas en BYPASS...")
+estado31_previo = {}
+for slave in (1, 2, 3):
+    try:
+        rr = client.read_holding_registers(address=31, count=1, slave=slave)
+        if rr is not None and not rr.isError():
+            estado31_previo[slave] = rr.registers[0]
+            print(f"    L{slave}: reg31 actual = {rr.registers[0]}")
+    except Exception as e:
+        print(f"    L{slave}: error leyendo reg31 - {e}")
+
+# Poner las 3 en bypass (las que ya estén en 0 da igual, sigue siendo 0)
+for slave in (1, 2, 3):
+    if estado31_previo.get(slave, 0) != 0:
+        try:
+            client.write_register(address=31, value=0, slave=slave)
+            time.sleep(0.1)
+            print(f"    L{slave}: bypass aplicado")
+        except Exception as e:
+            print(f"    L{slave}: error poniendo bypass - {e}")
+time.sleep(0.3)
+
+
+def restaurar_bypass(client_para_restaurar, baud_str):
+    """Restaura reg 31 a su valor previo en cada placa. Best-effort, no aborta."""
+    print("")
+    print(f"  [BP] Restaurando reg 31 al estado anterior (a {baud_str} baud)...")
+    for slave in (1, 2, 3):
+        prev = estado31_previo.get(slave)
+        if prev is None or prev == 0:
+            continue
+        try:
+            client_para_restaurar.write_register(address=31, value=prev, slave=slave)
+            time.sleep(0.1)
+            print(f"    L{slave}: reg31 restaurado a {prev}")
+        except Exception as e:
+            print(f"    L{slave}: error restaurando reg31 - {e}")
+
+
 # === INTENTO 1: BROADCAST (slave=0) ===
 # Modbus permite write a slave=0 que las 3 placas procesan a la vez.
 # No hay ACK con broadcast → verificamos después leyendo reg 61.
@@ -676,8 +719,6 @@ print("")
 print("  [B] Intento 1: BROADCAST (slave=0) — cambio sincronizado")
 broadcast_ok = False
 try:
-    client.write_register(address=40, value=47818, slave=0)
-    time.sleep(0.05)
     client.write_register(address=61, value=NEW_VEL, slave=0)
     client.close()
     print("  [B] Broadcast enviado, esperando 2s a que las placas apliquen...")
@@ -705,6 +746,16 @@ except Exception as e:
     print(f"  [~] Broadcast falló: {e} — fallback individual")
 
 if broadcast_ok:
+    # Restaurar reg 31 a nueva velocidad
+    if HAS_HELPER:
+        client_r = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
+    else:
+        client_r = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=NEW_BAUD,
+                                       bytesize=8, parity='N', stopbits=1, timeout=2)
+    if client_r.connect():
+        restaurar_bypass(client_r, str(NEW_BAUD))
+        client_r.close()
+
     if HAS_HELPER:
         try:
             os.remove(_cache_path())
@@ -731,10 +782,8 @@ if not client.connect():
     sys.exit(1)
 
 def write_velocidad(client, slave, value):
-    """Intenta escribir reg 61 con habilitación previa. Devuelve True/False."""
+    """Escribe reg 61. Bypass ya aplicado al inicio. Devuelve True/False."""
     try:
-        client.write_register(address=40, value=47818, slave=slave)
-        time.sleep(0.05)
         wr = client.write_register(address=61, value=value, slave=slave)
         return wr is not None and not wr.isError()
     except Exception:
@@ -811,6 +860,16 @@ if fallidas:
                 os.remove(_cache_path())
             except Exception:
                 pass
+        # Restaurar reg 31 (bypass) en velocidad anterior antes de salir
+        OLD_BAUD = BAUD_MAP.get(CURRENT_VEL, 115200)
+        if HAS_HELPER:
+            client_r = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
+        else:
+            client_r = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=OLD_BAUD,
+                                           bytesize=8, parity='N', stopbits=1, timeout=2)
+        if client_r.connect():
+            restaurar_bypass(client_r, str(OLD_BAUD))
+            client_r.close()
         sys.exit(1)
 
 client.close()
@@ -857,6 +916,8 @@ for slave in (1, 2, 3):
     except Exception as e:
         print(f"    L{slave}: error - {e}")
 
+# Restaurar reg 31 (bypass) al estado anterior antes de cerrar
+restaurar_bypass(client2, str(NEW_BAUD))
 client2.close()
 
 if ok == 3:
