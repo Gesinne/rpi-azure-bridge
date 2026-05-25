@@ -98,27 +98,23 @@ def enviar_email(contenido, asunto=None, numero_serie="N/A"):
 def leer_y_enviar():
     """Lee los registros de las 3 fases con reintentos y envía por email"""
     import time
-    from leer_registros import leer_tarjeta, REGISTROS, SERIAL_PORT, SERIAL_BAUDRATE
-    
-    try:
-        from pymodbus.client import ModbusSerialClient
-    except ImportError:
-        from pymodbus.client.sync import ModbusSerialClient
-    
+    from leer_registros import leer_tarjeta, REGISTROS, SERIAL_PORT
+    from modbus_helper import open_modbus_client
+
     # Leer las 3 fases con reintentos
     placas_leidas = {}
     max_intentos = 10
     intento = 0
-    
+
     while len(placas_leidas) < 3 and intento < max_intentos:
         intento += 1
         fases_pendientes = [u for u in [1, 2, 3] if u not in placas_leidas]
-        
+
         if intento > 1:
             print(f"  🔄 Reintento {intento}/{max_intentos} - Fases pendientes: {', '.join([f'L{u}' for u in fases_pendientes])}")
             time.sleep(1)
-        
-        client = ModbusSerialClient(port=SERIAL_PORT, baudrate=SERIAL_BAUDRATE, bytesize=8, parity='N', stopbits=1, timeout=1)
+
+        client = open_modbus_client(port=SERIAL_PORT, timeout=1)
         
         if client.connect():
             for unit_id in fases_pendientes:

@@ -12,9 +12,16 @@ import sys
 import json
 from datetime import datetime
 
-# Configuración Modbus - HARDCODEADO, NO MODIFICAR
+# Configuración Modbus
+# El baudrate por defecto es 115200, pero el helper lo autodetecta y cachea
+# (registro 47/61 de la placa). Si alguien cambia la velocidad Modbus, el
+# bridge se adapta solo en el siguiente arranque.
 SERIAL_PORT = "/dev/ttyAMA0"
-SERIAL_BAUDRATE = 115200
+SERIAL_BAUDRATE = 115200  # fallback informativo si el helper no detecta nada
+
+# Helper centralizado: open_modbus_client() autodetecta baudrate y cachea.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from modbus_helper import open_modbus_client  # noqa: E402
 
 # Mapa de registros completo (112 registros)
 REGISTROS = {
@@ -175,19 +182,7 @@ def formatear_tabla(data, fase):
 
 def leer_todas_tarjetas(tarjetas="1 2 3"):
     """Lee las tarjetas especificadas y devuelve el texto formateado"""
-    try:
-        from pymodbus.client import ModbusSerialClient
-    except ImportError:
-        from pymodbus.client.sync import ModbusSerialClient
-    
-    client = ModbusSerialClient(
-        port=SERIAL_PORT,
-        baudrate=SERIAL_BAUDRATE,
-        bytesize=8,
-        parity='N',
-        stopbits=1,
-        timeout=1
-    )
+    client = open_modbus_client(port=SERIAL_PORT, timeout=1)
     
     resultado = []
     resultado.append("=" * 80)
@@ -212,19 +207,7 @@ def leer_todas_tarjetas(tarjetas="1 2 3"):
 
 def obtener_json_configuracion(tarjetas="1 2 3"):
     """Obtiene la configuración en formato JSON"""
-    try:
-        from pymodbus.client import ModbusSerialClient
-    except ImportError:
-        from pymodbus.client.sync import ModbusSerialClient
-    
-    client = ModbusSerialClient(
-        port=SERIAL_PORT,
-        baudrate=SERIAL_BAUDRATE,
-        bytesize=8,
-        parity='N',
-        stopbits=1,
-        timeout=1
-    )
+    client = open_modbus_client(port=SERIAL_PORT, timeout=1)
     
     config_data = {
         "numero_serie": NUMERO_SERIE,
@@ -269,20 +252,8 @@ def escribir_registro(unit_id, registro, valor, bypass_automatico=True):
         valor: Valor a escribir
         bypass_automatico: Si True, pone el equipo en bypass (reg 31=0) antes de escribir reg 56
     """
-    try:
-        from pymodbus.client import ModbusSerialClient
-    except ImportError:
-        from pymodbus.client.sync import ModbusSerialClient
-    
-    client = ModbusSerialClient(
-        port=SERIAL_PORT,
-        baudrate=SERIAL_BAUDRATE,
-        bytesize=8,
-        parity='N',
-        stopbits=1,
-        timeout=1
-    )
-    
+    client = open_modbus_client(port=SERIAL_PORT, timeout=1)
+
     resultado = {
         "success": False,
         "unit_id": unit_id,

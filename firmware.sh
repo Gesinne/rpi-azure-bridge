@@ -5,7 +5,15 @@
 
 # Configuración serie
 SERIAL_PORT="/dev/ttyAMA0"
+# El bootloader del firmware (flujo XMODEM) usa 115200 fijo: NO TOCAR.
+# Para Modbus en runtime, los scripts Python embebidos importan modbus_helper.py
+# que autodetecta el baudrate de la placa (registro 47/61). Si el helper no está
+# disponible (instalaciones antiguas), se usa BAUDRATE como fallback.
 BAUDRATE=115200
+
+# Directorio del repo: lo necesitan los scripts Python embebidos para
+# localizar modbus_helper.py.
+export RPI_BRIDGE_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
 # Verificar root
 if [ "$EUID" -ne 0 ]; then
@@ -32,7 +40,7 @@ verificar_parametrizacion() {
     echo ""
     
     python3 << 'EOFVERIF'
-import sys
+import sys, os
 try:
     from pymodbus.client import ModbusSerialClient
 except ImportError:
@@ -44,14 +52,20 @@ except ImportError:
 
 import time
 
-client = ModbusSerialClient(
-    port='/dev/ttyAMA0',
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+# Cliente Modbus: prefiere helper con autodetección de baudrate; fallback 115200.
+sys.path.insert(0, os.environ.get('RPI_BRIDGE_DIR', '.'))
+try:
+    from modbus_helper import open_modbus_client
+    client = open_modbus_client(port='/dev/ttyAMA0', timeout=1)
+except ImportError:
+    client = ModbusSerialClient(
+        port='/dev/ttyAMA0',
+        baudrate=115200,
+        bytesize=8,
+        parity='N',
+        stopbits=1,
+        timeout=1
+    )
 
 if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
@@ -192,7 +206,7 @@ reparar_placas() {
     
     # Leer y mostrar valores actuales
     python3 << 'EOFLEER'
-import sys
+import sys, os
 try:
     from pymodbus.client import ModbusSerialClient
 except ImportError:
@@ -204,14 +218,19 @@ except ImportError:
 
 import time
 
-client = ModbusSerialClient(
-    port='/dev/ttyAMA0',
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+sys.path.insert(0, os.environ.get('RPI_BRIDGE_DIR', '.'))
+try:
+    from modbus_helper import open_modbus_client
+    client = open_modbus_client(port='/dev/ttyAMA0', timeout=1)
+except ImportError:
+    client = ModbusSerialClient(
+        port='/dev/ttyAMA0',
+        baudrate=115200,
+        bytesize=8,
+        parity='N',
+        stopbits=1,
+        timeout=1
+    )
 
 if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
@@ -357,7 +376,7 @@ EOFLEER
     echo ""
     
     python3 << EOFREPARAR
-import sys
+import sys, os
 try:
     from pymodbus.client import ModbusSerialClient
 except ImportError:
@@ -369,14 +388,19 @@ except ImportError:
 
 import time
 
-client = ModbusSerialClient(
-    port='/dev/ttyAMA0',
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+sys.path.insert(0, os.environ.get('RPI_BRIDGE_DIR', '.'))
+try:
+    from modbus_helper import open_modbus_client
+    client = open_modbus_client(port='/dev/ttyAMA0', timeout=1)
+except ImportError:
+    client = ModbusSerialClient(
+        port='/dev/ttyAMA0',
+        baudrate=115200,
+        bytesize=8,
+        parity='N',
+        stopbits=1,
+        timeout=1
+    )
 
 if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
