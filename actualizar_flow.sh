@@ -413,7 +413,10 @@ BACKUP_FILE="$NODERED_DIR/flows.json.backup.$(date +%Y%m%d%H%M%S).${VERSION_NAME
 cp "$NODERED_DIR/flows.json" "$BACKUP_FILE"
 echo "  [D] Backup creado: $BACKUP_FILE"
 
-# Guardar configuración MQTT, maxQueue y chronos actual en archivo temporal
+# Guardar configuración MQTT, maxQueue, chronos y modbus-client actual en archivo temporal
+# El modbus-client incluye serialBaudrate + timeouts: si el usuario cambió la
+# velocidad de las placas (opción 7 del menú), preservamos su valor para que
+# este "Actualizar Flow" no rompa la comunicación con las placas.
 PRESERVED_CONFIG_FILE=$(mktemp)
 python3 -c "
 import json
@@ -436,6 +439,14 @@ try:
                 'latitude': node.get('latitude', ''),
                 'longitude': node.get('longitude', ''),
                 'timezone': node.get('timezone', 'Europe/Madrid')
+            }
+        if node.get('type') == 'modbus-client':
+            config['modbus'] = {
+                'serialBaudrate': node.get('serialBaudrate'),
+                'clientTimeout': node.get('clientTimeout'),
+                'commandDelay': node.get('commandDelay'),
+                'reconnectTimeout': node.get('reconnectTimeout'),
+                'serialConnectionDelay': node.get('serialConnectionDelay'),
             }
     with open('$PRESERVED_CONFIG_FILE', 'w') as f:
         json.dump(config, f)
@@ -469,6 +480,11 @@ try:
             node['latitude'] = config['chronos']['latitude']
             node['longitude'] = config['chronos']['longitude']
             node['timezone'] = config['chronos']['timezone']
+        if node.get('type') == 'modbus-client' and 'modbus' in config:
+            # Restaurar baudrate y timeouts que tenía el usuario
+            for k, v in config['modbus'].items():
+                if v is not None and v != '':
+                    node[k] = v
     with open('$NODERED_DIR/flows.json', 'w') as f:
         json.dump(flows, f, indent=4)
 except Exception as e:
@@ -476,7 +492,7 @@ except Exception as e:
     sys.exit(1)
 " 2>/dev/null
         echo "  [OK] Flow instalado: $VERSION_NAME"
-        echo "  [>] Configuración preservada: MQTT + maxQueue + chronos"
+        echo "  [>] Configuración preservada: MQTT + maxQueue + chronos + modbus (baudrate)"
         rm -f "$PRESERVED_CONFIG_FILE"
     else
         echo "  [OK] Flow instalado: $VERSION_NAME"
