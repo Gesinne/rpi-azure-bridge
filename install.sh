@@ -631,9 +631,10 @@ while true; do
     echo "  4) Registros de la placa"
     echo "  5) Espacio y logs"
     echo "  6) Paleta Node-RED"
+    echo "  7) Cambiar velocidad Modbus (placas)"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-6]: " OPTION
+    read -p "  Opción [0-7]: " OPTION
 
     case $OPTION in
         0)
@@ -5556,6 +5557,37 @@ except Exception as e:
                     ;;
             esac
             
+            volver_menu
+            ;;
+        7)
+            # Cambiar velocidad Modbus de las placas (reg 61)
+            # Llama a firmware.sh velocidad — el script ya gestiona bypass,
+            # broadcast, fallback individual, verificación y restauración.
+            FIRMWARE_SCRIPT=""
+            for candidate in "$USER_HOME/firmware.sh" "$INSTALL_DIR/firmware.sh"; do
+                if [ -f "$candidate" ]; then
+                    FIRMWARE_SCRIPT="$candidate"
+                    break
+                fi
+            done
+
+            if [ -z "$FIRMWARE_SCRIPT" ]; then
+                # Fallback: bajar última versión a /tmp y usar esa
+                echo ""
+                echo "  [~] firmware.sh no instalado localmente — bajando última versión..."
+                TMP_FW="/tmp/gesinne-firmware.sh"
+                curl -sSL "https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/firmware.sh" -o "$TMP_FW" 2>/dev/null
+                if [ -f "$TMP_FW" ] && [ -s "$TMP_FW" ]; then
+                    FIRMWARE_SCRIPT="$TMP_FW"
+                    chmod +x "$FIRMWARE_SCRIPT"
+                else
+                    echo "  [X] No se pudo obtener firmware.sh"
+                    volver_menu
+                    continue
+                fi
+            fi
+
+            sudo bash "$FIRMWARE_SCRIPT" velocidad
             volver_menu
             ;;
         p|P)
