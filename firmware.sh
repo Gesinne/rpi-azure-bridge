@@ -749,11 +749,17 @@ def restaurar_bypass(client_para_restaurar, baud_str):
 
 
 # === ESCRITURA REG 61 ===
-# IMPORTANTE: la placa contesta el ACK del write a la NUEVA velocidad
-# (cambia inmediatamente al recibir el comando). El master sigue a la
-# velocidad vieja → ve bytes basura interpretados como "Exception 134/0".
-# Por eso IGNORAMOS la respuesta del write y juzgamos éxito por la
-# verificación posterior leyendo reg 61 a la nueva velocidad.
+# IMPORTANTE: la placa contesta el ACK del write reg 61 a la NUEVA velocidad
+# (cambia inmediatamente al recibir el comando). El master sigue a la velocidad
+# vieja → ve bytes basura interpretados como "Exception 134/0". IGNORAMOS la
+# respuesta del write y juzgamos éxito por la verificación posterior leyendo
+# reg 61 a la nueva velocidad.
+#
+# Secuencia mágica obligatoria antes del reg 61 (confirmado por test 2026-05-25):
+#   write reg 30 = 43981  → "habilitar tarjeta"
+#   write reg 40 = 47818  → "habilitar config"
+#   write reg 61 = NEW_VEL
+# Sin las 2 magic words la placa rechaza el write con Exception 134/0.
 
 def write_silencioso(client, slave, address, value):
     """Hace write sin importar la respuesta. Silencia cualquier excepción."""
@@ -763,10 +769,24 @@ def write_silencioso(client, slave, address, value):
         pass
 
 
+def desbloquear_y_escribir_velocidad(client, slave, nueva_velocidad):
+    """Secuencia completa para cambiar la velocidad de UNA placa.
+    Las 3 escrituras se silencian — el éxito se juzga después leyendo reg 61
+    a la nueva velocidad.
+    """
+    write_silencioso(client, slave, 30, 43981)   # habilitar tarjeta
+    time.sleep(0.15)
+    write_silencioso(client, slave, 40, 47818)   # habilitar config
+    time.sleep(0.15)
+    write_silencioso(client, slave, 61, nueva_velocidad)
+
+
 # --- Intento 1: BROADCAST (slave=0) — 1 frame para las 3 placas ---
+# Para broadcast también enviamos la secuencia completa (30, 40, 61).
 print("")
 print("  [B] Intento 1: BROADCAST (slave=0) — cambio sincronizado")
-write_silencioso(client, 0, 61, NEW_VEL)
+print("  [B] Secuencia: reg30=43981 -> reg40=47818 -> reg61={}".format(NEW_VEL))
+desbloquear_y_escribir_velocidad(client, 0, NEW_VEL)
 try: client.close()
 except: pass
 
@@ -792,9 +812,9 @@ if not broadcast_ok:
             if slave in ya_ok:
                 print(f"    L{slave}: ya estaba OK por broadcast, salto")
                 continue
-            write_silencioso(client, slave, 61, NEW_VEL)
-            print(f"    L{slave}: write enviado (sin esperar ACK)")
-            time.sleep(0.3)
+            desbloquear_y_escribir_velocidad(client, slave, NEW_VEL)
+            print(f"    L{slave}: secuencia 30->40->61 enviada (sin esperar ACK)")
+            time.sleep(0.5)
         client.close()
     else:
         print(f"  [!] No se pudo reabrir a {OLD_BAUD} baud — algunas placas pueden estar ya a {NEW_BAUD}")
