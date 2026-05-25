@@ -671,28 +671,63 @@ def verificar_3_placas(port, baud_target):
 # === PASO PREVIO: poner las 3 placas en BYPASS (reg 31 = 0) ===
 # La placa rechaza la escritura de reg 61 si no está en bypass. Guardamos
 # el estado previo de reg 31 para restaurarlo al final.
+# Si la lectura inicial de reg 31 falla → ABORTAR (no podemos confirmar
+# que esté en bypass, mejor no escribir reg 61 a ciegas).
 print("")
 print("  [BP] Leyendo estado actual (reg 31) y poniendo placas en BYPASS...")
 estado31_previo = {}
+lectura_fallida = []
 for slave in (1, 2, 3):
     try:
         rr = client.read_holding_registers(address=31, count=1, slave=slave)
         if rr is not None and not rr.isError():
             estado31_previo[slave] = rr.registers[0]
-            print(f"    L{slave}: reg31 actual = {rr.registers[0]}")
+            tag = "BYPASS" if rr.registers[0] == 0 else ("REGULACION" if rr.registers[0] == 2 else f"valor={rr.registers[0]}")
+            print(f"    L{slave}: reg31 = {rr.registers[0]} ({tag})")
+        else:
+            lectura_fallida.append(slave)
+            print(f"    L{slave}: NO RESPONDE a la lectura inicial")
     except Exception as e:
+        lectura_fallida.append(slave)
         print(f"    L{slave}: error leyendo reg31 - {e}")
 
-# Poner las 3 en bypass (las que ya estén en 0 da igual, sigue siendo 0)
+if lectura_fallida:
+    print(f"  [X] No se pudo leer reg 31 en L{lectura_fallida} — ABORTANDO sin escribir reg 61")
+    print(f"      Posibles causas: cable, terminación RS485, placa apagada, ruido.")
+    print(f"      Sin lectura del bypass actual no es seguro tocar la velocidad.")
+    client.close()
+    sys.exit(5)
+
+# Poner las que están en regulación a bypass y VERIFICAR el cambio
+print("")
+print("  [BP] Aplicando bypass a las placas en regulación y verificando...")
+bypass_no_aplicado = []
 for slave in (1, 2, 3):
-    if estado31_previo.get(slave, 0) != 0:
-        try:
-            client.write_register(address=31, value=0, slave=slave)
-            time.sleep(0.1)
-            print(f"    L{slave}: bypass aplicado")
-        except Exception as e:
-            print(f"    L{slave}: error poniendo bypass - {e}")
-time.sleep(0.3)
+    if estado31_previo.get(slave, 0) == 0:
+        continue  # ya en bypass
+    try:
+        client.write_register(address=31, value=0, slave=slave)
+        time.sleep(0.3)  # damos tiempo a que la placa entre en bypass
+        # Verificar
+        rr = client.read_holding_registers(address=31, count=1, slave=slave)
+        if rr is not None and not rr.isError() and rr.registers[0] == 0:
+            print(f"    L{slave}: BYPASS aplicado y verificado")
+        else:
+            cur = rr.registers[0] if (rr is not None and not rr.isError()) else "?"
+            print(f"    L{slave}: bypass NO confirmado (reg31={cur})")
+            bypass_no_aplicado.append(slave)
+    except Exception as e:
+        bypass_no_aplicado.append(slave)
+        print(f"    L{slave}: error aplicando bypass - {e}")
+
+if bypass_no_aplicado:
+    print(f"  [X] No se pudo poner en bypass L{bypass_no_aplicado} — ABORTANDO")
+    print(f"      Posibles causas: equipo con carga activa, firmware antiguo, regulación bloqueada.")
+    print(f"      Pon el equipo en BYPASS manualmente desde Node-RED y reintenta.")
+    client.close()
+    sys.exit(6)
+
+time.sleep(0.5)  # margen extra antes de escribir reg 61
 
 
 def restaurar_bypass(client_para_restaurar, baud_str):
