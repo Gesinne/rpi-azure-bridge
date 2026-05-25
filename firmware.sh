@@ -622,45 +622,54 @@ BAUD_MAP = {0: 115200, 1: 57600, 2: 38400}
 client = None
 connected_baud = None
 
+import time
+
+# Patrón opción 4: hasta MAX_RETRIES por baudrate, acumulando respuestas
+# de las 3 placas. Solo declaramos "no responde" si en TODOS los reintentos
+# falla. Solo declaramos "uniforme" si en algún intento las 3 respondieron.
+MAX_RETRIES = 5
+
 for baudrate in BAUDRATES:
     sys.stderr.write(f"    Probando @ {baudrate} baud... ")
     sys.stderr.flush()
     c = None
+    todas_ok = False
+    parcial_visto = set()
     try:
         c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baudrate,
                                 bytesize=8, parity='N', stopbits=1, timeout=2)
         if not c.connect():
             sys.stderr.write("no conecta\n")
             continue
-        # Probar TODOS los slaves (no solo el 1) — si el 1 está caído,
-        # otro puede responder. Solo asumimos que esta es "la velocidad"
-        # si las 3 responden (estado uniforme).
-        respondieron = []
-        for s in (1, 2, 3):
-            try:
-                r = c.read_holding_registers(address=61, count=1, slave=s)
-                if r is not None and not r.isError():
-                    respondieron.append(s)
-            except Exception:
-                pass
-        if len(respondieron) == 3:
-            sys.stderr.write("OK (3/3 responden)\n")
+        for intento in range(1, MAX_RETRIES + 1):
+            respondieron = []
+            for s in (1, 2, 3):
+                try:
+                    r = c.read_holding_registers(address=61, count=1, slave=s)
+                    if r is not None and not r.isError():
+                        respondieron.append(s)
+                except Exception:
+                    pass
+            parcial_visto.update(respondieron)
+            if len(respondieron) == 3:
+                todas_ok = True
+                break
+            if intento < MAX_RETRIES:
+                time.sleep(0.5)
+        if todas_ok:
+            sys.stderr.write(f"OK (3/3, intento {intento})\n")
             client = c
             connected_baud = baudrate
             break
-        elif respondieron:
-            sys.stderr.write(f"PARCIAL (solo L{respondieron} responden — bus partido)\n")
+        elif parcial_visto:
+            sys.stderr.write(f"PARCIAL tras {MAX_RETRIES} intentos (responden L{sorted(parcial_visto)})\n")
             c.close()
-            # Recordamos esta info para el mensaje final
-            client = c  # marca para no marcar como "ninguna"
-            connected_baud = baudrate
-            # NO break: seguimos probando otros baudrates por si las otras placas están ahí
-            client = None  # reset, no usar este cliente
+            # Guardamos info para mensaje final pero no usamos este cliente
         else:
-            sys.stderr.write("sin respuesta\n")
+            sys.stderr.write(f"sin respuesta tras {MAX_RETRIES} intentos\n")
             c.close()
     except Exception:
-        sys.stderr.write("sin respuesta\n")
+        sys.stderr.write("sin respuesta (excepción)\n")
         if c:
             try: c.close()
             except: pass
@@ -672,20 +681,25 @@ if client is None:
 
 sys.stderr.write(f"  [OK] Comunicación establecida a {connected_baud} baud\n")
 
-# Ahora leer reg 61 de las 3 placas a esa velocidad
+# Ahora leer reg 61 de las 3 placas a esa velocidad — con reintentos individuales
 actual = {}
 for slave in (1, 2, 3):
-    try:
-        rr = client.read_holding_registers(address=61, count=1, slave=slave)
-        if rr is None or rr.isError():
-            sys.stderr.write(f"    L{slave}: sin respuesta\n")
-        else:
-            v = rr.registers[0]
-            b = BAUD_MAP.get(v, '?')
-            actual[slave] = v
-            sys.stderr.write(f"    L{slave}: reg61={v} ({b} baud)\n")
-    except Exception as e:
-        sys.stderr.write(f"    L{slave}: error - {e}\n")
+    for intento in range(1, 6):  # hasta 5 intentos por placa
+        try:
+            rr = client.read_holding_registers(address=61, count=1, slave=slave)
+            if rr is not None and not rr.isError():
+                v = rr.registers[0]
+                b = BAUD_MAP.get(v, '?')
+                actual[slave] = v
+                tag = "" if intento == 1 else f" (intento {intento})"
+                sys.stderr.write(f"    L{slave}: reg61={v} ({b} baud){tag}\n")
+                break
+        except Exception:
+            pass
+        if intento < 5:
+            time.sleep(0.3)
+    else:
+        sys.stderr.write(f"    L{slave}: sin respuesta tras 5 intentos\n")
 client.close()
 
 if len(actual) != 3:
@@ -1117,11 +1131,12 @@ rescatar_bus_modbus() {
     # Timeout corto (0.5s) y feedback en vivo. Total peor caso: 3*3*0.5s = 4.5s.
     echo "  [D] Detectando velocidad actual de cada placa..."
     DETECCION=$(python3 << 'EOFDET'
-import sys
+import sys, time
 from pymodbus.client import ModbusSerialClient
 
 BAUDS = [115200, 57600, 38400]
 LABELS = {115200: "115200 baud (reg61=0)", 57600: "57600 baud (reg61=1)", 38400: "38400 baud (reg61=2)"}
+MAX_RETRIES = 5  # patrón opción 4: reintentar hasta tener respuesta
 
 estado = {}
 for slave in (1, 2, 3):
@@ -1134,18 +1149,24 @@ for slave in (1, 2, 3):
         if not c.connect():
             sys.stderr.write("no conecta\n")
             continue
-        try:
-            r = c.read_holding_registers(address=61, count=1, slave=slave)
-            if r is not None and not r.isError():
-                encontrado = (baud, r.registers[0])
-                c.close()
-                sys.stderr.write(f"OK (reg61={r.registers[0]})\n")
-                break
-            else:
-                sys.stderr.write("sin respuesta\n")
-        except Exception:
-            sys.stderr.write("sin respuesta\n")
+        respondio = False
+        for intento in range(1, MAX_RETRIES + 1):
+            try:
+                r = c.read_holding_registers(address=61, count=1, slave=slave)
+                if r is not None and not r.isError():
+                    encontrado = (baud, r.registers[0])
+                    tag = "" if intento == 1 else f" (intento {intento})"
+                    sys.stderr.write(f"OK (reg61={r.registers[0]}){tag}\n")
+                    respondio = True
+                    break
+            except Exception:
+                pass
+            if intento < MAX_RETRIES:
+                time.sleep(0.3)
         c.close()
+        if respondio:
+            break
+        sys.stderr.write(f"sin respuesta tras {MAX_RETRIES} intentos\n")
     if encontrado:
         baud, val = encontrado
         estado[slave] = baud
