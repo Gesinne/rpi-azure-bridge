@@ -1932,7 +1932,7 @@ except ImportError:
         sys.exit(1)
 
 PUERTO = "$DIAG_PORT"
-BAUDRATES = [115200, 57600, 9600]
+BAUDRATES = [115200, 57600, 38400, 19200, 9600]
 
 client = None
 connected = False
@@ -4534,7 +4534,7 @@ except ImportError:
         sys.exit(1)
 
 PUERTO = "$SERIAL_PORT"
-BAUDRATES = [115200, 57600, 9600]
+BAUDRATES = [115200, 57600, 38400, 19200, 9600]
 
 client = None
 connected = False
@@ -4807,7 +4807,7 @@ except ImportError:
 PUERTO = "$SERIAL_PORT"
 
 # Probar diferentes baudrates si falla
-BAUDRATES = [115200, 57600, 9600]
+BAUDRATES = [115200, 57600, 38400, 19200, 9600]
 
 client = None
 connected = False
