@@ -97,6 +97,7 @@ if [ "$1" != "--updated" ]; then
         enviar_email.py
         leer_registros.py
         modbus_helper.py
+        firmware.sh
     )
     SYNC_BIN=(
         alerta_reinicio.sh
