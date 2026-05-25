@@ -493,24 +493,7 @@ cambiar_velocidad_modbus() {
     echo "  Cambiar velocidad Modbus de las placas"
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "  Valores del registro 61:"
-    echo "    0 = 115200 baud"
-    echo "    1 =  57600 baud"
-    echo "    2 =  38400 baud"
-    echo ""
-    read -p "  Nuevo valor [0/1/2]: " NEW_VEL
-    if [[ ! "$NEW_VEL" =~ ^[012]$ ]]; then
-        echo "  [X] Valor no válido (debe ser 0, 1 o 2)"
-        return 1
-    fi
-    echo ""
-    read -p "  ¿Confirmas escribir reg 61=$NEW_VEL en L1, L2 y L3? [s/N]: " CONFIRM
-    if [[ ! "$CONFIRM" =~ ^[sSyY]$ ]]; then
-        echo "  [~] Cancelado"
-        return 1
-    fi
 
-    echo ""
     echo "  [!]  Parando Node-RED temporalmente..."
     sudo systemctl stop nodered 2>/dev/null
     docker stop gesinne-rpi >/dev/null 2>&1 || true
@@ -518,6 +501,118 @@ cambiar_velocidad_modbus() {
     echo "  [OK] Servicios parados"
     echo ""
 
+    # --- Paso 1: leer y mostrar velocidad actual ---
+    echo "  [M] Leyendo velocidad actual de las 3 placas..."
+    CURRENT_VEL=$(python3 << 'EOFLEER'
+import sys, os
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    from pymodbus.client.sync import ModbusSerialClient
+
+sys.path.insert(0, os.environ.get('RPI_BRIDGE_DIR', '.'))
+try:
+    from modbus_helper import open_modbus_client
+    client = open_modbus_client(port='/dev/ttyAMA0', timeout=2)
+except ImportError:
+    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200,
+                                 bytesize=8, parity='N', stopbits=1, timeout=2)
+
+BAUD_MAP = {0: 115200, 1: 57600, 2: 38400}
+
+if not client.connect():
+    sys.stderr.write("  [X] No se pudo abrir puerto serie\n")
+    sys.exit(1)
+
+actual = {}
+for slave in (1, 2, 3):
+    try:
+        rr = client.read_holding_registers(address=61, count=1, slave=slave)
+        if rr is None or rr.isError():
+            sys.stderr.write(f"    L{slave}: sin respuesta\n")
+        else:
+            v = rr.registers[0]
+            b = BAUD_MAP.get(v, '?')
+            actual[slave] = v
+            sys.stderr.write(f"    L{slave}: reg61={v} ({b} baud)\n")
+    except Exception as e:
+        sys.stderr.write(f"    L{slave}: error - {e}\n")
+client.close()
+
+if len(actual) != 3:
+    sys.stderr.write("  [X] No se pudieron leer las 3 placas — abortando\n")
+    sys.exit(2)
+if len(set(actual.values())) != 1:
+    sys.stderr.write("  [X] Las 3 placas tienen velocidades distintas — abortando\n")
+    sys.exit(3)
+
+# Único output a stdout: el valor actual (lo capturará bash)
+print(list(actual.values())[0])
+EOFLEER
+)
+    READ_EXIT=$?
+
+    if [ $READ_EXIT -ne 0 ]; then
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return $READ_EXIT
+    fi
+
+    # Mostrar resumen y pedir nuevo valor
+    case "$CURRENT_VEL" in
+        0) CURRENT_BAUD="115200" ;;
+        1) CURRENT_BAUD="57600"  ;;
+        2) CURRENT_BAUD="38400"  ;;
+        *) CURRENT_BAUD="?"      ;;
+    esac
+    echo ""
+    echo "  [i] Velocidad actual: reg61=$CURRENT_VEL ($CURRENT_BAUD baud)"
+    echo ""
+    echo "  Valores posibles del registro 61:"
+    echo "    0 = 115200 baud"
+    echo "    1 =  57600 baud"
+    echo "    2 =  38400 baud"
+    echo ""
+    read -p "  Nuevo valor [0/1/2] (ENTER para cancelar): " NEW_VEL
+    if [ -z "$NEW_VEL" ]; then
+        echo "  [~] Cancelado"
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 0
+    fi
+    if [[ ! "$NEW_VEL" =~ ^[012]$ ]]; then
+        echo "  [X] Valor no válido (debe ser 0, 1 o 2)"
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 1
+    fi
+    if [ "$NEW_VEL" = "$CURRENT_VEL" ]; then
+        echo "  [=] Las placas ya están en reg61=$NEW_VEL ($CURRENT_BAUD baud). Nada que hacer."
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 0
+    fi
+    echo ""
+    read -p "  ¿Confirmas escribir reg 61=$NEW_VEL en L1, L2 y L3? [s/N]: " CONFIRM
+    if [[ ! "$CONFIRM" =~ ^[sSyY]$ ]]; then
+        echo "  [~] Cancelado"
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    # --- Paso 2: escribir y verificar ---
+    echo ""
     export NEW_VEL
     python3 << EOFVEL
 import sys, os, time
@@ -537,7 +632,6 @@ BAUD_MAP = {0: 115200, 1: 57600, 2: 38400}
 NEW_VEL = int(os.environ['NEW_VEL'])
 NEW_BAUD = BAUD_MAP[NEW_VEL]
 
-# --- Conectar a velocidad actual (con autodetección si hay helper) ---
 if HAS_HELPER:
     client = open_modbus_client(port='/dev/ttyAMA0', timeout=2)
 else:
@@ -545,38 +639,8 @@ else:
                                  bytesize=8, parity='N', stopbits=1, timeout=2)
 
 if not client.connect():
-    print("  [X] No se pudo abrir puerto serie")
+    print("  [X] No se pudo abrir puerto serie para escritura")
     sys.exit(1)
-
-# --- Leer reg 61 actual de las 3 placas ---
-print("  [M] Leyendo velocidad actual de las 3 placas...")
-actual = {}
-for slave in (1, 2, 3):
-    try:
-        rr = client.read_holding_registers(address=61, count=1, slave=slave)
-        if rr is None or rr.isError():
-            print(f"    L{slave}: sin respuesta")
-        else:
-            v = rr.registers[0]
-            b = BAUD_MAP.get(v, '?')
-            actual[slave] = v
-            print(f"    L{slave}: reg61={v} ({b} baud)")
-    except Exception as e:
-        print(f"    L{slave}: error - {e}")
-
-if len(actual) != 3:
-    print("  [X] No se pudieron leer las 3 placas — abortando")
-    client.close()
-    sys.exit(1)
-if len(set(actual.values())) != 1:
-    print("  [X] Las 3 placas tienen velocidades distintas — abortando (estado inconsistente)")
-    client.close()
-    sys.exit(1)
-
-if list(actual.values())[0] == NEW_VEL:
-    print(f"  [=] Ya están a reg61={NEW_VEL} ({NEW_BAUD} baud). Nada que hacer.")
-    client.close()
-    sys.exit(0)
 
 # --- Habilitar config (reg 40 = 47818) y escribir reg 61 en las 3 placas ---
 print("")
