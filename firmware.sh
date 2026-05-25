@@ -667,10 +667,13 @@ for slave in (1, 2, 3):
 client.close()
 
 if len(actual) != 3:
-    sys.stderr.write("  [X] No se pudieron leer las 3 placas — abortando\n")
+    sys.stderr.write("  [X] No se pudieron leer las 3 placas a la misma velocidad.\n")
+    sys.stderr.write("      Probable BUS PARTIDO (placas a velocidades distintas).\n")
+    sys.stderr.write("      Usa la opción 8 (Rescatar bus Modbus partido) en su lugar.\n")
     sys.exit(2)
 if len(set(actual.values())) != 1:
-    sys.stderr.write("  [X] Las 3 placas tienen velocidades distintas — usa opción 8 (rescatar bus partido)\n")
+    sys.stderr.write("  [X] Las 3 placas tienen velocidades distintas — BUS PARTIDO.\n")
+    sys.stderr.write("      Usa la opción 8 (Rescatar bus Modbus partido) para arreglarlo.\n")
     sys.exit(3)
 
 # Único output a stdout: el valor actual (lo capturará bash)
