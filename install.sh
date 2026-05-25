@@ -1938,6 +1938,7 @@ client = None
 connected = False
 
 for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True)
     try:
         client = ModbusSerialClient(
             port=PUERTO,
@@ -1947,16 +1948,19 @@ for baudrate in BAUDRATES:
             stopbits=1,
             timeout=2
         )
-        
+
         if client.connect():
             # Probar lectura con placa L1 (unit_id=1)
             result = client.read_holding_registers(address=0, count=1, slave=1)
             if not result.isError():
+                print("OK")
                 print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
                 connected = True
                 break
             client.close()
-    except Exception as e:
+        print("sin respuesta")
+    except Exception:
+        print("sin respuesta")
         if client:
             client.close()
         continue
@@ -4540,6 +4544,7 @@ client = None
 connected = False
 
 for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True)
     try:
         client = ModbusSerialClient(
             port=PUERTO,
@@ -4549,15 +4554,18 @@ for baudrate in BAUDRATES:
             stopbits=1,
             timeout=2
         )
-        
+
         if client.connect():
             result = client.read_holding_registers(address=0, count=1, slave=1)
             if not result.isError():
+                print("OK")
                 print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
                 connected = True
                 break
             client.close()
-    except Exception as e:
+        print("sin respuesta")
+    except Exception:
+        print("sin respuesta")
         if client:
             client.close()
         continue
@@ -4813,6 +4821,7 @@ client = None
 connected = False
 
 for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True)
     try:
         client = ModbusSerialClient(
             port=PUERTO,
@@ -4822,16 +4831,19 @@ for baudrate in BAUDRATES:
             stopbits=1,
             timeout=2
         )
-        
+
         if client.connect():
             # Probar lectura rápida para verificar comunicación
             result = client.read_holding_registers(address=0, count=1, slave=$UNIT_ID)
             if not result.isError():
+                print("OK")
                 print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
                 connected = True
                 break
             client.close()
-    except Exception as e:
+        print("sin respuesta")
+    except Exception:
+        print("sin respuesta")
         if client:
             client.close()
         continue
