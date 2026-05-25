@@ -517,7 +517,18 @@ actualizar_baudrate_nodered() {
     python3 << 'EOFNR'
 import json, os, sys
 path = os.environ['NR_FLOWS_FILE']
-new_baud = os.environ['NR_NEW_BAUD']
+new_baud_str = os.environ['NR_NEW_BAUD']
+new_baud = int(new_baud_str)
+
+# Timeouts mínimos seguros para cada baudrate (calibrados empíricamente).
+# A menor baudrate, más tiempo por byte → necesitamos más holgura.
+TIMEOUTS_POR_BAUD = {
+    115200: {'clientTimeout': 1500, 'commandDelay': 50,  'reconnectTimeout': 2000},
+    57600:  {'clientTimeout': 3000, 'commandDelay': 80,  'reconnectTimeout': 2000},
+    38400:  {'clientTimeout': 4500, 'commandDelay': 100, 'reconnectTimeout': 2000},
+}
+TARGET = TIMEOUTS_POR_BAUD.get(new_baud, TIMEOUTS_POR_BAUD[115200])
+
 try:
     with open(path) as f:
         flows = json.load(f)
@@ -528,21 +539,31 @@ except Exception as e:
 cambios = 0
 for node in flows:
     if isinstance(node, dict) and node.get('type') == 'modbus-client':
-        old = node.get('serialBaudrate', '?')
-        if str(old) != str(new_baud):
+        name = node.get('name') or node.get('id', '?')
+        old_baud = node.get('serialBaudrate', '?')
+        # Cambiar baudrate
+        if str(old_baud) != str(new_baud):
             node['serialBaudrate'] = str(new_baud)
             cambios += 1
-            name = node.get('name') or node.get('id', '?')
-            print(f"    nodo '{name}': serialBaudrate {old} → {new_baud}")
-        else:
-            name = node.get('name') or node.get('id', '?')
-            print(f"    nodo '{name}': ya estaba en {new_baud}")
+            print(f"    nodo '{name}': serialBaudrate {old_baud} → {new_baud}")
+        # Ajustar timeouts SOLO si el valor actual es MENOR que el recomendado
+        # (no bajamos timeouts que el usuario haya subido manualmente).
+        for k, v_target in TARGET.items():
+            v_actual = node.get(k)
+            try:
+                v_actual_int = int(v_actual) if v_actual is not None else 0
+            except (ValueError, TypeError):
+                v_actual_int = 0
+            if v_actual_int < v_target:
+                node[k] = v_target
+                cambios += 1
+                print(f"    nodo '{name}': {k} {v_actual} → {v_target}")
 
 if cambios > 0:
     try:
         with open(path, 'w') as f:
             json.dump(flows, f, indent=4)
-        print(f"  [OK] {cambios} nodo(s) modbus-client actualizado(s)")
+        print(f"  [OK] {cambios} ajuste(s) aplicado(s) a flows.json")
     except Exception as e:
         print(f"  [X] Error guardando flows.json: {e}")
         sys.exit(1)
