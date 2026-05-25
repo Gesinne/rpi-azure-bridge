@@ -648,12 +648,14 @@ RETRY_SLEEP = 0.3
 
 
 def verificar_3_placas(port, baud_target):
-    """Abre cliente a baud_target y devuelve dict {slave: reg61_value} de las que respondieron OK."""
-    if HAS_HELPER:
-        c = redetect_and_open_modbus_client(port=port, timeout=2)
-    else:
-        c = ModbusSerialClient(port=port, baudrate=baud_target,
-                                bytesize=8, parity='N', stopbits=1, timeout=2)
+    """Abre cliente FORZANDO baud_target (NO autodetectar) y devuelve dict {slave: reg61_value}.
+
+    IMPORTANTE: NO usar redetect_and_open_modbus_client aquí — autodetecta y
+    podría conectarse a otra velocidad, dando reg61 correcto pero a velocidad
+    equivocada, llevando a un diagnóstico falso. Forzamos siempre baud_target.
+    """
+    c = ModbusSerialClient(port=port, baudrate=baud_target,
+                            bytesize=8, parity='N', stopbits=1, timeout=2)
     if not c.connect():
         return None  # no se pudo abrir
     out = {}
@@ -832,11 +834,10 @@ if HAS_HELPER:
 print("")
 if len(ok_slaves) == 3:
     print(f"  [BP] Restaurando reg 31 al estado anterior (a {NEW_BAUD} baud)...")
-    if HAS_HELPER:
-        client_r = redetect_and_open_modbus_client(port='/dev/ttyAMA0', timeout=2)
-    else:
-        client_r = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=NEW_BAUD,
-                                       bytesize=8, parity='N', stopbits=1, timeout=2)
+    # Forzar NEW_BAUD: aquí ya sabemos que las 3 placas están a NEW_BAUD
+    # (verificado arriba). No autodetectar para no enmascarar problemas.
+    client_r = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=NEW_BAUD,
+                                   bytesize=8, parity='N', stopbits=1, timeout=2)
     if client_r.connect():
         for slave in (1, 2, 3):
             prev = estado31_previo.get(slave)
@@ -855,6 +856,27 @@ if len(ok_slaves) == 3:
 print("")
 if not ok_slaves:
     print(f"  [X] Ninguna placa cambió a {NEW_BAUD} baud.")
+    # Diagnóstico extra: ¿siguen respondiendo a la velocidad VIEJA?
+    OLD_BAUD = BAUD_MAP.get(CURRENT_VEL, 115200)
+    if OLD_BAUD != NEW_BAUD:
+        print(f"  [D] Diagnóstico: comprobando si siguen a {OLD_BAUD} baud...")
+        v_old = verificar_3_placas('/dev/ttyAMA0', OLD_BAUD)
+        if v_old:
+            todas_viejas = all(v == CURRENT_VEL for v in v_old.values()) and len(v_old) == 3
+            for slave in (1, 2, 3):
+                vv = v_old.get(slave)
+                if vv is None:
+                    print(f"    L{slave}: sin respuesta también a {OLD_BAUD} baud")
+                else:
+                    print(f"    L{slave}: a {OLD_BAUD} baud reg61={vv}")
+            if todas_viejas:
+                print(f"  [D] Las 3 placas SIGUEN a {OLD_BAUD} baud — la placa RECHAZÓ el write reg 61.")
+                print(f"      Causas más probables:")
+                print(f"        - Equipo con carga activa (regulando consumo real)")
+                print(f"        - Firmware no permite cambiar la velocidad por Modbus")
+                print(f"        - reg 31 reporta bypass pero internamente sigue activo")
+        else:
+            print(f"  [D] No responden a {OLD_BAUD} baud tampoco — placas caídas o ruido en bus")
 else:
     no_ok = [s for s in (1, 2, 3) if s not in ok_slaves]
     print(f"  [X] BUS PARTIDO: L{ok_slaves} a {NEW_BAUD} baud, L{no_ok} sin verificar.")
