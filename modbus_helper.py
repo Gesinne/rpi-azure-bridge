@@ -23,9 +23,9 @@ from datetime import datetime
 DEFAULT_PORT = "/dev/ttyAMA0"
 DEFAULT_BAUDRATE = 115200
 BAUDRATES_PROBE = [115200, 57600, 38400, 19200, 9600]
-SLAVES_PROBE = (1, 2, 3)
+SLAVES_PROBE = (1,)         # Solo slave 1: si está apagado, los demás también.
 PROBE_REGISTER = 0          # Registro 0 = Estado actual del chopper (siempre presente)
-PROBE_TIMEOUT = 0.6         # Segundos por intento (5 baudrates × 3 slaves × 0.6 ≈ 9s peor caso)
+PROBE_TIMEOUT = 0.3         # 5 baudrates × 1 slave × 0.3 ≈ 1.5s peor caso (solo cache miss)
 
 
 def _cache_path():
@@ -114,11 +114,10 @@ def _probe_baudrate(port, baudrate, slaves=SLAVES_PROBE):
 
 
 def detect_baudrate(port=DEFAULT_PORT, force=None):
-    """Detecta el baudrate al que responde la placa Modbus.
+    """Detecta el baudrate al que responde la placa Modbus PROBANDO los puertos.
 
-    - Si `force` es int, se devuelve sin probar.
-    - Si hay cache válido, se prueba primero (corto-circuita la lista).
-    - Si nada responde, devuelve DEFAULT_BAUDRATE (115200) sin escribir cache.
+    Esta función SIEMPRE prueba — es la operación cara. Solo se debe llamar
+    cuando no hay cache o cuando el cache ha fallado.
     """
     if isinstance(force, int):
         return force
@@ -142,12 +141,43 @@ def detect_baudrate(port=DEFAULT_PORT, force=None):
 
 
 def open_modbus_client(port=DEFAULT_PORT, force_baudrate=None, timeout=1):
-    """Devuelve un ModbusSerialClient con baudrate autodetectado.
+    """Devuelve un ModbusSerialClient listo para .connect().
 
-    El cliente se devuelve SIN llamar a .connect() — el caller decide cuándo.
-    Si no hay forma de detectar (placas apagadas/sin respuesta), usa 115200.
+    Path normal (cache hit): NO prueba nada, solo lee el baudrate cacheado
+    y devuelve el cliente inmediatamente. El caller hace .connect() y lee.
+    Coste casi cero — equivalente a la versión hardcoded original.
+
+    Path lento (cache miss): detecta probando [115200..9600], cachea el
+    que funcione, devuelve cliente. Solo ocurre la primera vez (o tras
+    haber borrado el cache con `python3 modbus_helper.py --clear`).
+
+    Si el cliente devuelto falla al conectar/leer porque alguien cambió
+    la velocidad de la placa, el caller puede llamar a
+    `redetect_and_open_modbus_client()` para forzar nueva detección.
     """
-    br = detect_baudrate(port, force=force_baudrate)
+    if isinstance(force_baudrate, int):
+        return _make_client(port, force_baudrate, timeout=timeout)
+
+    cached = _read_cache(port)
+    if cached:
+        # Path rápido: confiamos en el cache. Si la placa ya no responde,
+        # el .connect()/lectura del caller fallará y podrá redetectar.
+        return _make_client(port, cached, timeout=timeout)
+
+    # Primera vez (sin cache): detección completa.
+    br = detect_baudrate(port)
+    return _make_client(port, br, timeout=timeout)
+
+
+def redetect_and_open_modbus_client(port=DEFAULT_PORT, timeout=1):
+    """Borra cache y vuelve a detectar. Para usar cuando el cache es stale."""
+    try:
+        os.remove(_cache_path())
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    br = detect_baudrate(port)
     return _make_client(port, br, timeout=timeout)
 
 
