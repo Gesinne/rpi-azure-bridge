@@ -608,26 +608,49 @@ cambiar_velocidad_modbus() {
     # --- Paso 1: leer y mostrar velocidad actual ---
     echo "  [M] Leyendo velocidad actual de las 3 placas..."
     CURRENT_VEL=$(python3 << 'EOFLEER'
-import sys, os
+import sys
 try:
     from pymodbus.client import ModbusSerialClient
 except ImportError:
     from pymodbus.client.sync import ModbusSerialClient
 
-sys.path.insert(0, os.environ.get('RPI_BRIDGE_DIR', '.'))
-try:
-    from modbus_helper import open_modbus_client
-    client = open_modbus_client(port='/dev/ttyAMA0', timeout=2)
-except ImportError:
-    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200,
-                                 bytesize=8, parity='N', stopbits=1, timeout=2)
-
+# IGUAL PATRÓN QUE LA OPCIÓN 4 (Leer placas): probar baudrates en bucle
+# hasta encontrar el activo. NO depender del cache del helper.
+BAUDRATES = [115200, 57600, 38400]
 BAUD_MAP = {0: 115200, 1: 57600, 2: 38400}
 
-if not client.connect():
-    sys.stderr.write("  [X] No se pudo abrir puerto serie\n")
+client = None
+connected_baud = None
+
+for baudrate in BAUDRATES:
+    sys.stderr.write(f"    Probando @ {baudrate} baud... ")
+    sys.stderr.flush()
+    try:
+        c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baudrate,
+                                bytesize=8, parity='N', stopbits=1, timeout=1.5)
+        if c.connect():
+            # Probar lectura del slave 1 para verificar comunicación
+            r = c.read_holding_registers(address=61, count=1, slave=1)
+            if r is not None and not r.isError():
+                sys.stderr.write("OK\n")
+                client = c
+                connected_baud = baudrate
+                break
+            sys.stderr.write("sin respuesta\n")
+            c.close()
+        else:
+            sys.stderr.write("no conecta\n")
+    except Exception:
+        sys.stderr.write("sin respuesta\n")
+
+if client is None:
+    sys.stderr.write("  [X] Ninguna placa responde a 115200/57600/38400 — abortando\n")
+    sys.stderr.write("      Revisa cable RS485, alimentación y terminación.\n")
     sys.exit(1)
 
+sys.stderr.write(f"  [OK] Comunicación establecida a {connected_baud} baud\n")
+
+# Ahora leer reg 61 de las 3 placas a esa velocidad
 actual = {}
 for slave in (1, 2, 3):
     try:
@@ -647,7 +670,7 @@ if len(actual) != 3:
     sys.stderr.write("  [X] No se pudieron leer las 3 placas — abortando\n")
     sys.exit(2)
 if len(set(actual.values())) != 1:
-    sys.stderr.write("  [X] Las 3 placas tienen velocidades distintas — abortando\n")
+    sys.stderr.write("  [X] Las 3 placas tienen velocidades distintas — usa opción 8 (rescatar bus partido)\n")
     sys.exit(3)
 
 # Único output a stdout: el valor actual (lo capturará bash)
@@ -735,18 +758,17 @@ except ImportError:
 BAUD_MAP = {0: 115200, 1: 57600, 2: 38400}
 NEW_VEL = int(os.environ['NEW_VEL'])
 NEW_BAUD = BAUD_MAP[NEW_VEL]
+CURRENT_VEL = int(os.environ.get('CURRENT_VEL', '-1'))
+OLD_BAUD = BAUD_MAP.get(CURRENT_VEL, 115200)
 
-if HAS_HELPER:
-    client = open_modbus_client(port='/dev/ttyAMA0', timeout=2)
-else:
-    client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200,
-                                 bytesize=8, parity='N', stopbits=1, timeout=2)
+# Abrir cliente DIRECTAMENTE a OLD_BAUD (sabemos a qué velocidad están las placas
+# porque el paso anterior lo detectó probando los 3 baudrates). Sin cache helper.
+client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=OLD_BAUD,
+                             bytesize=8, parity='N', stopbits=1, timeout=2)
 
 if not client.connect():
-    print("  [X] No se pudo abrir puerto serie para escritura")
+    print(f"  [X] No se pudo abrir puerto serie a {OLD_BAUD} baud para escritura")
     sys.exit(1)
-
-CURRENT_VEL = int(os.environ.get('CURRENT_VEL', '-1'))
 MAX_RETRIES = 4
 RETRY_SLEEP = 0.3
 
@@ -1130,24 +1152,16 @@ EOFDET
         return 1
     fi
 
-    # Si las 3 ya están a la misma velocidad, no hay nada que rescatar
-    if [ "$L1_BAUD" = "$L2_BAUD" ] && [ "$L2_BAUD" = "$L3_BAUD" ]; then
-        echo ""
-        echo "  [=] Las 3 placas ya están a $L1_BAUD baud. No hay bus partido."
-        echo "      Si quieres cambiarlas TODAS a otra velocidad, usa la opción 'Cambiar velocidad'."
-        echo ""
-        echo "  [~] Reiniciando Node-RED..."
-        sudo systemctl start nodered 2>/dev/null
-        docker start gesinne-rpi >/dev/null 2>&1 || true
-        return 0
-    fi
-
-    # Pedir velocidad objetivo
+    # Mostrar el estado actual (partido o uniforme)
     echo ""
-    echo "  [!] BUS PARTIDO detectado:"
-    echo "      L1 a $L1_BAUD baud"
-    echo "      L2 a $L2_BAUD baud"
-    echo "      L3 a $L3_BAUD baud"
+    if [ "$L1_BAUD" = "$L2_BAUD" ] && [ "$L2_BAUD" = "$L3_BAUD" ]; then
+        echo "  [=] Las 3 placas están a $L1_BAUD baud (estado uniforme)"
+    else
+        echo "  [!] BUS PARTIDO detectado:"
+        echo "      L1 a $L1_BAUD baud"
+        echo "      L2 a $L2_BAUD baud"
+        echo "      L3 a $L3_BAUD baud"
+    fi
     echo ""
     echo "  Valores posibles para igualar las 3 placas:"
     echo "    0 = 115200 baud"
