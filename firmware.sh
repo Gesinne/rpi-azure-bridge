@@ -956,92 +956,93 @@ main_menu() {
         echo "  Menu Firmware"
         echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "  1) Descargar firmwares de GitHub"
-        echo "  2) Actualizar placa individual"
-        echo "  3) Actualizar L1, L2, L3 (guiado)"
-        echo "  4) Detectar micro conectado"
-        echo "  5) Enviar comando manual"
+        # Opciones 1-5 deshabilitadas temporalmente — dejar solo cambio de velocidad
+        # echo "  1) Descargar firmwares de GitHub"
+        # echo "  2) Actualizar placa individual"
+        # echo "  3) Actualizar L1, L2, L3 (guiado)"
+        # echo "  4) Detectar micro conectado"
+        # echo "  5) Enviar comando manual"
         echo "  6) Cambiar velocidad Modbus (reg 61)"
         echo "  0) Salir"
         echo ""
-        read -p "  Opcion [0-6]: " OPTION
-        
+        read -p "  Opcion [0/6]: " OPTION
+
         case "$OPTION" in
-            1)
-                download_firmwares
-                ;;
-            2)
-                if [ ! -d "$FW_DIR/FW" ]; then
-                    echo "  [!] Primero descarga los firmwares (opcion 1)"
-                    continue
-                fi
-                
-                if ! list_versions; then
-                    continue
-                fi
-                
-                echo ""
-                read -p "  Selecciona version: " VER_CHOICE
-                SELECTED_VERSION="${VERSION_ARRAY[$VER_CHOICE]}"
-                
-                if [ -z "$SELECTED_VERSION" ]; then
-                    echo "  [X] Version no valida"
-                    continue
-                fi
-                
-                echo ""
-                read -p "  Nombre de la placa (ej: L1): " BOARD_NAME
-                update_board "$BOARD_NAME" ""
-                ;;
-            3)
-                if [ ! -d "$FW_DIR/FW" ]; then
-                    echo "  [!] Primero descarga los firmwares (opcion 1)"
-                    continue
-                fi
-                
-                if ! list_versions; then
-                    continue
-                fi
-                
-                echo ""
-                read -p "  Selecciona version: " VER_CHOICE
-                SELECTED_VERSION="${VERSION_ARRAY[$VER_CHOICE]}"
-                
-                if [ -z "$SELECTED_VERSION" ]; then
-                    echo "  [X] Version no valida"
-                    continue
-                fi
-                
-                echo ""
-                echo "  [i] Actualizacion guiada L1, L2, L3"
-                echo "  [i] Version: $SELECTED_VERSION"
-                echo ""
-                
-                for board in L1 L2 L3; do
-                    read -p "  ¿Actualizar $board? [S/n]: " DO_BOARD
-                    if [ "$DO_BOARD" != "n" ] && [ "$DO_BOARD" != "N" ]; then
-                        update_board "$board" ""
-                    fi
-                done
-                
-                echo ""
-                echo "  [OK] Proceso completado"
-                ;;
-            4)
-                echo ""
-                echo "  [!] Asegurate de que el cable esta conectado"
-                read -p "  Pulsa ENTER para continuar..." dummy
-                detect_micro
-                ;;
-            5)
-                echo ""
-                read -p "  Comando (sin ?): " CMD
-                echo ""
-                echo "  [~] Enviando ?$CMD..."
-                response=$(send_command "?$CMD" 2)
-                echo "  Respuesta:"
-                echo "$response" | head -20
-                ;;
+            # 1)
+            #     download_firmwares
+            #     ;;
+            # 2)
+            #     if [ ! -d "$FW_DIR/FW" ]; then
+            #         echo "  [!] Primero descarga los firmwares (opcion 1)"
+            #         continue
+            #     fi
+            #
+            #     if ! list_versions; then
+            #         continue
+            #     fi
+            #
+            #     echo ""
+            #     read -p "  Selecciona version: " VER_CHOICE
+            #     SELECTED_VERSION="${VERSION_ARRAY[$VER_CHOICE]}"
+            #
+            #     if [ -z "$SELECTED_VERSION" ]; then
+            #         echo "  [X] Version no valida"
+            #         continue
+            #     fi
+            #
+            #     echo ""
+            #     read -p "  Nombre de la placa (ej: L1): " BOARD_NAME
+            #     update_board "$BOARD_NAME" ""
+            #     ;;
+            # 3)
+            #     if [ ! -d "$FW_DIR/FW" ]; then
+            #         echo "  [!] Primero descarga los firmwares (opcion 1)"
+            #         continue
+            #     fi
+            #
+            #     if ! list_versions; then
+            #         continue
+            #     fi
+            #
+            #     echo ""
+            #     read -p "  Selecciona version: " VER_CHOICE
+            #     SELECTED_VERSION="${VERSION_ARRAY[$VER_CHOICE]}"
+            #
+            #     if [ -z "$SELECTED_VERSION" ]; then
+            #         echo "  [X] Version no valida"
+            #         continue
+            #     fi
+            #
+            #     echo ""
+            #     echo "  [i] Actualizacion guiada L1, L2, L3"
+            #     echo "  [i] Version: $SELECTED_VERSION"
+            #     echo ""
+            #
+            #     for board in L1 L2 L3; do
+            #         read -p "  ¿Actualizar $board? [S/n]: " DO_BOARD
+            #         if [ "$DO_BOARD" != "n" ] && [ "$DO_BOARD" != "N" ]; then
+            #             update_board "$board" ""
+            #         fi
+            #     done
+            #
+            #     echo ""
+            #     echo "  [OK] Proceso completado"
+            #     ;;
+            # 4)
+            #     echo ""
+            #     echo "  [!] Asegurate de que el cable esta conectado"
+            #     read -p "  Pulsa ENTER para continuar..." dummy
+            #     detect_micro
+            #     ;;
+            # 5)
+            #     echo ""
+            #     read -p "  Comando (sin ?): " CMD
+            #     echo ""
+            #     echo "  [~] Enviando ?$CMD..."
+            #     response=$(send_command "?$CMD" 2)
+            #     echo "  Respuesta:"
+            #     echo "$response" | head -20
+            #     ;;
             6)
                 cambiar_velocidad_modbus
                 ;;
