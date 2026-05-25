@@ -933,10 +933,249 @@ EOFVEL
     return $PY_EXIT
 }
 
+# === RESCATAR BUS MODBUS PARTIDO ===
+# Cuando las 3 placas han quedado a velocidades distintas (p.ej. tras un
+# intento fallido de cambio), igualar las 3 a una velocidad común.
+# Hablamos a CADA placa a SU velocidad actual y aplicamos la secuencia
+# mágica (reg31=0 -> reg30=43981 -> reg40=47818 -> reg61=target).
+rescatar_bus_modbus() {
+    echo ""
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Rescatar bus Modbus (placas a velocidades distintas)"
+    echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    echo "  [!]  Parando Node-RED temporalmente..."
+    sudo systemctl stop nodered 2>/dev/null
+    docker stop gesinne-rpi >/dev/null 2>&1 || true
+    sleep 2
+    echo "  [OK] Servicios parados"
+    echo ""
+
+    # Paso 1: detectar la velocidad de cada placa probando los 3 baudrates
+    echo "  [D] Detectando velocidad actual de cada placa..."
+    DETECCION=$(python3 << 'EOFDET'
+import sys
+from pymodbus.client import ModbusSerialClient
+
+BAUDS = [115200, 57600, 38400]
+LABELS = {115200: "115200 baud (reg61=0)", 57600: "57600 baud (reg61=1)", 38400: "38400 baud (reg61=2)"}
+
+estado = {}
+for slave in (1, 2, 3):
+    encontrado = None
+    for baud in BAUDS:
+        c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baud,
+                                bytesize=8, parity='N', stopbits=1, timeout=1.5)
+        if not c.connect():
+            continue
+        try:
+            r = c.read_holding_registers(address=61, count=1, slave=slave)
+            if r is not None and not r.isError():
+                encontrado = (baud, r.registers[0])
+                c.close()
+                break
+        except Exception:
+            pass
+        c.close()
+    if encontrado:
+        baud, val = encontrado
+        estado[slave] = baud
+        sys.stderr.write(f"    L{slave}: a {LABELS[baud]} (reg61={val})\n")
+    else:
+        sys.stderr.write(f"    L{slave}: NO RESPONDE A NINGUNA VELOCIDAD\n")
+
+# stdout: línea por slave con baudrate detectado (o "X" si no responde)
+for slave in (1, 2, 3):
+    print(estado.get(slave, 'X'))
+EOFDET
+)
+    DET_EXIT=$?
+
+    # Parsear: 3 líneas, baudrate de cada slave
+    mapfile -t BAUD_PLACAS <<< "$DETECCION"
+    L1_BAUD="${BAUD_PLACAS[0]}"
+    L2_BAUD="${BAUD_PLACAS[1]}"
+    L3_BAUD="${BAUD_PLACAS[2]}"
+
+    # Si alguna no responde, abortar
+    if [ "$L1_BAUD" = "X" ] || [ "$L2_BAUD" = "X" ] || [ "$L3_BAUD" = "X" ]; then
+        echo ""
+        echo "  [X] Alguna placa no responde a ningún baudrate."
+        echo "      Revisa cable RS485, alimentación de placas, terminación."
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 1
+    fi
+
+    # Si las 3 ya están a la misma velocidad, no hay nada que rescatar
+    if [ "$L1_BAUD" = "$L2_BAUD" ] && [ "$L2_BAUD" = "$L3_BAUD" ]; then
+        echo ""
+        echo "  [=] Las 3 placas ya están a $L1_BAUD baud. No hay bus partido."
+        echo "      Si quieres cambiarlas TODAS a otra velocidad, usa la opción 'Cambiar velocidad'."
+        echo ""
+        echo "  [~] Reiniciando Node-RED..."
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    # Pedir velocidad objetivo
+    echo ""
+    echo "  [!] BUS PARTIDO detectado:"
+    echo "      L1 a $L1_BAUD baud"
+    echo "      L2 a $L2_BAUD baud"
+    echo "      L3 a $L3_BAUD baud"
+    echo ""
+    echo "  Valores posibles para igualar las 3 placas:"
+    echo "    0 = 115200 baud"
+    echo "    1 =  57600 baud"
+    echo "    2 =  38400 baud"
+    echo ""
+    read -p "  Velocidad objetivo [0/1/2] (ENTER para cancelar): " TARGET_VEL
+    if [ -z "$TARGET_VEL" ]; then
+        echo "  [~] Cancelado"
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 0
+    fi
+    if [[ ! "$TARGET_VEL" =~ ^[012]$ ]]; then
+        echo "  [X] Valor no válido"
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 1
+    fi
+
+    case "$TARGET_VEL" in
+        0) TARGET_BAUD="115200" ;;
+        1) TARGET_BAUD="57600"  ;;
+        2) TARGET_BAUD="38400"  ;;
+    esac
+
+    echo ""
+    read -p "  ¿Confirmas igualar las 3 placas a $TARGET_BAUD baud (reg61=$TARGET_VEL)? [s/N]: " CONFIRM
+    if [[ ! "$CONFIRM" =~ ^[sSyY]$ ]]; then
+        echo "  [~] Cancelado"
+        sudo systemctl start nodered 2>/dev/null
+        docker start gesinne-rpi >/dev/null 2>&1 || true
+        return 0
+    fi
+
+    echo ""
+    echo "  [W] Cambiando las placas que no están a $TARGET_BAUD baud..."
+
+    export L1_BAUD L2_BAUD L3_BAUD TARGET_VEL TARGET_BAUD
+    python3 << 'EOFRESC'
+import os, sys, time
+from pymodbus.client import ModbusSerialClient
+
+TARGET_VEL = int(os.environ['TARGET_VEL'])
+TARGET_BAUD = int(os.environ['TARGET_BAUD'])
+BAUDS_PLACA = {
+    1: int(os.environ['L1_BAUD']),
+    2: int(os.environ['L2_BAUD']),
+    3: int(os.environ['L3_BAUD']),
+}
+
+# Agrupar placas por la velocidad a la que están ahora
+por_baud = {}
+for slave, baud in BAUDS_PLACA.items():
+    if baud == TARGET_BAUD:
+        continue  # ya está, no toca
+    por_baud.setdefault(baud, []).append(slave)
+
+for baud, slaves in por_baud.items():
+    print(f"  [W] Conectando a {baud} baud para hablar con L{slaves}...")
+    c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baud,
+                            bytesize=8, parity='N', stopbits=1, timeout=2)
+    if not c.connect():
+        print(f"    [X] No se pudo abrir puerto a {baud} baud")
+        continue
+
+    for slave in slaves:
+        print(f"    L{slave}: aplicando secuencia (bypass + magic words + reg61={TARGET_VEL})...")
+        # bypass
+        try: c.write_register(address=31, value=0, slave=slave)
+        except Exception: pass
+        time.sleep(0.3)
+        # magic 30
+        try: c.write_register(address=30, value=43981, slave=slave)
+        except Exception: pass
+        time.sleep(0.15)
+        # magic 40
+        try: c.write_register(address=40, value=47818, slave=slave)
+        except Exception: pass
+        time.sleep(0.15)
+        # reg 61 (ACK vendrá a TARGET_BAUD, se ignora)
+        try: c.write_register(address=61, value=TARGET_VEL, slave=slave)
+        except Exception: pass
+        time.sleep(0.5)
+
+    c.close()
+
+print()
+print(f"  [V] Esperando 2s y verificando las 3 placas a {TARGET_BAUD} baud...")
+time.sleep(2)
+
+c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=TARGET_BAUD,
+                       bytesize=8, parity='N', stopbits=1, timeout=2)
+c.connect()
+ok = 0
+for slave in (1, 2, 3):
+    try:
+        r = c.read_holding_registers(address=61, count=1, slave=slave)
+        if r is not None and not r.isError():
+            v = r.registers[0]
+            if v == TARGET_VEL:
+                print(f"    L{slave}: OK (reg61={v})")
+                ok += 1
+            else:
+                print(f"    L{slave}: reg61={v} (esperaba {TARGET_VEL})")
+        else:
+            print(f"    L{slave}: SIN RESPUESTA a {TARGET_BAUD} baud")
+    except Exception as e:
+        print(f"    L{slave}: error - {e}")
+c.close()
+
+# Borrar cache helper para que la app re-detecte
+for path in ('/home/gesinne/config/baudrate_cache.json',
+             '/home/pi/config/baudrate_cache.json',
+             '/tmp/baudrate_cache.json'):
+    try: os.remove(path)
+    except FileNotFoundError: pass
+
+print()
+if ok == 3:
+    print(f"  [OK] Bus rescatado — las 3 placas a {TARGET_BAUD} baud")
+    sys.exit(0)
+else:
+    print(f"  [X] Solo {ok}/3 placas a {TARGET_BAUD} baud. INTERVENCION MANUAL.")
+    sys.exit(2)
+EOFRESC
+
+    PY_EXIT=$?
+
+    echo ""
+    echo "  [~] Reiniciando Node-RED..."
+    sudo systemctl start nodered 2>/dev/null
+    docker start gesinne-rpi >/dev/null 2>&1 || true
+    sleep 3
+    echo "  [OK] Servicios reiniciados"
+    return $PY_EXIT
+}
+
 # Si se llama con argumento "verificar", ejecutar directamente
 if [ "$1" = "verificar" ]; then
     verificar_parametrizacion
     exit 0
+fi
+
+# Si se llama con argumento "rescatar-bus", igualar velocidades de las placas
+if [ "$1" = "rescatar-bus" ] || [ "$1" = "rescatar_bus" ]; then
+    rescatar_bus_modbus
+    exit $?
 fi
 
 # Si se llama con argumento "reparar", ejecutar reparación
@@ -1227,9 +1466,10 @@ main_menu() {
         # echo "  4) Detectar micro conectado"
         # echo "  5) Enviar comando manual"
         echo "  6) Cambiar velocidad Modbus (reg 61)"
+        echo "  7) Rescatar bus partido (igualar velocidades)"
         echo "  0) Salir"
         echo ""
-        read -p "  Opcion [0/6]: " OPTION
+        read -p "  Opcion [0/6/7]: " OPTION
 
         case "$OPTION" in
             # 1)
@@ -1309,6 +1549,9 @@ main_menu() {
             #     ;;
             6)
                 cambiar_velocidad_modbus
+                ;;
+            7)
+                rescatar_bus_modbus
                 ;;
             0)
                 echo ""
