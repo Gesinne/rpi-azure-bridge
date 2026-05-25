@@ -624,52 +624,30 @@ connected_baud = None
 
 import time
 
-# Patrón opción 4: hasta MAX_RETRIES por baudrate, acumulando respuestas
-# de las 3 placas. Solo declaramos "no responde" si en TODOS los reintentos
-# falla. Solo declaramos "uniforme" si en algún intento las 3 respondieron.
-MAX_RETRIES = 5
-
+# MISMA LÓGICA QUE OPCIÓN 4 (que funciona):
+# - Probar reg 0 (Estado, siempre presente) con slave=1.
+# - Si OK → esa es la velocidad, continuamos.
+# - No exigimos las 3 placas en el primer probe (más permisivo).
 for baudrate in BAUDRATES:
     sys.stderr.write(f"    Probando @ {baudrate} baud... ")
     sys.stderr.flush()
     c = None
-    todas_ok = False
-    parcial_visto = set()
     try:
         c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baudrate,
                                 bytesize=8, parity='N', stopbits=1, timeout=2)
-        if not c.connect():
-            sys.stderr.write("no conecta\n")
-            continue
-        for intento in range(1, MAX_RETRIES + 1):
-            respondieron = []
-            for s in (1, 2, 3):
-                try:
-                    r = c.read_holding_registers(address=61, count=1, slave=s)
-                    if r is not None and not r.isError():
-                        respondieron.append(s)
-                except Exception:
-                    pass
-            parcial_visto.update(respondieron)
-            if len(respondieron) == 3:
-                todas_ok = True
+        if c.connect():
+            r = c.read_holding_registers(address=0, count=1, slave=1)
+            if r is not None and not r.isError():
+                sys.stderr.write("OK\n")
+                client = c
+                connected_baud = baudrate
                 break
-            if intento < MAX_RETRIES:
-                time.sleep(0.5)
-        if todas_ok:
-            sys.stderr.write(f"OK (3/3, intento {intento})\n")
-            client = c
-            connected_baud = baudrate
-            break
-        elif parcial_visto:
-            sys.stderr.write(f"PARCIAL tras {MAX_RETRIES} intentos (responden L{sorted(parcial_visto)})\n")
+            sys.stderr.write("sin respuesta\n")
             c.close()
-            # Guardamos info para mensaje final pero no usamos este cliente
         else:
-            sys.stderr.write(f"sin respuesta tras {MAX_RETRIES} intentos\n")
-            c.close()
+            sys.stderr.write("no conecta\n")
     except Exception:
-        sys.stderr.write("sin respuesta (excepción)\n")
+        sys.stderr.write("sin respuesta\n")
         if c:
             try: c.close()
             except: pass
