@@ -485,6 +485,73 @@ EOFREPARAR
     echo "  [OK] Servicios reiniciados"
 }
 
+# Actualizar el baudrate del nodo modbus-client de Node-RED (flows.json)
+# Tras un cambio exitoso de velocidad en las placas, hay que cambiar también
+# el baudrate que usa Node-RED para hablarles, sino dejaría de comunicar.
+# Uso: actualizar_baudrate_nodered <NEW_BAUD>
+actualizar_baudrate_nodered() {
+    local NEW_BAUD="$1"
+    echo ""
+    echo "  [NR] Actualizando baudrate de Node-RED (flows.json) a $NEW_BAUD..."
+
+    local FLOWS_FILE=""
+    for f in /home/*/.node-red/flows.json; do
+        if [ -f "$f" ]; then
+            FLOWS_FILE="$f"
+            break
+        fi
+    done
+
+    if [ -z "$FLOWS_FILE" ]; then
+        echo "  [!] No se encontró flows.json — actualízalo manualmente en Node-RED"
+        return 1
+    fi
+
+    # Backup antes de tocar
+    local BAK="${FLOWS_FILE}.bak_$(date +%Y%m%d_%H%M%S)"
+    cp "$FLOWS_FILE" "$BAK"
+    echo "  [NR] Backup: $BAK"
+
+    export NR_FLOWS_FILE="$FLOWS_FILE"
+    export NR_NEW_BAUD="$NEW_BAUD"
+    python3 << 'EOFNR'
+import json, os, sys
+path = os.environ['NR_FLOWS_FILE']
+new_baud = os.environ['NR_NEW_BAUD']
+try:
+    with open(path) as f:
+        flows = json.load(f)
+except Exception as e:
+    print(f"  [X] No se pudo leer {path}: {e}")
+    sys.exit(1)
+
+cambios = 0
+for node in flows:
+    if isinstance(node, dict) and node.get('type') == 'modbus-client':
+        old = node.get('serialBaudrate', '?')
+        if str(old) != str(new_baud):
+            node['serialBaudrate'] = str(new_baud)
+            cambios += 1
+            name = node.get('name') or node.get('id', '?')
+            print(f"    nodo '{name}': serialBaudrate {old} → {new_baud}")
+        else:
+            name = node.get('name') or node.get('id', '?')
+            print(f"    nodo '{name}': ya estaba en {new_baud}")
+
+if cambios > 0:
+    try:
+        with open(path, 'w') as f:
+            json.dump(flows, f, indent=4)
+        print(f"  [OK] {cambios} nodo(s) modbus-client actualizado(s)")
+    except Exception as e:
+        print(f"  [X] Error guardando flows.json: {e}")
+        sys.exit(1)
+else:
+    print(f"  [=] No hizo falta cambiar nada en flows.json")
+EOFNR
+    return $?
+}
+
 # Cambiar velocidad Modbus de las 3 placas (registro 61)
 # Mapeo firmware: 0 = 115200, 1 = 57600, 2 = 38400
 cambiar_velocidad_modbus() {
@@ -924,6 +991,16 @@ EOFVEL
 
     PY_EXIT=$?
 
+    # Si el cambio fue exitoso, actualizar también Node-RED para que use la nueva velocidad
+    if [ $PY_EXIT -eq 0 ]; then
+        case "$NEW_VEL" in
+            0) NEW_BAUD_STR="115200" ;;
+            1) NEW_BAUD_STR="57600"  ;;
+            2) NEW_BAUD_STR="38400"  ;;
+        esac
+        actualizar_baudrate_nodered "$NEW_BAUD_STR"
+    fi
+
     echo ""
     echo "  [~] Reiniciando Node-RED..."
     sudo systemctl start nodered 2>/dev/null
@@ -1156,6 +1233,11 @@ else:
 EOFRESC
 
     PY_EXIT=$?
+
+    # Si el rescate fue exitoso, actualizar también Node-RED
+    if [ $PY_EXIT -eq 0 ]; then
+        actualizar_baudrate_nodered "$TARGET_BAUD"
+    fi
 
     echo ""
     echo "  [~] Reiniciando Node-RED..."
