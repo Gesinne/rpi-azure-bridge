@@ -823,18 +823,24 @@ print("  [BP] Leyendo estado actual (reg 31) y poniendo placas en BYPASS...")
 estado31_previo = {}
 lectura_fallida = []
 for slave in (1, 2, 3):
-    try:
-        rr = client.read_holding_registers(address=31, count=1, slave=slave)
-        if rr is not None and not rr.isError():
-            estado31_previo[slave] = rr.registers[0]
-            tag = "BYPASS" if rr.registers[0] == 0 else ("REGULACION" if rr.registers[0] == 2 else f"valor={rr.registers[0]}")
-            print(f"    L{slave}: reg31 = {rr.registers[0]} ({tag})")
-        else:
-            lectura_fallida.append(slave)
-            print(f"    L{slave}: NO RESPONDE a la lectura inicial")
-    except Exception as e:
+    leido = False
+    for intento in range(1, 6):  # hasta 5 reintentos por placa
+        try:
+            rr = client.read_holding_registers(address=31, count=1, slave=slave)
+            if rr is not None and not rr.isError():
+                estado31_previo[slave] = rr.registers[0]
+                tag = "BYPASS" if rr.registers[0] == 0 else ("REGULACION" if rr.registers[0] == 2 else f"valor={rr.registers[0]}")
+                extra = "" if intento == 1 else f" (intento {intento})"
+                print(f"    L{slave}: reg31 = {rr.registers[0]} ({tag}){extra}")
+                leido = True
+                break
+        except Exception:
+            pass
+        if intento < 5:
+            time.sleep(0.3)
+    if not leido:
         lectura_fallida.append(slave)
-        print(f"    L{slave}: error leyendo reg31 - {e}")
+        print(f"    L{slave}: NO RESPONDE tras 5 intentos")
 
 if lectura_fallida:
     print(f"  [X] No se pudo leer reg 31 en L{lectura_fallida} — ABORTANDO sin escribir reg 61")
@@ -850,20 +856,24 @@ bypass_no_aplicado = []
 for slave in (1, 2, 3):
     if estado31_previo.get(slave, 0) == 0:
         continue  # ya en bypass
-    try:
-        client.write_register(address=31, value=0, slave=slave)
-        time.sleep(0.3)  # damos tiempo a que la placa entre en bypass
-        # Verificar
-        rr = client.read_holding_registers(address=31, count=1, slave=slave)
-        if rr is not None and not rr.isError() and rr.registers[0] == 0:
-            print(f"    L{slave}: BYPASS aplicado y verificado")
-        else:
-            cur = rr.registers[0] if (rr is not None and not rr.isError()) else "?"
-            print(f"    L{slave}: bypass NO confirmado (reg31={cur})")
-            bypass_no_aplicado.append(slave)
-    except Exception as e:
+    aplicado = False
+    for intento in range(1, 6):  # hasta 5 reintentos para escribir+verificar
+        try:
+            client.write_register(address=31, value=0, slave=slave)
+            time.sleep(0.3)
+            rr = client.read_holding_registers(address=31, count=1, slave=slave)
+            if rr is not None and not rr.isError() and rr.registers[0] == 0:
+                extra = "" if intento == 1 else f" (intento {intento})"
+                print(f"    L{slave}: BYPASS aplicado y verificado{extra}")
+                aplicado = True
+                break
+        except Exception:
+            pass
+        if intento < 5:
+            time.sleep(0.3)
+    if not aplicado:
         bypass_no_aplicado.append(slave)
-        print(f"    L{slave}: error aplicando bypass - {e}")
+        print(f"    L{slave}: bypass NO confirmado tras 5 intentos")
 
 if bypass_no_aplicado:
     print(f"  [X] No se pudo poner en bypass L{bypass_no_aplicado} — ABORTANDO")
