@@ -625,23 +625,45 @@ connected_baud = None
 for baudrate in BAUDRATES:
     sys.stderr.write(f"    Probando @ {baudrate} baud... ")
     sys.stderr.flush()
+    c = None
     try:
         c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baudrate,
                                 bytesize=8, parity='N', stopbits=1, timeout=2)
-        if c.connect():
-            # Probar lectura del slave 1 para verificar comunicación
-            r = c.read_holding_registers(address=61, count=1, slave=1)
-            if r is not None and not r.isError():
-                sys.stderr.write("OK\n")
-                client = c
-                connected_baud = baudrate
-                break
+        if not c.connect():
+            sys.stderr.write("no conecta\n")
+            continue
+        # Probar TODOS los slaves (no solo el 1) — si el 1 está caído,
+        # otro puede responder. Solo asumimos que esta es "la velocidad"
+        # si las 3 responden (estado uniforme).
+        respondieron = []
+        for s in (1, 2, 3):
+            try:
+                r = c.read_holding_registers(address=61, count=1, slave=s)
+                if r is not None and not r.isError():
+                    respondieron.append(s)
+            except Exception:
+                pass
+        if len(respondieron) == 3:
+            sys.stderr.write("OK (3/3 responden)\n")
+            client = c
+            connected_baud = baudrate
+            break
+        elif respondieron:
+            sys.stderr.write(f"PARCIAL (solo L{respondieron} responden — bus partido)\n")
+            c.close()
+            # Recordamos esta info para el mensaje final
+            client = c  # marca para no marcar como "ninguna"
+            connected_baud = baudrate
+            # NO break: seguimos probando otros baudrates por si las otras placas están ahí
+            client = None  # reset, no usar este cliente
+        else:
             sys.stderr.write("sin respuesta\n")
             c.close()
-        else:
-            sys.stderr.write("no conecta\n")
     except Exception:
         sys.stderr.write("sin respuesta\n")
+        if c:
+            try: c.close()
+            except: pass
 
 if client is None:
     sys.stderr.write("  [X] Ninguna placa responde a 115200/57600/38400 — abortando\n")
