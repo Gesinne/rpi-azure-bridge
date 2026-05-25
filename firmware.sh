@@ -1067,6 +1067,7 @@ rescatar_bus_modbus() {
     echo ""
 
     # Paso 1: detectar la velocidad de cada placa probando los 3 baudrates
+    # Timeout corto (0.5s) y feedback en vivo. Total peor caso: 3*3*0.5s = 4.5s.
     echo "  [D] Detectando velocidad actual de cada placa..."
     DETECCION=$(python3 << 'EOFDET'
 import sys
@@ -1079,23 +1080,28 @@ estado = {}
 for slave in (1, 2, 3):
     encontrado = None
     for baud in BAUDS:
+        sys.stderr.write(f"    L{slave} @ {baud}... ")
+        sys.stderr.flush()
         c = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baud,
-                                bytesize=8, parity='N', stopbits=1, timeout=1.5)
+                                bytesize=8, parity='N', stopbits=1, timeout=0.5)
         if not c.connect():
+            sys.stderr.write("no conecta\n")
             continue
         try:
             r = c.read_holding_registers(address=61, count=1, slave=slave)
             if r is not None and not r.isError():
                 encontrado = (baud, r.registers[0])
                 c.close()
+                sys.stderr.write(f"OK (reg61={r.registers[0]})\n")
                 break
+            else:
+                sys.stderr.write("sin respuesta\n")
         except Exception:
-            pass
+            sys.stderr.write("sin respuesta\n")
         c.close()
     if encontrado:
         baud, val = encontrado
         estado[slave] = baud
-        sys.stderr.write(f"    L{slave}: a {LABELS[baud]} (reg61={val})\n")
     else:
         sys.stderr.write(f"    L{slave}: NO RESPONDE A NINGUNA VELOCIDAD\n")
 
