@@ -635,9 +635,10 @@ while true; do
     echo "  8) Rescatar bus Modbus partido"
     echo "  9) Cambiar baudrate Node-RED (solo flows.json)"
     echo " 10) Buscar placa (escanear bus Modbus)"
+    echo " 11) Buscar placa con paridades alternativas (E/O, 2 stopbits)"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-10]: " OPTION
+    read -p "  Opción [0-11]: " OPTION
 
     case $OPTION in
         0)
@@ -5934,6 +5935,189 @@ else:
         if isinstance(dirmb, int) and dirmb != sl:
             print(f"      [!] Slave {sl} declara DirModbus={dirmb} (DISCREPANCIA)")
 EOFSCAN
+
+            echo ""
+            echo "  [~] Reiniciando servicios..."
+            sudo systemctl start nodered 2>/dev/null
+            docker start gesinne-rpi >/dev/null 2>&1 || true
+            echo "  [OK] Servicios reiniciados"
+            volver_menu
+            ;;
+        11)
+            # Buscar placa con paridades alternativas (recuperación: cuando opción 10 no la encuentra)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Buscar placa — paridades alternativas"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Si la opción 10 (8N1) no encontró la placa, esta opción"
+            echo "  prueba framings alternativos por si la corrupción afectó"
+            echo "  también a la config UART:"
+            echo "    - 8E1 (paridad par, 1 stopbit)"
+            echo "    - 8O1 (paridad impar, 1 stopbit)"
+            echo "    - 8N2 (sin paridad, 2 stopbits)"
+            echo ""
+            echo "  Combinaciones: 3 baudrates × 3 framings × slaves 1-3"
+            echo "  Duración: ~1 min"
+            echo ""
+            echo "  [!] Parando servicios temporalmente..."
+            sudo systemctl stop nodered 2>/dev/null
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
+            if kiosk_is_running 2>/dev/null; then
+                kiosk_stop 2>/dev/null || true
+            fi
+            sleep 3
+            echo "  [OK] Servicios parados"
+            echo ""
+
+            SCAN_PORT=""
+            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                if [ -e "$port" ]; then
+                    SCAN_PORT="$port"
+                    break
+                fi
+            done
+
+            if [ -z "$SCAN_PORT" ]; then
+                echo "  [X] No se encontró ningún puerto serie"
+                sudo systemctl start nodered 2>/dev/null
+                docker start gesinne-rpi >/dev/null 2>&1 || true
+                volver_menu
+                continue
+            fi
+
+            echo "  [OK] Puerto: $SCAN_PORT"
+            echo ""
+
+            python3 << EOFSCANP
+import sys
+import time
+
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+PUERTO = "$SCAN_PORT"
+BAUDRATES = [115200, 57600, 38400]
+FRAMINGS = [
+    ('E', 1, '8E1'),
+    ('O', 1, '8O1'),
+    ('N', 2, '8N2'),
+]
+SLAVES_FAST = [1, 2, 3]
+EXTENDED_SLAVES = [0] + list(range(4, 248))
+TIMEOUT = 2.0
+TIMEOUT_EXT = 0.5
+
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"  {'Baud':>6} | {'Frame':>5} | {'Slave':>5} | {'Reg0':>5} | {'NºSerie':>8} | {'DirMB':>5}")
+print("  ─────────────────────────────────────────────────")
+
+try:
+    import pymodbus
+    print(f"  [i] pymodbus {getattr(pymodbus, '__version__', '?')}")
+except Exception:
+    pass
+
+encontradas = []
+
+def read_reg(client, addr, sl, retries=2):
+    for r in range(retries + 1):
+        try:
+            resp = client.read_holding_registers(address=addr, count=1, slave=sl)
+            if resp is not None and not resp.isError():
+                return resp.registers[0]
+        except Exception:
+            pass
+        time.sleep(0.1)
+    return '?'
+
+for baud in BAUDRATES:
+    for parity, stopbits, framing_lbl in FRAMINGS:
+        print(f"")
+        print(f"  ─── @ {baud} baud, {framing_lbl} ───")
+        try:
+            client = ModbusSerialClient(
+                port=PUERTO, baudrate=baud,
+                bytesize=8, parity=parity, stopbits=stopbits, timeout=TIMEOUT
+            )
+        except Exception as e:
+            print(f"    [X] Error creando cliente: {e}")
+            continue
+        if not client.connect():
+            print(f"    [X] client.connect() devolvió False")
+            continue
+
+        warmup_hits = []
+        for sl in SLAVES_FAST:
+            try:
+                resp = client.read_holding_registers(address=0, count=1, slave=sl)
+                if resp is not None and not resp.isError():
+                    reg0 = resp.registers[0]
+                    warmup_hits.append(sl)
+                    time.sleep(0.1)
+                    nserie = read_reg(client, 41, sl)
+                    time.sleep(0.1)
+                    dirmb = read_reg(client, 48, sl)
+                    print(f"  {baud:>6} | {framing_lbl:>5} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>5}")
+                    encontradas.append((baud, framing_lbl, sl, reg0, nserie, dirmb))
+            except Exception:
+                pass
+
+        if warmup_hits:
+            # Si encontramos algo, hacemos barrido extendido para captar slaves corruptos
+            try:
+                client.close()
+                time.sleep(0.2)
+                client = ModbusSerialClient(
+                    port=PUERTO, baudrate=baud,
+                    bytesize=8, parity=parity, stopbits=stopbits, timeout=TIMEOUT_EXT
+                )
+                client.connect()
+                print(f"    Barrido extendido a {framing_lbl}...")
+                for sl in EXTENDED_SLAVES:
+                    if sl % 30 == 0:
+                        print(f"\r      slave {sl:>3}/247...", end='', flush=True)
+                    try:
+                        resp = client.read_holding_registers(address=0, count=1, slave=sl)
+                        if resp is not None and not resp.isError():
+                            reg0 = resp.registers[0]
+                            print(f"\r      {'':>20}\r", end='')
+                            time.sleep(0.1)
+                            nserie = read_reg(client, 41, sl)
+                            time.sleep(0.1)
+                            dirmb = read_reg(client, 48, sl)
+                            print(f"  {baud:>6} | {framing_lbl:>5} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>5}")
+                            encontradas.append((baud, framing_lbl, sl, reg0, nserie, dirmb))
+                    except Exception:
+                        pass
+                print(f"\r      {'':>20}\r", end='')
+            except Exception as e:
+                print(f"    [!] Error en extendido: {e}")
+        else:
+            print(f"    (sin respuestas en warmup)")
+
+        client.close()
+        time.sleep(0.3)
+
+print("")
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+if not encontradas:
+    print("  [X] No se encontró ninguna placa con framings alternativos")
+    print("      → La placa está completamente muerta o tiene fallo HW.")
+    print("      → Siguiente paso: verificar LEDs/alimentación, o reflashear")
+    print("        con firmware.sh (opciones 2/4 actualmente deshabilitadas).")
+else:
+    print(f"  [OK] {len(encontradas)} respuesta(s) con framings alternativos")
+    print("      → La placa está viva pero con paridad/stopbits no estándar.")
+    print("      → Recuperación: leer dato a esa config, escribir reg correspondiente")
+    print("        con magic words (reg 30=43981 + reg 40=47818) para volver a 8N1.")
+EOFSCANP
 
             echo ""
             echo "  [~] Reiniciando servicios..."
