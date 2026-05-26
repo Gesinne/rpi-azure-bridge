@@ -5760,9 +5760,10 @@ except Exception as e:
             echo "  Útil cuando una fase ha perdido sus datos y puede"
             echo "  haber perdido la dirección Modbus configurada."
             echo ""
-            echo "  Prueba slaves 1-15 a 115200, 57600 y 38400 baud."
+            echo "  Prueba TODA la gama Modbus (slaves 0-247) a 115200, 57600 y 38400 baud."
             echo "  Para cada respuesta lee reg 41 (Nº Serie) y reg 48 (Dir Modbus)"
             echo "  para identificar la placa."
+            echo "  Duración: ~4 min (barrido rápido sin respuestas + detalle solo en los que responden)."
             echo ""
             echo "  [!] Parando Node-RED y contenedor temporalmente..."
             sudo systemctl stop nodered 2>/dev/null
@@ -5811,8 +5812,11 @@ except ImportError:
 
 PUERTO = "$SCAN_PORT"
 BAUDRATES = [115200, 57600, 38400]
-SLAVES = list(range(0, 16))   # 0..15 (incluye 0 por si la placa perdió la dir y quedó en 0)
-TIMEOUT = 1.5
+# Modbus permite slave 1..247. Incluimos 0 (algunas placas corruptas se quedan ahí).
+# Una placa con reg48 corrupto a un valor alto (p.ej. 60000) responde al ID truncado a 8 bits.
+SLAVES = list(range(0, 248))
+TIMEOUT_PROBE = 0.3   # primer barrido rápido (sin reintentos)
+TIMEOUT_DETAIL = 1.5  # lectura de detalles (reg 41, reg 48) con reintentos
 RETRIES = 2
 
 # Esperar a que el puerto esté libre (10 intentos de 2s)
@@ -5839,19 +5843,18 @@ print("  ───────────────────────�
 
 encontradas = []
 
-def probe_slave(client, sl):
-    """Intenta leer reg 0 con RETRIES reintentos. Devuelve valor o None."""
-    for r in range(RETRIES + 1):
-        try:
-            resp = client.read_holding_registers(address=0, count=1, slave=sl)
-            if resp is not None and not resp.isError():
-                return resp.registers[0]
-        except Exception:
-            pass
-        time.sleep(0.15)
+def probe_one(client, sl):
+    """Una sola lectura del reg 0 (probe rápido). Devuelve valor o None."""
+    try:
+        resp = client.read_holding_registers(address=0, count=1, slave=sl)
+        if resp is not None and not resp.isError():
+            return resp.registers[0]
+    except Exception:
+        pass
     return None
 
 def read_reg(client, addr, sl):
+    """Lectura con reintentos (para confirmación y detalles)."""
     for r in range(RETRIES + 1):
         try:
             resp = client.read_holding_registers(address=addr, count=1, slave=sl)
@@ -5864,28 +5867,48 @@ def read_reg(client, addr, sl):
 
 for baud in BAUDRATES:
     print(f"")
-    print(f"  Probando @ {baud} baud (slaves {SLAVES[0]}-{SLAVES[-1]}, timeout {TIMEOUT}s)...")
+    print(f"  Probando @ {baud} baud (slaves {SLAVES[0]}-{SLAVES[-1]}, ~{len(SLAVES)*TIMEOUT_PROBE:.0f}s peor caso)...")
+
+    # ── Fase A: barrido rápido sin reintentos ──
     client = ModbusSerialClient(
         port=PUERTO, baudrate=baud,
-        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT
+        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_PROBE
     )
     if not client.connect():
         print(f"    [X] No se pudo abrir el puerto a {baud}")
         continue
+
+    candidatos = []
     for sl in SLAVES:
-        # Progreso en línea
-        print(f"\r    slave {sl:>2}... ", end='', flush=True)
-        reg0 = probe_slave(client, sl)
-        if reg0 is None:
-            continue
+        if sl % 25 == 0:
+            print(f"\r    slave {sl:>3}... ", end='', flush=True)
+        reg0 = probe_one(client, sl)
+        if reg0 is not None:
+            candidatos.append((sl, reg0))
+    print(f"\r    {'':>30}\r", end='')
+    client.close()
+    time.sleep(0.3)
+
+    if not candidatos:
+        print(f"    (sin respuestas a {baud} baud)")
+        continue
+
+    # ── Fase B: detalles con timeout largo y reintentos ──
+    client = ModbusSerialClient(
+        port=PUERTO, baudrate=baud,
+        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_DETAIL
+    )
+    if not client.connect():
+        print(f"    [X] No se pudo reabrir el puerto para detalles")
+        continue
+
+    for sl, reg0 in candidatos:
         time.sleep(0.1)
         nserie = read_reg(client, 41, sl)
         time.sleep(0.1)
         dirmb = read_reg(client, 48, sl)
-        # Limpia línea de progreso y imprime hallazgo
-        print(f"\r  {baud:>9} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>9}")
+        print(f"  {baud:>9} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>9}")
         encontradas.append((baud, sl, reg0, nserie, dirmb))
-    print(f"\r    {'':>30}\r", end='')  # limpiar última línea de progreso
     client.close()
     time.sleep(0.3)
 
