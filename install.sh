@@ -634,9 +634,10 @@ while true; do
     echo "  7) Cambiar velocidad Modbus (placas)"
     echo "  8) Rescatar bus Modbus partido"
     echo "  9) Cambiar baudrate Node-RED (solo flows.json)"
+    echo " 10) Buscar placa (escanear bus Modbus)"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-9]: " OPTION
+    read -p "  Opción [0-10]: " OPTION
 
     case $OPTION in
         0)
@@ -5747,6 +5748,127 @@ except Exception as e:
                 fi
             fi
             sudo bash "$FIRMWARE_SCRIPT" nodered-baud
+            volver_menu
+            ;;
+        10)
+            # Buscar placa - escanea bus Modbus en todos los baudrates y slave IDs
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Buscar placa (escaneo del bus Modbus)"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Útil cuando una fase ha perdido sus datos y puede"
+            echo "  haber perdido la dirección Modbus configurada."
+            echo ""
+            echo "  Prueba slaves 1-15 a 115200, 57600 y 38400 baud."
+            echo "  Para cada respuesta lee reg 41 (Nº Serie) y reg 48 (Dir Modbus)"
+            echo "  para identificar la placa."
+            echo ""
+            echo "  [!] Parando Node-RED temporalmente..."
+            sudo systemctl stop nodered 2>/dev/null
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
+            sleep 2
+            echo "  [OK] Servicios parados"
+            echo ""
+
+            # Detectar puerto serie
+            SCAN_PORT=""
+            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                if [ -e "$port" ]; then
+                    SCAN_PORT="$port"
+                    break
+                fi
+            done
+
+            if [ -z "$SCAN_PORT" ]; then
+                echo "  [X] No se encontró ningún puerto serie"
+                sudo systemctl start nodered 2>/dev/null
+                docker start gesinne-rpi >/dev/null 2>&1 || true
+                volver_menu
+                continue
+            fi
+
+            echo "  [OK] Puerto: $SCAN_PORT"
+            echo ""
+
+            python3 << EOFSCAN
+import sys
+import time
+
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+PUERTO = "$SCAN_PORT"
+BAUDRATES = [115200, 57600, 38400]
+SLAVES = list(range(1, 16))   # 1..15
+
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"  {'Baudrate':>9} | {'Slave':>5} | {'Reg0':>5} | {'NºSerie':>8} | {'DirModbus':>9}")
+print("  ─────────────────────────────────────────────")
+
+encontradas = []
+
+for baud in BAUDRATES:
+    print(f"")
+    print(f"  Probando @ {baud} baud...")
+    client = ModbusSerialClient(
+        port=PUERTO, baudrate=baud,
+        bytesize=8, parity='N', stopbits=1, timeout=0.4
+    )
+    if not client.connect():
+        print(f"    [X] No se pudo abrir el puerto a {baud}")
+        continue
+    for sl in SLAVES:
+        try:
+            resp = client.read_holding_registers(address=0, count=1, slave=sl)
+            if resp is None or resp.isError():
+                continue
+            reg0 = resp.registers[0]
+            # Identificar: reg 41 (NºSerie) y reg 48 (Dir Modbus declarada)
+            time.sleep(0.05)
+            try:
+                rNS = client.read_holding_registers(address=41, count=1, slave=sl)
+                nserie = rNS.registers[0] if (rNS and not rNS.isError()) else '?'
+            except Exception:
+                nserie = '?'
+            time.sleep(0.05)
+            try:
+                rDM = client.read_holding_registers(address=48, count=1, slave=sl)
+                dirmb = rDM.registers[0] if (rDM and not rDM.isError()) else '?'
+            except Exception:
+                dirmb = '?'
+            print(f"  {baud:>9} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>9}")
+            encontradas.append((baud, sl, reg0, nserie, dirmb))
+        except Exception:
+            pass
+    client.close()
+
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("")
+if not encontradas:
+    print("  [X] No se encontró ninguna placa en el bus")
+    print("      - Revisa cableado RS485 (A/B, GND)")
+    print("      - Comprueba que las placas están alimentadas")
+    print("      - Verifica resistencias de terminación")
+else:
+    print(f"  [OK] {len(encontradas)} placa(s) encontrada(s)")
+    # Detectar discrepancia slave_id <-> Dir Modbus declarada
+    for baud, sl, _, _, dirmb in encontradas:
+        if isinstance(dirmb, int) and dirmb != sl:
+            print(f"      [!] Slave {sl} declara DirModbus={dirmb} (DISCREPANCIA)")
+EOFSCAN
+
+            echo ""
+            echo "  [~] Reiniciando servicios..."
+            sudo systemctl start nodered 2>/dev/null
+            docker start gesinne-rpi >/dev/null 2>&1 || true
+            echo "  [OK] Servicios reiniciados"
             volver_menu
             ;;
         p|P)
