@@ -641,9 +641,10 @@ while true; do
     # echo " 13) Recuperar baudrate/framing — broadcast multi-config"
     # echo " 14) Sniffer pasivo del bus Modbus"
     # echo " 15) Leer placa con raw serial (sin pymodbus, timeout largo)"
+    echo "  R) Reiniciar puerto serie RS485 (recuperar bus colgado)"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-9]: " OPTION
+    read -p "  Opción [0-9,R]: " OPTION
 
     case $OPTION in
         0)
@@ -6770,6 +6771,81 @@ EOFRAW
             sudo systemctl start nodered 2>/dev/null
             docker start gesinne-rpi >/dev/null 2>&1 || true
             echo "  [OK] Servicios reiniciados"
+            volver_menu
+            ;;
+        r|R)
+            # Reiniciar puerto RS485 — recuperar bus colgado
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Reiniciar puerto serie RS485"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Útil cuando Node-RED deja de leer placas (lecturas en"
+            echo "  N/A o congeladas) y se sospecha que el puerto serie"
+            echo "  está colgado o algún proceso lo retiene."
+            echo ""
+            echo "  Acciones:"
+            echo "    1. Parar Node-RED + contenedor + kiosko"
+            echo "    2. Matar cualquier proceso restante con /dev/ttyAMA0"
+            echo "    3. Reset stty del puerto (sane + 115200 8N1 raw)"
+            echo "    4. Reiniciar Node-RED + contenedor + kiosko"
+            echo ""
+
+            # Detectar puerto
+            SERIAL_PORT=""
+            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                [ -e "$port" ] && SERIAL_PORT="$port" && break
+            done
+            if [ -z "$SERIAL_PORT" ]; then
+                echo "  [X] No se encontró ningún puerto serie"
+                volver_menu
+                continue
+            fi
+            echo "  Puerto detectado: $SERIAL_PORT"
+            echo ""
+
+            KIOSK_WAS_RUNNING=0
+            if kiosk_is_running 2>/dev/null; then
+                KIOSK_WAS_RUNNING=1
+            fi
+
+            echo "  [1/5] Parando Node-RED..."
+            sudo systemctl stop nodered 2>/dev/null
+            echo "  [2/5] Parando contenedor gesinne-rpi..."
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
+            if [ "$KIOSK_WAS_RUNNING" = "1" ]; then
+                echo "        Parando kiosko..."
+                kiosk_stop 2>/dev/null || true
+            fi
+            sleep 3
+
+            echo "  [3/5] Liberando $SERIAL_PORT..."
+            PIDS=$(sudo lsof -t "$SERIAL_PORT" 2>/dev/null)
+            if [ -n "$PIDS" ]; then
+                echo "        Procesos aún con el puerto: $PIDS"
+                for p in $PIDS; do
+                    sudo kill -9 "$p" 2>/dev/null && echo "        kill -9 $p"
+                done
+                sleep 1
+            else
+                echo "        Puerto libre, nadie lo retiene"
+            fi
+
+            echo "  [4/5] Reset stty del puerto..."
+            sudo stty -F "$SERIAL_PORT" sane 2>/dev/null && echo "        stty sane ✓"
+            sudo stty -F "$SERIAL_PORT" 115200 cs8 -cstopb -parenb raw -echo 2>/dev/null && echo "        115200 8N1 raw ✓"
+
+            echo "  [5/5] Reiniciando servicios..."
+            sudo systemctl start nodered 2>/dev/null && echo "        Node-RED arrancando..."
+            sleep 3
+            docker start gesinne-rpi >/dev/null 2>&1 && echo "        Contenedor gesinne-rpi arrancado" || echo "        Sin contenedor gesinne-rpi (OK si no existe)"
+            if [ "$KIOSK_WAS_RUNNING" = "1" ]; then
+                kiosk_start 2>/dev/null || true
+                echo "        Kiosko reiniciado"
+            fi
+            echo ""
+            echo "  [OK] Puerto reiniciado. Espera ~15s a que Node-RED termine"
+            echo "       de cargar el flow y empiece a leer las placas."
             volver_menu
             ;;
         p|P)
