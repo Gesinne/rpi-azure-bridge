@@ -634,14 +634,16 @@ while true; do
     echo "  7) Cambiar velocidad Modbus (placas)"
     echo "  8) Rescatar bus Modbus partido"
     echo "  9) Cambiar baudrate Node-RED (solo flows.json)"
-    echo " 10) Buscar placa (escanear bus Modbus)"
-    echo " 11) Buscar placa con paridades alternativas (E/O, 2 stopbits)"
-    echo " 12) Recuperar placa muda — broadcast BYPASS"
-    echo " 13) Recuperar baudrate/framing — broadcast multi-config"
-    echo " 14) Sniffer pasivo del bus Modbus"
+    # Opciones de diagnóstico Modbus (ocultas — el código de los cases sigue activo)
+    # echo " 10) Buscar placa (escanear bus Modbus)"
+    # echo " 11) Buscar placa con paridades alternativas (E/O, 2 stopbits)"
+    # echo " 12) Recuperar placa muda — broadcast BYPASS"
+    # echo " 13) Recuperar baudrate/framing — broadcast multi-config"
+    # echo " 14) Sniffer pasivo del bus Modbus"
+    echo " 15) Leer placa con raw serial (sin pymodbus, timeout largo)"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-14]: " OPTION
+    read -p "  Opción [0-9,15]: " OPTION
 
     case $OPTION in
         0)
@@ -6593,6 +6595,175 @@ else:
         print("  [X] CERO bytes capturados a cualquier baudrate.")
         print("      Confirma: L2 no transmite NADA. TX físicamente muerta.")
 EOFSNIFF
+
+            echo ""
+            echo "  [~] Reiniciando servicios..."
+            sudo systemctl start nodered 2>/dev/null
+            docker start gesinne-rpi >/dev/null 2>&1 || true
+            echo "  [OK] Servicios reiniciados"
+            volver_menu
+            ;;
+        15)
+            # Leer placa con raw serial (sin pymodbus, timeout largo)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Leer placa con raw serial (sin pymodbus)"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Lee registros importantes con pyserial directo y timeout 5s"
+            echo "  por petición. Útil cuando pymodbus declara timeout falso."
+            echo ""
+            echo "  Registros leídos:"
+            echo "    reg   0  Estado actual"
+            echo "    reg  31  Bypass/Regulación"
+            echo "    reg  41  Nº Serie"
+            echo "    reg  48  Dir Modbus"
+            echo "    reg  61  Vel RS485 (0=115200, 1=57600, 2=38400)"
+            echo "    reg 100  FW info"
+            echo ""
+            echo "  Escanea slaves 1, 2, 3 a 115200 8N1."
+            echo ""
+            echo "  [!] Parando servicios..."
+            sudo systemctl stop nodered 2>/dev/null
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
+            if kiosk_is_running 2>/dev/null; then
+                kiosk_stop 2>/dev/null || true
+            fi
+            sleep 3
+            echo "  [OK] Servicios parados"
+            echo ""
+
+            python3 << 'EOFRAW'
+import sys
+import time
+import os
+
+try:
+    import serial
+except ImportError:
+    print("  [X] pyserial no instalado")
+    sys.exit(1)
+
+PUERTO = None
+for p in ['/dev/ttyAMA0','/dev/serial0','/dev/ttyUSB0','/dev/ttyACM0','/dev/ttyS0']:
+    if os.path.exists(p):
+        PUERTO = p
+        break
+if not PUERTO:
+    print("  [X] No se encontró puerto serie")
+    sys.exit(1)
+
+print(f"  Puerto: {PUERTO}")
+print("")
+
+def crc16(data):
+    crc = 0xFFFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            crc = ((crc >> 1) ^ 0xA001) if (crc & 1) else (crc >> 1)
+    return crc
+
+def build_read_req(slave, addr, count=1):
+    req = bytes([slave, 0x03, (addr >> 8) & 0xFF, addr & 0xFF,
+                 (count >> 8) & 0xFF, count & 0xFF])
+    c = crc16(req)
+    return req + bytes([c & 0xFF, (c >> 8) & 0xFF])
+
+def parse_response(buf, expected_slave, expected_count=1):
+    """Busca la respuesta válida en el buffer. Devuelve lista de valores o None."""
+    expected_len = 5 + 2 * expected_count  # slave + fc + bc + data + crc
+    n = len(buf)
+    for start in range(n - expected_len + 1):
+        frame = buf[start:start + expected_len]
+        if frame[0] != expected_slave: continue
+        if frame[1] != 0x03: continue
+        if frame[2] != 2 * expected_count: continue
+        calc = crc16(frame[:-2])
+        recv = frame[-2] | (frame[-1] << 8)
+        if calc != recv: continue
+        # Parsear datos
+        values = []
+        for i in range(expected_count):
+            high = frame[3 + 2*i]
+            low = frame[3 + 2*i + 1]
+            values.append((high << 8) | low)
+        return values
+    return None
+
+def read_register(ser, slave, addr, count=1, timeout=5.0):
+    """Envía read, espera respuesta hasta timeout. Devuelve valores o None."""
+    ser.reset_input_buffer()
+    ser.write(build_read_req(slave, addr, count))
+    ser.flush()
+    buf = b''
+    start = time.time()
+    while time.time() - start < timeout:
+        data = ser.read(256)
+        if data:
+            buf += data
+            # Intentar parsear con cada nuevo dato
+            result = parse_response(buf, slave, count)
+            if result is not None:
+                return result, buf
+        else:
+            # Si llevamos algo y han pasado >0.5s sin nuevos bytes, intentar parse
+            if buf and time.time() - start > 0.5:
+                result = parse_response(buf, slave, count)
+                if result is not None:
+                    return result, buf
+    return None, buf
+
+ESTADO_MAP = {
+    0: 'IDLE/inicial',
+    1: 'arrancando',
+    2: 'REGULACION',
+    3: 'parando',
+    4: 'BYPASS',
+    5: 'falta tensión',
+    10: 'alarma',
+}
+
+REGISTROS = [
+    (0,   'Estado actual'),
+    (31,  'Bypass/Regulación'),
+    (41,  'Nº Serie'),
+    (48,  'Dir Modbus'),
+    (61,  'Vel RS485'),
+    (100, 'FW info'),
+]
+
+ser = serial.Serial(PUERTO, baudrate=115200, bytesize=8,
+                    parity='N', stopbits=1, timeout=0.2)
+
+for slave in [1, 2, 3]:
+    print(f"  ─── slave {slave} ───")
+    cualquier_respuesta = False
+    for addr, label in REGISTROS:
+        values, raw = read_register(ser, slave, addr, count=1, timeout=5.0)
+        if values is not None:
+            cualquier_respuesta = True
+            v = values[0]
+            extra = ''
+            if addr == 0:
+                extra = f" ({ESTADO_MAP.get(v, '?')})"
+            elif addr == 31:
+                extra = f" ({'BYPASS' if v == 0 else 'REGULACION' if v == 2 else '?'})"
+            elif addr == 61:
+                bm = {0: '115200', 1: '57600', 2: '38400'}.get(v, '?')
+                extra = f" ({bm} baud)"
+            print(f"    reg {addr:>3} {label:<22}: {v}{extra}")
+        else:
+            print(f"    reg {addr:>3} {label:<22}: sin respuesta (5s)")
+            if raw:
+                print(f"           bytes recibidos: {raw.hex()}")
+    if not cualquier_respuesta:
+        print(f"    → slave {slave} no responde a ningún registro")
+    print("")
+
+ser.close()
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+EOFRAW
 
             echo ""
             echo "  [~] Reiniciando servicios..."
