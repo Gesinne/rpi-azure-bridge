@@ -640,10 +640,10 @@ while true; do
     # echo " 12) Recuperar placa muda — broadcast BYPASS"
     # echo " 13) Recuperar baudrate/framing — broadcast multi-config"
     # echo " 14) Sniffer pasivo del bus Modbus"
-    echo " 15) Leer placa con raw serial (sin pymodbus, timeout largo)"
+    # echo " 15) Leer placa con raw serial (sin pymodbus, timeout largo)"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-9,15]: " OPTION
+    read -p "  Opción [0-9]: " OPTION
 
     case $OPTION in
         0)
