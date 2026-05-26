@@ -641,10 +641,10 @@ while true; do
     # echo " 13) Recuperar baudrate/framing — broadcast multi-config"
     # echo " 14) Sniffer pasivo del bus Modbus"
     # echo " 15) Leer placa con raw serial (sin pymodbus, timeout largo)"
-    echo "  R) Reiniciar puerto serie RS485 (recuperar bus colgado)"
+    # echo "  R) Reiniciar puerto serie RS485 (recuperar bus colgado)"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-9,R]: " OPTION
+    read -p "  Opción [0-9]: " OPTION
 
     case $OPTION in
         0)
