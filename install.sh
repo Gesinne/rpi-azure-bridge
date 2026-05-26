@@ -637,9 +637,11 @@ while true; do
     echo " 10) Buscar placa (escanear bus Modbus)"
     echo " 11) Buscar placa con paridades alternativas (E/O, 2 stopbits)"
     echo " 12) Recuperar placa muda — broadcast BYPASS"
+    echo " 13) Recuperar baudrate/framing — broadcast multi-config"
+    echo " 14) Sniffer pasivo del bus Modbus"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-12]: " OPTION
+    read -p "  Opción [0-14]: " OPTION
 
     case $OPTION in
         0)
@@ -6304,6 +6306,299 @@ EOFBYPASS
             echo ""
             echo "  [!] Recuerda: TODAS las placas están en bypass. Para volver"
             echo "      a regulación, haz un ciclo bypass->regulación desde Node-RED."
+            volver_menu
+            ;;
+        13)
+            # Recuperar baudrate/framing por broadcast multi-config
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Recuperar baudrate/framing por broadcast multi-config"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Si una placa cambió su baudrate/parity y no responde,"
+            echo "  esta opción broadcast a 12 combinaciones distintas la"
+            echo "  secuencia para forzar el retorno a 115200 8N1:"
+            echo ""
+            echo "    reg30=43981  (habilitar tarjeta)"
+            echo "    reg40=47818  (habilitar config)"
+            echo "    reg61=0      (volver a 115200)"
+            echo ""
+            echo "  En el baudrate/framing donde esté la placa, recibirá el"
+            echo "  broadcast y cambiará a 115200 8N1. Las demás placas reciben"
+            echo "  un 'cambio a su misma velocidad' (no-op)."
+            echo ""
+            echo "  Duración: ~15s. NO destructivo."
+            echo ""
+            read -p "  ¿Continuar? [s/N]: " CONFIRMAR
+            if [ "$CONFIRMAR" != "s" ] && [ "$CONFIRMAR" != "S" ]; then
+                echo "  [~] Cancelado"
+                volver_menu
+                continue
+            fi
+
+            echo ""
+            echo "  [!] Parando servicios temporalmente..."
+            sudo systemctl stop nodered 2>/dev/null
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
+            if kiosk_is_running 2>/dev/null; then
+                kiosk_stop 2>/dev/null || true
+            fi
+            sleep 3
+            echo "  [OK] Servicios parados"
+            echo ""
+
+            SCAN_PORT=""
+            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                [ -e "$port" ] && SCAN_PORT="$port" && break
+            done
+            if [ -z "$SCAN_PORT" ]; then
+                echo "  [X] No se encontró ningún puerto serie"
+                sudo systemctl start nodered 2>/dev/null
+                docker start gesinne-rpi >/dev/null 2>&1 || true
+                volver_menu
+                continue
+            fi
+
+            python3 << EOFMULTIBC
+import sys
+import time
+
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+PUERTO = "$SCAN_PORT"
+BAUDRATES = [115200, 57600, 38400]
+FRAMINGS = [('N',1,'8N1'), ('E',1,'8E1'), ('O',1,'8O1'), ('N',2,'8N2')]
+
+def write_silent(c, sl, addr, val):
+    try: c.write_register(address=addr, value=val, slave=sl)
+    except Exception: pass
+
+for baud in BAUDRATES:
+    for parity, stopbits, lbl in FRAMINGS:
+        print(f"  [B] @ {baud} baud {lbl}: broadcast 30->40->61=0...")
+        try:
+            c = ModbusSerialClient(port=PUERTO, baudrate=baud,
+                                    bytesize=8, parity=parity, stopbits=stopbits, timeout=1)
+            if c.connect():
+                write_silent(c, 0, 30, 43981); time.sleep(0.15)
+                write_silent(c, 0, 40, 47818); time.sleep(0.15)
+                write_silent(c, 0, 61, 0)
+                c.close()
+            else:
+                print(f"      [!] No conecta")
+        except Exception as e:
+            print(f"      [!] {e}")
+        time.sleep(0.4)
+
+print("")
+print("  [~] Esperando 2s a que apliquen cambios...")
+time.sleep(2)
+print("")
+print("  Verificación final @ 115200 8N1 (slaves 1-3):")
+c = ModbusSerialClient(port=PUERTO, baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=2)
+encontradas = 0
+if c.connect():
+    for sl in [1, 2, 3]:
+        try:
+            resp = c.read_holding_registers(address=0, count=1, slave=sl)
+            if resp is not None and not resp.isError():
+                print(f"    L{sl}: responde (reg0={resp.registers[0]}) ✓")
+                encontradas += 1
+            else:
+                print(f"    L{sl}: sin respuesta")
+        except Exception:
+            print(f"    L{sl}: sin respuesta")
+    c.close()
+else:
+    print("    [X] No se pudo verificar")
+
+print("")
+if encontradas == 3:
+    print("  [✓] LAS 3 PLACAS RESPONDEN — recuperación exitosa")
+elif encontradas > 0:
+    print(f"  [~] {encontradas}/3 placas responden")
+EOFMULTIBC
+
+            echo ""
+            echo "  [~] Reiniciando servicios..."
+            sudo systemctl start nodered 2>/dev/null
+            docker start gesinne-rpi >/dev/null 2>&1 || true
+            echo "  [OK] Servicios reiniciados"
+            volver_menu
+            ;;
+        14)
+            # Sniffer pasivo: escucha el bus sin transmitir (modo 1)
+            #                + escucha tras estimular con read a slave 2 (modo 2)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Sniffer pasivo del bus Modbus"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Captura todos los bytes que aparezcan en el bus a cada"
+            echo "  baudrate (115200, 57600, 38400) durante 5s — primero"
+            echo "  pasivo (sin transmitir), luego estimulado con un read a"
+            echo "  slave=2."
+            echo ""
+            echo "  Útil para detectar si una placa transmite algo aunque"
+            echo "  no responda al protocolo Modbus completo."
+            echo ""
+            echo "  Duración: ~50s (5s × 2 modos × 3 baudrates + setup)."
+            echo ""
+            echo "  [!] Parando servicios..."
+            sudo systemctl stop nodered 2>/dev/null
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
+            if kiosk_is_running 2>/dev/null; then
+                kiosk_stop 2>/dev/null || true
+            fi
+            sleep 3
+            echo "  [OK] Servicios parados"
+            echo ""
+
+            SCAN_PORT=""
+            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                [ -e "$port" ] && SCAN_PORT="$port" && break
+            done
+            if [ -z "$SCAN_PORT" ]; then
+                echo "  [X] No se encontró ningún puerto serie"
+                sudo systemctl start nodered 2>/dev/null
+                docker start gesinne-rpi >/dev/null 2>&1 || true
+                volver_menu
+                continue
+            fi
+
+            python3 << 'EOFSNIFF'
+import sys, time, struct
+try:
+    import serial
+except ImportError:
+    print("  [X] pyserial no instalado — instala con: sudo apt install python3-serial")
+    sys.exit(1)
+
+PUERTO = "/dev/ttyAMA0"
+import os
+for p in ['/dev/ttyAMA0','/dev/serial0','/dev/ttyUSB0','/dev/ttyACM0','/dev/ttyS0']:
+    if os.path.exists(p):
+        PUERTO = p
+        break
+
+BAUDRATES = [115200, 57600, 38400]
+LISTEN_SECONDS = 5
+
+def crc16(data):
+    crc = 0xFFFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            crc = ((crc >> 1) ^ 0xA001) if (crc & 1) else (crc >> 1)
+    return crc
+
+def buscar_frames(buf):
+    hits = []
+    n = len(buf)
+    for start in range(n):
+        for length in (5, 6, 7, 8, 9, 10):
+            if start + length > n: continue
+            frame = buf[start:start+length]
+            calc = crc16(frame[:-2])
+            recv = frame[-2] | (frame[-1] << 8)
+            if calc == recv:
+                sl, fc = frame[0], frame[1]
+                if 1 <= sl <= 247 and 1 <= fc <= 0x10:
+                    hits.append((start, length, sl, fc, frame.hex()))
+                    break
+    return hits
+
+def listen(baud, secs, stim_slave=None):
+    try:
+        ser = serial.Serial(PUERTO, baudrate=baud, bytesize=8,
+                            parity='N', stopbits=1, timeout=0.2)
+    except Exception as e:
+        print(f"    [X] No se pudo abrir el puerto: {e}")
+        return b''
+    if stim_slave is not None:
+        req = bytes([stim_slave, 0x03, 0x00, 0x00, 0x00, 0x01])
+        c = crc16(req); req += bytes([c & 0xFF, (c >> 8) & 0xFF])
+        ser.write(req); ser.flush()
+    buf = b''
+    start = time.time()
+    while time.time() - start < secs:
+        data = ser.read(256)
+        if data: buf += data
+    ser.close()
+    return buf
+
+print(f"  Puerto: {PUERTO}")
+print("")
+
+total_bytes_capturados = 0
+frames_validos = []
+
+for baud in BAUDRATES:
+    print(f"  ─── @ {baud} baud ───")
+
+    # Modo 1: PASIVO (sin transmitir)
+    print(f"    [P] Pasivo (5s, sin transmitir)... ", end='', flush=True)
+    buf = listen(baud, LISTEN_SECONDS, stim_slave=None)
+    print(f"capturados {len(buf)} bytes")
+    if buf:
+        print(f"        primeros 32 bytes: {buf[:32].hex()}")
+        total_bytes_capturados += len(buf)
+        hits = buscar_frames(buf)
+        for h in hits:
+            print(f"        ★ posible frame Modbus @ offset {h[0]}: slave={h[2]}, FC=0x{h[3]:02x}, hex={h[4]}")
+            frames_validos.append((baud, 'pasivo', h))
+
+    # Modo 2: ESTIMULADO (read a slave=2)
+    print(f"    [S] Estimulado read slave=2 (5s)... ", end='', flush=True)
+    buf = listen(baud, LISTEN_SECONDS, stim_slave=2)
+    print(f"capturados {len(buf)} bytes")
+    if buf:
+        print(f"        primeros 32 bytes: {buf[:32].hex()}")
+        total_bytes_capturados += len(buf)
+        hits = buscar_frames(buf)
+        for h in hits:
+            print(f"        ★ posible frame Modbus @ offset {h[0]}: slave={h[2]}, FC=0x{h[3]:02x}, hex={h[4]}")
+            frames_validos.append((baud, 'stim_2', h))
+
+print("")
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print(f"  Total bytes capturados: {total_bytes_capturados}")
+print(f"  Frames Modbus válidos (CRC OK): {len(frames_validos)}")
+if frames_validos:
+    print("")
+    print("  Detalle de frames identificados:")
+    for baud, modo, (off, ln, sl, fc, hx) in frames_validos:
+        print(f"    {baud} baud / {modo}: slave={sl}, FC=0x{fc:02x}, len={ln}, hex={hx}")
+    print("")
+    print("  → Slaves detectados via sniffer (incluye L1/L3 si respondieron al stim):")
+    slaves_set = set(h[2] for _, _, h in frames_validos)
+    print(f"    {sorted(slaves_set)}")
+    print("")
+    print("  → Si aparece slave=2 (o un slave inesperado en algún baudrate raro),")
+    print("    ESA es la placa muda y su baudrate real.")
+else:
+    if total_bytes_capturados > 0:
+        print("")
+        print("  [!] Se capturaron bytes pero ninguno forma un frame Modbus válido.")
+        print("      Bus con ruido eléctrico, o transmisor a config no estándar.")
+    else:
+        print("")
+        print("  [X] CERO bytes capturados a cualquier baudrate.")
+        print("      Confirma: L2 no transmite NADA. TX físicamente muerta.")
+EOFSNIFF
+
+            echo ""
+            echo "  [~] Reiniciando servicios..."
+            sudo systemctl start nodered 2>/dev/null
+            docker start gesinne-rpi >/dev/null 2>&1 || true
+            echo "  [OK] Servicios reiniciados"
             volver_menu
             ;;
         p|P)
