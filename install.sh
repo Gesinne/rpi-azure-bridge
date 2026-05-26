@@ -5764,10 +5764,14 @@ except Exception as e:
             echo "  Para cada respuesta lee reg 41 (Nº Serie) y reg 48 (Dir Modbus)"
             echo "  para identificar la placa."
             echo ""
-            echo "  [!] Parando Node-RED temporalmente..."
+            echo "  [!] Parando Node-RED y contenedor temporalmente..."
             sudo systemctl stop nodered 2>/dev/null
             docker stop gesinne-rpi >/dev/null 2>&1 || true
-            sleep 2
+            # Kiosk también puede tener procesos hablando al bus
+            if kiosk_is_running 2>/dev/null; then
+                kiosk_stop 2>/dev/null || true
+            fi
+            sleep 3
             echo "  [OK] Servicios parados"
             echo ""
 
@@ -5794,6 +5798,7 @@ except Exception as e:
             python3 << EOFSCAN
 import sys
 import time
+import os
 
 try:
     from pymodbus.client import ModbusSerialClient
@@ -5806,48 +5811,83 @@ except ImportError:
 
 PUERTO = "$SCAN_PORT"
 BAUDRATES = [115200, 57600, 38400]
-SLAVES = list(range(1, 16))   # 1..15
+SLAVES = list(range(0, 16))   # 0..15 (incluye 0 por si la placa perdió la dir y quedó en 0)
+TIMEOUT = 1.5
+RETRIES = 2
 
+# Esperar a que el puerto esté libre (10 intentos de 2s)
+print("  [~] Esperando que el puerto se libere...")
+for intento in range(10):
+    try:
+        fd = os.open(PUERTO, os.O_RDWR | os.O_NOCTTY | os.O_EXCL)
+        os.close(fd)
+        print(f"  [OK] Puerto {PUERTO} libre")
+        break
+    except (OSError, IOError) as e:
+        print(f"  [!] Intento {intento+1}/10: puerto ocupado ({e}), esperando 2s...")
+        try: os.close(fd)
+        except Exception: pass
+        time.sleep(2)
+else:
+    print(f"  [X] El puerto {PUERTO} sigue ocupado tras 20s. Abortando.")
+    sys.exit(1)
+
+print("")
 print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print(f"  {'Baudrate':>9} | {'Slave':>5} | {'Reg0':>5} | {'NºSerie':>8} | {'DirModbus':>9}")
 print("  ─────────────────────────────────────────────")
 
 encontradas = []
 
+def probe_slave(client, sl):
+    """Intenta leer reg 0 con RETRIES reintentos. Devuelve valor o None."""
+    for r in range(RETRIES + 1):
+        try:
+            resp = client.read_holding_registers(address=0, count=1, slave=sl)
+            if resp is not None and not resp.isError():
+                return resp.registers[0]
+        except Exception:
+            pass
+        time.sleep(0.15)
+    return None
+
+def read_reg(client, addr, sl):
+    for r in range(RETRIES + 1):
+        try:
+            resp = client.read_holding_registers(address=addr, count=1, slave=sl)
+            if resp is not None and not resp.isError():
+                return resp.registers[0]
+        except Exception:
+            pass
+        time.sleep(0.1)
+    return '?'
+
 for baud in BAUDRATES:
     print(f"")
-    print(f"  Probando @ {baud} baud...")
+    print(f"  Probando @ {baud} baud (slaves {SLAVES[0]}-{SLAVES[-1]}, timeout {TIMEOUT}s)...")
     client = ModbusSerialClient(
         port=PUERTO, baudrate=baud,
-        bytesize=8, parity='N', stopbits=1, timeout=0.4
+        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT
     )
     if not client.connect():
         print(f"    [X] No se pudo abrir el puerto a {baud}")
         continue
     for sl in SLAVES:
-        try:
-            resp = client.read_holding_registers(address=0, count=1, slave=sl)
-            if resp is None or resp.isError():
-                continue
-            reg0 = resp.registers[0]
-            # Identificar: reg 41 (NºSerie) y reg 48 (Dir Modbus declarada)
-            time.sleep(0.05)
-            try:
-                rNS = client.read_holding_registers(address=41, count=1, slave=sl)
-                nserie = rNS.registers[0] if (rNS and not rNS.isError()) else '?'
-            except Exception:
-                nserie = '?'
-            time.sleep(0.05)
-            try:
-                rDM = client.read_holding_registers(address=48, count=1, slave=sl)
-                dirmb = rDM.registers[0] if (rDM and not rDM.isError()) else '?'
-            except Exception:
-                dirmb = '?'
-            print(f"  {baud:>9} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>9}")
-            encontradas.append((baud, sl, reg0, nserie, dirmb))
-        except Exception:
-            pass
+        # Progreso en línea
+        print(f"\r    slave {sl:>2}... ", end='', flush=True)
+        reg0 = probe_slave(client, sl)
+        if reg0 is None:
+            continue
+        time.sleep(0.1)
+        nserie = read_reg(client, 41, sl)
+        time.sleep(0.1)
+        dirmb = read_reg(client, 48, sl)
+        # Limpia línea de progreso y imprime hallazgo
+        print(f"\r  {baud:>9} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>9}")
+        encontradas.append((baud, sl, reg0, nserie, dirmb))
+    print(f"\r    {'':>30}\r", end='')  # limpiar última línea de progreso
     client.close()
+    time.sleep(0.3)
 
 print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 print("")
