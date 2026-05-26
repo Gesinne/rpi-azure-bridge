@@ -5760,10 +5760,10 @@ except Exception as e:
             echo "  Útil cuando una fase ha perdido sus datos y puede"
             echo "  haber perdido la dirección Modbus configurada."
             echo ""
-            echo "  Prueba TODA la gama Modbus (slaves 0-247) a 115200, 57600 y 38400 baud."
-            echo "  Para cada respuesta lee reg 41 (Nº Serie) y reg 48 (Dir Modbus)"
-            echo "  para identificar la placa."
-            echo "  Duración: ~4 min (barrido rápido sin respuestas + detalle solo en los que responden)."
+            echo "  Warmup (slaves 1-3, timeout 2s) + barrido extendido (4-247, timeout 0.6s)"
+            echo "  a 115200, 57600 y 38400 baud. Solo extiende si el warmup encontró algo."
+            echo "  Para cada respuesta lee reg 41 (Nº Serie) y reg 48 (Dir Modbus)."
+            echo "  Duración típica: 1-3 min."
             echo ""
             echo "  [!] Parando Node-RED y contenedor temporalmente..."
             sudo systemctl stop nodered 2>/dev/null
@@ -5814,9 +5814,11 @@ PUERTO = "$SCAN_PORT"
 BAUDRATES = [115200, 57600, 38400]
 # Modbus permite slave 1..247. Incluimos 0 (algunas placas corruptas se quedan ahí).
 # Una placa con reg48 corrupto a un valor alto (p.ej. 60000) responde al ID truncado a 8 bits.
-SLAVES = list(range(0, 248))
-TIMEOUT_PROBE = 0.3   # primer barrido rápido (sin reintentos)
-TIMEOUT_DETAIL = 1.5  # lectura de detalles (reg 41, reg 48) con reintentos
+WARMUP_SLAVES = [1, 2, 3]                  # las direcciones esperadas (L1/L2/L3)
+EXTENDED_SLAVES = [0] + list(range(4, 248)) # resto del rango Modbus (para corruptas)
+TIMEOUT_WARMUP = 2.0   # mismo que firmware.sh detección — garantiza catch
+TIMEOUT_EXTENDED = 0.6 # rápido para no tardar 6 min en el barrido completo
+TIMEOUT_DETAIL = 1.5
 RETRIES = 2
 
 # Esperar a que el puerto esté libre (10 intentos de 2s)
@@ -5843,14 +5845,17 @@ print("  ───────────────────────�
 
 encontradas = []
 
-def probe_one(client, sl):
-    """Una sola lectura del reg 0 (probe rápido). Devuelve valor o None."""
-    try:
-        resp = client.read_holding_registers(address=0, count=1, slave=sl)
-        if resp is not None and not resp.isError():
-            return resp.registers[0]
-    except Exception:
-        pass
+def probe(client, sl, retries=0):
+    """Lee reg 0. Si retries>0, reintenta tras pequeñas pausas."""
+    for r in range(retries + 1):
+        try:
+            resp = client.read_holding_registers(address=0, count=1, slave=sl)
+            if resp is not None and not resp.isError():
+                return resp.registers[0]
+        except Exception:
+            pass
+        if r < retries:
+            time.sleep(0.15)
     return None
 
 def read_reg(client, addr, sl):
@@ -5865,50 +5870,63 @@ def read_reg(client, addr, sl):
         time.sleep(0.1)
     return '?'
 
+def detalles_y_print(client, baud, sl, reg0):
+    """Lee reg 41/48, imprime fila y añade a encontradas."""
+    time.sleep(0.1)
+    nserie = read_reg(client, 41, sl)
+    time.sleep(0.1)
+    dirmb = read_reg(client, 48, sl)
+    print(f"  {baud:>9} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>9}")
+    encontradas.append((baud, sl, reg0, nserie, dirmb))
+
 for baud in BAUDRATES:
     print(f"")
-    print(f"  Probando @ {baud} baud (slaves {SLAVES[0]}-{SLAVES[-1]}, ~{len(SLAVES)*TIMEOUT_PROBE:.0f}s peor caso)...")
+    print(f"  ─── @ {baud} baud ───")
 
-    # ── Fase A: barrido rápido sin reintentos ──
+    # ── Warmup: slaves 1,2,3 con timeout largo (mismo que firmware.sh) ──
     client = ModbusSerialClient(
         port=PUERTO, baudrate=baud,
-        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_PROBE
+        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_WARMUP
     )
     if not client.connect():
         print(f"    [X] No se pudo abrir el puerto a {baud}")
         continue
 
-    candidatos = []
-    for sl in SLAVES:
-        if sl % 25 == 0:
-            print(f"\r    slave {sl:>3}... ", end='', flush=True)
-        reg0 = probe_one(client, sl)
+    warmup_hits = []
+    print(f"    Warmup (slaves 1-3, timeout {TIMEOUT_WARMUP}s)...")
+    for sl in WARMUP_SLAVES:
+        reg0 = probe(client, sl, retries=1)
         if reg0 is not None:
-            candidatos.append((sl, reg0))
-    print(f"\r    {'':>30}\r", end='')
+            warmup_hits.append(sl)
+            detalles_y_print(client, baud, sl, reg0)
+
     client.close()
     time.sleep(0.3)
 
-    if not candidatos:
-        print(f"    (sin respuestas a {baud} baud)")
+    # Si nada respondió en el warmup, este baudrate seguramente no es el correcto
+    if not warmup_hits:
+        print(f"    (sin respuestas en warmup a {baud} baud, salto barrido extendido)")
         continue
 
-    # ── Fase B: detalles con timeout largo y reintentos ──
+    # ── Extendido: resto de slaves con timeout más corto ──
+    extra_total = len(EXTENDED_SLAVES)
+    print(f"    Barrido extendido (slaves 0,4-247, timeout {TIMEOUT_EXTENDED}s, ~{extra_total*TIMEOUT_EXTENDED:.0f}s)...")
     client = ModbusSerialClient(
         port=PUERTO, baudrate=baud,
-        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_DETAIL
+        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_EXTENDED
     )
     if not client.connect():
-        print(f"    [X] No se pudo reabrir el puerto para detalles")
+        print(f"    [X] No se pudo reabrir para barrido extendido")
         continue
 
-    for sl, reg0 in candidatos:
-        time.sleep(0.1)
-        nserie = read_reg(client, 41, sl)
-        time.sleep(0.1)
-        dirmb = read_reg(client, 48, sl)
-        print(f"  {baud:>9} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>9}")
-        encontradas.append((baud, sl, reg0, nserie, dirmb))
+    for sl in EXTENDED_SLAVES:
+        if sl % 30 == 0:
+            print(f"\r      slave {sl:>3}/247...", end='', flush=True)
+        reg0 = probe(client, sl, retries=0)
+        if reg0 is not None:
+            print(f"\r      {'':>20}\r", end='')
+            detalles_y_print(client, baud, sl, reg0)
+    print(f"\r      {'':>20}\r", end='')
     client.close()
     time.sleep(0.3)
 
