@@ -2286,20 +2286,36 @@ if not port:
     print("  [X] No se encontró puerto serie")
     sys.exit(1)
 
-client = ModbusSerialClient(
-    port=port,
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
-
-if not client.connect():
-    print("  [X] No se pudo conectar al puerto serie")
-    sys.exit(1)
-
 import time
+
+# Auto-detectar baudrate probando 115200, 57600, 38400
+BAUDRATES = [115200, 57600, 38400]
+client = None
+connected = False
+for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True)
+    try:
+        client = ModbusSerialClient(
+            port=port, baudrate=baudrate,
+            bytesize=8, parity='N', stopbits=1, timeout=2
+        )
+        if client.connect():
+            result = client.read_holding_registers(address=0, count=1, slave=1)
+            if not result.isError():
+                print("OK")
+                print(f"  [OK] Conectado a {port} @ {baudrate} baud")
+                connected = True
+                break
+            client.close()
+        print("sin respuesta")
+    except Exception:
+        print("sin respuesta")
+        if client:
+            client.close()
+
+if not connected:
+    print("  [X] No se pudo conectar a ningun baudrate")
+    sys.exit(1)
 
 unit_ids = [int(x) for x in "$REG_UNITS".split()]
 fases = "$REG_FASES".split()
@@ -2561,17 +2577,33 @@ if not port:
     print("  [X] No se encontró puerto serie")
     sys.exit(1)
 
-client = ModbusSerialClient(
-    port=port,
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+# Auto-detectar baudrate probando 115200, 57600, 38400
+BAUDRATES = [115200, 57600, 38400]
+client = None
+connected = False
+for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True)
+    try:
+        client = ModbusSerialClient(
+            port=port, baudrate=baudrate,
+            bytesize=8, parity='N', stopbits=1, timeout=2
+        )
+        if client.connect():
+            result = client.read_holding_registers(address=0, count=1, slave=1)
+            if not result.isError():
+                print("OK")
+                print(f"  [OK] Conectado a {port} @ {baudrate} baud")
+                connected = True
+                break
+            client.close()
+        print("sin respuesta")
+    except Exception:
+        print("sin respuesta")
+        if client:
+            client.close()
 
-if not client.connect():
-    print("  [X] No se pudo conectar al puerto serie")
+if not connected:
+    print("  [X] No se pudo conectar a ningun baudrate")
     sys.exit(1)
 
 unit_ids = [int(x) for x in "$WRITE_UNITS".split()]
@@ -2784,17 +2816,33 @@ if not port:
     print("  [X] No se encontró puerto serie")
     sys.exit(1)
 
-client = ModbusSerialClient(
-    port=port,
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+# Auto-detectar baudrate probando 115200, 57600, 38400
+BAUDRATES = [115200, 57600, 38400]
+client = None
+connected = False
+for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True)
+    try:
+        client = ModbusSerialClient(
+            port=port, baudrate=baudrate,
+            bytesize=8, parity='N', stopbits=1, timeout=2
+        )
+        if client.connect():
+            result = client.read_holding_registers(address=0, count=1, slave=1)
+            if not result.isError():
+                print("OK")
+                print(f"  [OK] Conectado a {port} @ {baudrate} baud")
+                connected = True
+                break
+            client.close()
+        print("sin respuesta")
+    except Exception:
+        print("sin respuesta")
+        if client:
+            client.close()
 
-if not client.connect():
-    print("  [X] No se pudo conectar al puerto serie")
+if not connected:
+    print("  [X] No se pudo conectar a ningun baudrate")
     sys.exit(1)
 
 # Constantes del firmware
@@ -3142,20 +3190,35 @@ if not port:
     print("  [X] No se encontró puerto serie")
     sys.exit(1)
 
-client = ModbusSerialClient(
-    port=port,
-    baudrate=115200,
-    bytesize=8,
-    parity='N',
-    stopbits=1,
-    timeout=1
-)
+# Auto-detectar baudrate probando 115200, 57600, 38400
+BAUDRATES = [115200, 57600, 38400]
+client = None
+connected = False
+for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True)
+    try:
+        client = ModbusSerialClient(
+            port=port, baudrate=baudrate,
+            bytesize=8, parity='N', stopbits=1, timeout=2
+        )
+        if client.connect():
+            result = client.read_holding_registers(address=0, count=1, slave=1)
+            if not result.isError():
+                print("OK")
+                print(f"  [OK] Conectado a {port} @ {baudrate} baud")
+                connected = True
+                break
+            client.close()
+        print("sin respuesta")
+    except Exception:
+        print("sin respuesta")
+        if client:
+            client.close()
 
-if not client.connect():
-    print("  [X] No se pudo conectar al puerto serie")
+if not connected:
+    print("  [X] No se pudo conectar a ningun baudrate")
     sys.exit(1)
 
-print(f"  [OK] Conectado a {port}")
 print("")
 
 valor_1 = $VALOR_1
@@ -4429,13 +4492,33 @@ else:
     print(f"  [X] El puerto {port} sigue ocupado tras 20s. Abortando.")
     sys.exit(1)
 
-client = ModbusSerialClient(
-    port=port, baudrate=115200,
-    bytesize=8, parity='N', stopbits=1, timeout=3
-)
+# Auto-detectar baudrate probando 115200, 57600, 38400
+BAUDRATES = [115200, 57600, 38400]
+client = None
+connected = False
+for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True)
+    try:
+        client = ModbusSerialClient(
+            port=port, baudrate=baudrate,
+            bytesize=8, parity='N', stopbits=1, timeout=3
+        )
+        if client.connect():
+            result = client.read_holding_registers(address=0, count=1, slave=1)
+            if not result.isError():
+                print("OK")
+                print(f"  [OK] Conectado a {port} @ {baudrate} baud")
+                connected = True
+                break
+            client.close()
+        print("sin respuesta")
+    except Exception:
+        print("sin respuesta")
+        if client:
+            client.close()
 
-if not client.connect():
-    print("  [X] No se pudo conectar al puerto serie")
+if not connected:
+    print("  [X] No se pudo conectar a ningun baudrate")
     sys.exit(1)
 
 try:
@@ -5085,8 +5168,28 @@ try:
 except ImportError:
     from pymodbus.client.sync import ModbusSerialClient
 
-client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=115200, bytesize=8, parity='N', stopbits=1, timeout=1)
-if client.connect():
+# Auto-detectar baudrate (mensajes a stderr para no contaminar el archivo)
+BAUDRATES = [115200, 57600, 38400]
+client = None
+connected = False
+for baudrate in BAUDRATES:
+    print(f"  [~] Probando @ {baudrate} baud...", end=" ", flush=True, file=sys.stderr)
+    try:
+        client = ModbusSerialClient(port='/dev/ttyAMA0', baudrate=baudrate, bytesize=8, parity='N', stopbits=1, timeout=2)
+        if client.connect():
+            test = client.read_holding_registers(address=0, count=1, slave=1)
+            if not test.isError():
+                print(f"OK @ {baudrate}", file=sys.stderr)
+                connected = True
+                break
+            client.close()
+        print("sin respuesta", file=sys.stderr)
+    except Exception:
+        print("sin respuesta", file=sys.stderr)
+        if client:
+            client.close()
+
+if connected:
     data = []
     for start in range(0, 112, 40):
         count = min(40, 112 - start)
