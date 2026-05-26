@@ -636,9 +636,10 @@ while true; do
     echo "  9) Cambiar baudrate Node-RED (solo flows.json)"
     echo " 10) Buscar placa (escanear bus Modbus)"
     echo " 11) Buscar placa con paridades alternativas (E/O, 2 stopbits)"
+    echo " 12) Recuperar placa muda — broadcast BYPASS"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-11]: " OPTION
+    read -p "  Opción [0-12]: " OPTION
 
     case $OPTION in
         0)
@@ -6124,6 +6125,185 @@ EOFSCANP
             sudo systemctl start nodered 2>/dev/null
             docker start gesinne-rpi >/dev/null 2>&1 || true
             echo "  [OK] Servicios reiniciados"
+            volver_menu
+            ;;
+        12)
+            # Recuperar placa muda — broadcast BYPASS (reg 31 = 0) a todas
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Recuperar placa muda — broadcast BYPASS"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Si una placa no responde a Modbus pero su RX funciona,"
+            echo "  un broadcast (slave=0) puede sacarla de un estado atascado."
+            echo ""
+            echo "  Secuencia broadcast a 115200 baud 8N1:"
+            echo "    reg 30 = 43981  (habilitar tarjeta)"
+            echo "    reg 40 = 47818  (habilitar config)"
+            echo "    reg 31 = 0      (BYPASS)"
+            echo ""
+            echo "  Tras la secuencia, lee reg 31 individualmente de slaves 1,2,3"
+            echo "  para ver si la placa muda empieza a responder."
+            echo ""
+            echo "  [!] Esto pone TODAS las placas en bypass. Tendrás que volver a"
+            echo "      activarlas en Node-RED después (ciclo bypass->regulación)."
+            echo ""
+            read -p "  ¿Continuar? [s/N]: " CONFIRMAR
+            if [ "$CONFIRMAR" != "s" ] && [ "$CONFIRMAR" != "S" ]; then
+                echo "  [~] Cancelado"
+                volver_menu
+                continue
+            fi
+
+            echo ""
+            echo "  [!] Parando servicios temporalmente..."
+            sudo systemctl stop nodered 2>/dev/null
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
+            if kiosk_is_running 2>/dev/null; then
+                kiosk_stop 2>/dev/null || true
+            fi
+            sleep 3
+            echo "  [OK] Servicios parados"
+            echo ""
+
+            SCAN_PORT=""
+            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                if [ -e "$port" ]; then
+                    SCAN_PORT="$port"
+                    break
+                fi
+            done
+            if [ -z "$SCAN_PORT" ]; then
+                echo "  [X] No se encontró ningún puerto serie"
+                sudo systemctl start nodered 2>/dev/null
+                docker start gesinne-rpi >/dev/null 2>&1 || true
+                volver_menu
+                continue
+            fi
+
+            python3 << EOFBYPASS
+import sys
+import time
+
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    try:
+        from pymodbus.client.sync import ModbusSerialClient
+    except ImportError:
+        print("  [X] pymodbus no instalado")
+        sys.exit(1)
+
+PUERTO = "$SCAN_PORT"
+SLAVES = [1, 2, 3]
+
+def leer_reg31(client, sl, retries=2):
+    for r in range(retries + 1):
+        try:
+            resp = client.read_holding_registers(address=31, count=1, slave=sl)
+            if resp is not None and not resp.isError():
+                return resp.registers[0]
+        except Exception:
+            pass
+        time.sleep(0.1)
+    return None
+
+def write_silencioso(client, sl, addr, val):
+    try:
+        client.write_register(address=addr, value=val, slave=sl)
+    except Exception:
+        pass
+
+# ── Conectar a 115200 8N1 (config estándar) ──
+client = ModbusSerialClient(
+    port=PUERTO, baudrate=115200,
+    bytesize=8, parity='N', stopbits=1, timeout=2
+)
+if not client.connect():
+    print(f"  [X] No se pudo abrir el puerto {PUERTO}")
+    sys.exit(1)
+print(f"  [OK] Conectado a {PUERTO} @ 115200 baud 8N1")
+print("")
+
+# ── Estado ANTES ──
+print("  ANTES del broadcast:")
+estado_antes = {}
+for sl in SLAVES:
+    v = leer_reg31(client, sl)
+    estado_antes[sl] = v
+    if v is None:
+        print(f"    L{sl}: sin respuesta")
+    else:
+        tag = "BYPASS" if v == 0 else ("REGULACIÓN" if v == 2 else f"valor={v}")
+        print(f"    L{sl}: reg31={v} ({tag})")
+
+print("")
+print("  [B] Enviando secuencia BROADCAST (slave=0)...")
+print("      reg 30 = 43981")
+write_silencioso(client, 0, 30, 43981)
+time.sleep(0.2)
+print("      reg 40 = 47818")
+write_silencioso(client, 0, 40, 47818)
+time.sleep(0.2)
+print("      reg 31 = 0 (BYPASS)")
+write_silencioso(client, 0, 31, 0)
+print("")
+print("  [~] Esperando 2s a que las placas procesen...")
+time.sleep(2)
+
+# ── Estado DESPUÉS ──
+print("")
+print("  DESPUÉS del broadcast:")
+estado_despues = {}
+for sl in SLAVES:
+    v = leer_reg31(client, sl)
+    estado_despues[sl] = v
+    if v is None:
+        print(f"    L{sl}: sin respuesta")
+    else:
+        tag = "BYPASS" if v == 0 else ("REGULACIÓN" if v == 2 else f"valor={v}")
+        print(f"    L{sl}: reg31={v} ({tag})")
+
+client.close()
+
+# ── Diagnóstico ──
+print("")
+print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("  Diagnóstico:")
+recuperadas = []
+for sl in SLAVES:
+    antes = estado_antes[sl]
+    despues = estado_despues[sl]
+    if antes is None and despues is not None:
+        recuperadas.append(sl)
+        print(f"    L{sl}: ESTABA MUDA → ahora responde (reg31={despues}) ✓ RECUPERADA")
+    elif antes is None and despues is None:
+        print(f"    L{sl}: muda antes y después — TX muerta o sin alimentación")
+    elif despues != 0 and despues is not None:
+        print(f"    L{sl}: respondió pero NO entró en bypass (reg31={despues})")
+    else:
+        print(f"    L{sl}: OK, en bypass")
+
+if recuperadas:
+    print("")
+    print(f"  [✓] {len(recuperadas)} placa(s) recuperada(s) tras el broadcast")
+    print(f"      Slaves: {recuperadas}")
+    print("      Ahora puedes leer sus datos (opción 4 del menú Registros)")
+    print("      o restaurar config con opción 8 (Reparar memoria).")
+else:
+    print("")
+    print("  [X] Ninguna placa recuperada por broadcast")
+    print("      Si alguna sigue muda → su TX está rota o el micro no arranca.")
+EOFBYPASS
+
+            echo ""
+            echo "  [~] Reiniciando servicios..."
+            sudo systemctl start nodered 2>/dev/null
+            docker start gesinne-rpi >/dev/null 2>&1 || true
+            echo "  [OK] Servicios reiniciados"
+            echo ""
+            echo "  [!] Recuerda: TODAS las placas están en bypass. Para volver"
+            echo "      a regulación, haz un ciclo bypass->regulación desde Node-RED."
             volver_menu
             ;;
         p|P)
