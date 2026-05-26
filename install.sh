@@ -5812,31 +5812,12 @@ except ImportError:
 
 PUERTO = "$SCAN_PORT"
 BAUDRATES = [115200, 57600, 38400]
-# Modbus permite slave 1..247. Incluimos 0 (algunas placas corruptas se quedan ahí).
-# Una placa con reg48 corrupto a un valor alto (p.ej. 60000) responde al ID truncado a 8 bits.
-WARMUP_SLAVES = [1, 2, 3]                  # las direcciones esperadas (L1/L2/L3)
-EXTENDED_SLAVES = [0] + list(range(4, 248)) # resto del rango Modbus (para corruptas)
-TIMEOUT_WARMUP = 2.0   # mismo que firmware.sh detección — garantiza catch
-TIMEOUT_EXTENDED = 0.6 # rápido para no tardar 6 min en el barrido completo
-TIMEOUT_DETAIL = 1.5
+# Modbus permite slave 1..247. Una placa con reg48 corrupto responde al ID truncado a 8 bits.
+SLAVES_FAST = [1, 2, 3]                          # placas esperadas L1/L2/L3
+SLAVES_FULL = [0] + list(range(4, 248))           # resto del rango Modbus (para corruptas)
+TIMEOUT_PROBE = 2.0   # mismo que EOFCOL/firmware.sh (proven working)
+TIMEOUT_EXT = 0.5     # rápido para barrido extendido
 RETRIES = 2
-
-# Esperar a que el puerto esté libre (10 intentos de 2s)
-print("  [~] Esperando que el puerto se libere...")
-for intento in range(10):
-    try:
-        fd = os.open(PUERTO, os.O_RDWR | os.O_NOCTTY | os.O_EXCL)
-        os.close(fd)
-        print(f"  [OK] Puerto {PUERTO} libre")
-        break
-    except (OSError, IOError) as e:
-        print(f"  [!] Intento {intento+1}/10: puerto ocupado ({e}), esperando 2s...")
-        try: os.close(fd)
-        except Exception: pass
-        time.sleep(2)
-else:
-    print(f"  [X] El puerto {PUERTO} sigue ocupado tras 20s. Abortando.")
-    sys.exit(1)
 
 print("")
 print("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -5845,87 +5826,96 @@ print("  ───────────────────────�
 
 encontradas = []
 
-def probe(client, sl, retries=0):
-    """Lee reg 0. Si retries>0, reintenta tras pequeñas pausas."""
+def read_reg(client, addr, sl, retries=RETRIES):
+    last_err = None
     for r in range(retries + 1):
-        try:
-            resp = client.read_holding_registers(address=0, count=1, slave=sl)
-            if resp is not None and not resp.isError():
-                return resp.registers[0]
-        except Exception:
-            pass
-        if r < retries:
-            time.sleep(0.15)
-    return None
-
-def read_reg(client, addr, sl):
-    """Lectura con reintentos (para confirmación y detalles)."""
-    for r in range(RETRIES + 1):
         try:
             resp = client.read_holding_registers(address=addr, count=1, slave=sl)
             if resp is not None and not resp.isError():
-                return resp.registers[0]
-        except Exception:
-            pass
+                return resp.registers[0], None
+            last_err = str(resp) if resp else "None"
+        except Exception as e:
+            last_err = str(e)
         time.sleep(0.1)
-    return '?'
+    return None, last_err
 
 def detalles_y_print(client, baud, sl, reg0):
-    """Lee reg 41/48, imprime fila y añade a encontradas."""
     time.sleep(0.1)
-    nserie = read_reg(client, 41, sl)
+    nserie, _ = read_reg(client, 41, sl)
+    if nserie is None: nserie = '?'
     time.sleep(0.1)
-    dirmb = read_reg(client, 48, sl)
+    dirmb, _ = read_reg(client, 48, sl)
+    if dirmb is None: dirmb = '?'
     print(f"  {baud:>9} | {sl:>5} | {reg0:>5} | {str(nserie):>8} | {str(dirmb):>9}")
     encontradas.append((baud, sl, reg0, nserie, dirmb))
 
+# Para diagnóstico: mostrar versión pymodbus
+try:
+    import pymodbus
+    print(f"  [i] pymodbus {getattr(pymodbus, '__version__', '?')}")
+except Exception:
+    pass
+
 for baud in BAUDRATES:
-    print(f"")
+    print("")
     print(f"  ─── @ {baud} baud ───")
 
-    # ── Warmup: slaves 1,2,3 con timeout largo (mismo que firmware.sh) ──
-    client = ModbusSerialClient(
-        port=PUERTO, baudrate=baud,
-        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_WARMUP
-    )
-    if not client.connect():
-        print(f"    [X] No se pudo abrir el puerto a {baud}")
+    # Patrón EXACTO de EOFCOL (la opción 4 que SÍ funciona)
+    try:
+        client = ModbusSerialClient(
+            port=PUERTO, baudrate=baud,
+            bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_PROBE
+        )
+    except Exception as e:
+        print(f"    [X] Error creando cliente: {e}")
         continue
+
+    if not client.connect():
+        print(f"    [X] client.connect() devolvió False — puerto inaccesible a {baud}")
+        continue
+
+    print(f"    [OK] Conectado, probando slaves 1-3 (timeout {TIMEOUT_PROBE}s)...")
 
     warmup_hits = []
-    print(f"    Warmup (slaves 1-3, timeout {TIMEOUT_WARMUP}s)...")
-    for sl in WARMUP_SLAVES:
-        reg0 = probe(client, sl, retries=1)
-        if reg0 is not None:
+    last_err_shown = None
+    for sl in SLAVES_FAST:
+        val, err = read_reg(client, 0, sl, retries=1)
+        if val is not None:
             warmup_hits.append(sl)
-            detalles_y_print(client, baud, sl, reg0)
+            detalles_y_print(client, baud, sl, val)
+        else:
+            if err != last_err_shown:
+                print(f"      slave {sl}: sin respuesta ({err})")
+                last_err_shown = err
 
-    client.close()
-    time.sleep(0.3)
-
-    # Si nada respondió en el warmup, este baudrate seguramente no es el correcto
     if not warmup_hits:
-        print(f"    (sin respuestas en warmup a {baud} baud, salto barrido extendido)")
+        print(f"    (warmup sin respuestas a {baud}, salto extendido)")
+        client.close()
+        time.sleep(0.3)
         continue
 
-    # ── Extendido: resto de slaves con timeout más corto ──
-    extra_total = len(EXTENDED_SLAVES)
-    print(f"    Barrido extendido (slaves 0,4-247, timeout {TIMEOUT_EXTENDED}s, ~{extra_total*TIMEOUT_EXTENDED:.0f}s)...")
-    client = ModbusSerialClient(
-        port=PUERTO, baudrate=baud,
-        bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_EXTENDED
-    )
-    if not client.connect():
-        print(f"    [X] No se pudo reabrir para barrido extendido")
+    # Bajamos el timeout para el barrido extendido (el bus ya está "despierto")
+    try:
+        client.close()
+        time.sleep(0.2)
+        client = ModbusSerialClient(
+            port=PUERTO, baudrate=baud,
+            bytesize=8, parity='N', stopbits=1, timeout=TIMEOUT_EXT
+        )
+        client.connect()
+    except Exception as e:
+        print(f"    [!] No pude reabrir con timeout corto: {e}")
+        time.sleep(0.3)
         continue
 
-    for sl in EXTENDED_SLAVES:
+    print(f"    Barrido extendido (slaves 0,4-247, timeout {TIMEOUT_EXT}s)...")
+    for sl in SLAVES_FULL:
         if sl % 30 == 0:
             print(f"\r      slave {sl:>3}/247...", end='', flush=True)
-        reg0 = probe(client, sl, retries=0)
-        if reg0 is not None:
+        val, _ = read_reg(client, 0, sl, retries=0)
+        if val is not None:
             print(f"\r      {'':>20}\r", end='')
-            detalles_y_print(client, baud, sl, reg0)
+            detalles_y_print(client, baud, sl, val)
     print(f"\r      {'':>20}\r", end='')
     client.close()
     time.sleep(0.3)
