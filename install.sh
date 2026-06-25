@@ -1944,7 +1944,36 @@ except ImportError:
         sys.exit(1)
 
 PUERTO = "$DIAG_PORT"
-BAUDRATES = [115200, 57600, 38400]  # reg 61 valores 0,1,2
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]  # reg 61 valores 0,1,2
 
 client = None
 connected = False
@@ -1967,7 +1996,7 @@ for baudrate in BAUDRATES:
             if not result.isError():
                 print("OK")
                 print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta")
@@ -2297,7 +2326,36 @@ if not port:
 import time
 
 # Auto-detectar baudrate probando 115200, 57600, 38400
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 client = None
 connected = False
 for baudrate in BAUDRATES:
@@ -2312,7 +2370,7 @@ for baudrate in BAUDRATES:
             if not result.isError():
                 print("OK")
                 print(f"  [OK] Conectado a {port} @ {baudrate} baud")
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta")
@@ -2586,7 +2644,36 @@ if not port:
     sys.exit(1)
 
 # Auto-detectar baudrate probando 115200, 57600, 38400
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 client = None
 connected = False
 for baudrate in BAUDRATES:
@@ -2601,7 +2688,7 @@ for baudrate in BAUDRATES:
             if not result.isError():
                 print("OK")
                 print(f"  [OK] Conectado a {port} @ {baudrate} baud")
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta")
@@ -2825,7 +2912,36 @@ if not port:
     sys.exit(1)
 
 # Auto-detectar baudrate probando 115200, 57600, 38400
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 client = None
 connected = False
 for baudrate in BAUDRATES:
@@ -2840,7 +2956,7 @@ for baudrate in BAUDRATES:
             if not result.isError():
                 print("OK")
                 print(f"  [OK] Conectado a {port} @ {baudrate} baud")
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta")
@@ -3199,7 +3315,36 @@ if not port:
     sys.exit(1)
 
 # Auto-detectar baudrate probando 115200, 57600, 38400
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 client = None
 connected = False
 for baudrate in BAUDRATES:
@@ -3214,7 +3359,7 @@ for baudrate in BAUDRATES:
             if not result.isError():
                 print("OK")
                 print(f"  [OK] Conectado a {port} @ {baudrate} baud")
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta")
@@ -4501,7 +4646,36 @@ else:
     sys.exit(1)
 
 # Auto-detectar baudrate probando 115200, 57600, 38400
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 client = None
 connected = False
 for baudrate in BAUDRATES:
@@ -4516,7 +4690,7 @@ for baudrate in BAUDRATES:
             if not result.isError():
                 print("OK")
                 print(f"  [OK] Conectado a {port} @ {baudrate} baud")
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta")
@@ -4633,7 +4807,36 @@ except ImportError:
         sys.exit(1)
 
 PUERTO = "$SERIAL_PORT"
-BAUDRATES = [115200, 57600, 38400]  # reg 61 valores 0,1,2
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]  # reg 61 valores 0,1,2
 
 client = None
 connected = False
@@ -4655,7 +4858,7 @@ for baudrate in BAUDRATES:
             if not result.isError():
                 print("OK")
                 print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta")
@@ -4910,7 +5113,36 @@ except ImportError:
 PUERTO = "$SERIAL_PORT"
 
 # Probar diferentes baudrates si falla
-BAUDRATES = [115200, 57600, 38400]  # reg 61 valores 0,1,2
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]  # reg 61 valores 0,1,2
 
 client = None
 connected = False
@@ -4933,7 +5165,7 @@ for baudrate in BAUDRATES:
             if not result.isError():
                 print("OK")
                 print(f"  [OK] Conectado a {PUERTO} @ {baudrate} baud")
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta")
@@ -5177,7 +5409,36 @@ except ImportError:
     from pymodbus.client.sync import ModbusSerialClient
 
 # Auto-detectar baudrate (mensajes a stderr para no contaminar el archivo)
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 client = None
 connected = False
 for baudrate in BAUDRATES:
@@ -5188,7 +5449,7 @@ for baudrate in BAUDRATES:
             test = client.read_holding_registers(address=0, count=1, slave=1)
             if not test.isError():
                 print(f"OK @ {baudrate}", file=sys.stderr)
-                connected = True
+                connected = True; _bcache_write(baudrate)
                 break
             client.close()
         print("sin respuesta", file=sys.stderr)
@@ -5818,7 +6079,36 @@ except ImportError:
         sys.exit(1)
 
 PUERTO = "$SCAN_PORT"
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 # Modbus permite slave 1..247. Una placa con reg48 corrupto responde al ID truncado a 8 bits.
 SLAVES_FAST = [1, 2, 3]                          # placas esperadas L1/L2/L3
 SLAVES_FULL = [0] + list(range(4, 248))           # resto del rango Modbus (para corruptas)
@@ -6009,7 +6299,36 @@ except ImportError:
         sys.exit(1)
 
 PUERTO = "$SCAN_PORT"
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 FRAMINGS = [
     ('E', 1, '8E1'),
     ('O', 1, '8O1'),
@@ -6376,7 +6695,36 @@ except ImportError:
         sys.exit(1)
 
 PUERTO = "$SCAN_PORT"
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 FRAMINGS = [('N',1,'8N1'), ('E',1,'8E1'), ('O',1,'8O1'), ('N',2,'8N2')]
 
 def write_silent(c, sl, addr, val):
@@ -6491,7 +6839,36 @@ for p in ['/dev/ttyAMA0','/dev/serial0','/dev/ttyUSB0','/dev/ttyACM0','/dev/ttyS
         PUERTO = p
         break
 
-BAUDRATES = [115200, 57600, 38400]
+# Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
+import os as _os, json as _json, glob as _glob
+from datetime import datetime as _dt
+def _bcache_path():
+    for _p in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_p):
+            return _os.path.join(_p, 'baudrate_cache.json')
+    return '/tmp/baudrate_cache.json'
+_bport = globals().get('PUERTO') or globals().get('port') or ''
+def _bcache_read():
+    try:
+        with open(_bcache_path()) as _f:
+            _d = _json.load(_f)
+        if _d.get('port') == _bport:
+            _br = _d.get('baudrate')
+            if _br in (115200, 57600, 38400):
+                return _br
+    except Exception:
+        pass
+    return None
+def _bcache_write(_br):
+    try:
+        _pp = _bcache_path()
+        _os.makedirs(_os.path.dirname(_pp), exist_ok=True)
+        with open(_pp, 'w') as _f:
+            _json.dump({'port': _bport, 'baudrate': _br, 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    except Exception:
+        pass
+_cached_br = _bcache_read()
+BAUDRATES = ([_cached_br] + [_b for _b in [115200, 57600, 38400] if _b != _cached_br]) if _cached_br else [115200, 57600, 38400]
 LISTEN_SECONDS = 5
 
 def crc16(data):
