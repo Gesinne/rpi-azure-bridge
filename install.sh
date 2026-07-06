@@ -1947,6 +1947,28 @@ PUERTO = "$DIAG_PORT"
 # Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
 import os as _os, json as _json, glob as _glob
 from datetime import datetime as _dt
+import time
+def _flush_serial(cli):
+    try:
+        sk = getattr(cli, "socket", None)
+        if sk is not None:
+            try: sk.reset_input_buffer()
+            except Exception: pass
+            try: sk.reset_output_buffer()
+            except Exception: pass
+    except Exception:
+        pass
+
+def robust_read(cli, address, count, slave, tries=3, pause=0.15):
+    r = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        r = cli.read_holding_registers(address=address, count=count, slave=slave)
+        if r is not None and not r.isError():
+            return r
+        time.sleep(pause)
+    return r
+
 def _bcache_path():
     for _p in sorted(_glob.glob('/home/*/config')):
         if _os.path.isdir(_p):
@@ -2067,7 +2089,7 @@ for unit_id in [1, 2, 3]:
     data = []
     for start in range(0, 112, 40):
         count = min(40, 112 - start)
-        result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+        result = robust_read(client, start, count, unit_id)
         if not result.isError():
             data.extend(result.registers)
         else:
@@ -2089,7 +2111,7 @@ for unit_id in [1, 2, 3]:
     data = []
     for start in range(0, 112, 40):
         count = min(40, 112 - start)
-        result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+        result = robust_read(client, start, count, unit_id)
         if not result.isError():
             data.extend(result.registers)
         else:
@@ -4810,6 +4832,28 @@ PUERTO = "$SERIAL_PORT"
 # Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
 import os as _os, json as _json, glob as _glob
 from datetime import datetime as _dt
+import time
+def _flush_serial(cli):
+    try:
+        sk = getattr(cli, "socket", None)
+        if sk is not None:
+            try: sk.reset_input_buffer()
+            except Exception: pass
+            try: sk.reset_output_buffer()
+            except Exception: pass
+    except Exception:
+        pass
+
+def robust_read(cli, address, count, slave, tries=3, pause=0.15):
+    r = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        r = cli.read_holding_registers(address=address, count=count, slave=slave)
+        if r is not None and not r.isError():
+            return r
+        time.sleep(pause)
+    return r
+
 def _bcache_path():
     for _p in sorted(_glob.glob('/home/*/config')):
         if _os.path.isdir(_p):
@@ -4890,7 +4934,7 @@ for unit_id in [1, 2, 3]:
         ok = True
         for start in range(0, 96, 40):
             count = min(40, 96 - start)
-            result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+            result = robust_read(client, start, count, unit_id)
             if result.isError():
                 ok = False
                 break
@@ -5116,6 +5160,28 @@ PUERTO = "$SERIAL_PORT"
 # Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
 import os as _os, json as _json, glob as _glob
 from datetime import datetime as _dt
+import time
+def _flush_serial(cli):
+    try:
+        sk = getattr(cli, "socket", None)
+        if sk is not None:
+            try: sk.reset_input_buffer()
+            except Exception: pass
+            try: sk.reset_output_buffer()
+            except Exception: pass
+    except Exception:
+        pass
+
+def robust_read(cli, address, count, slave, tries=3, pause=0.15):
+    r = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        r = cli.read_holding_registers(address=address, count=count, slave=slave)
+        if r is not None and not r.isError():
+            return r
+        time.sleep(pause)
+    return r
+
 def _bcache_path():
     for _p in sorted(_glob.glob('/home/*/config')):
         if _os.path.isdir(_p):
@@ -5217,7 +5283,7 @@ try:
     # Leer en bloques de 40 para mayor compatibilidad
     for start in range(0, num_regs, 40):
         count = min(40, num_regs - start)
-        result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
+        result = robust_read(client, start, count, $UNIT_ID)
         if result.isError():
             print(f"  [!]  Error en registros {start}-{start+count-1}")
             break
@@ -5412,6 +5478,28 @@ except ImportError:
 # Recordar ultima velocidad: cache compatible con modbus_helper (cached-first)
 import os as _os, json as _json, glob as _glob
 from datetime import datetime as _dt
+import time
+def _flush_serial(cli):
+    try:
+        sk = getattr(cli, "socket", None)
+        if sk is not None:
+            try: sk.reset_input_buffer()
+            except Exception: pass
+            try: sk.reset_output_buffer()
+            except Exception: pass
+    except Exception:
+        pass
+
+def robust_read(cli, address, count, slave, tries=3, pause=0.15):
+    r = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        r = cli.read_holding_registers(address=address, count=count, slave=slave)
+        if r is not None and not r.isError():
+            return r
+        time.sleep(pause)
+    return r
+
 def _bcache_path():
     for _p in sorted(_glob.glob('/home/*/config')):
         if _os.path.isdir(_p):
@@ -5462,7 +5550,7 @@ if connected:
     data = []
     for start in range(0, 112, 40):
         count = min(40, 112 - start)
-        result = client.read_holding_registers(address=start, count=count, slave=$UNIT_ID)
+        result = robust_read(client, start, count, $UNIT_ID)
         if not result.isError():
             data.extend(result.registers)
         else:

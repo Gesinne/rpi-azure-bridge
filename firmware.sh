@@ -71,6 +71,40 @@ if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
     sys.exit(1)
 
+# --- Lecturas/escrituras robustas: vacían el buffer serie y reintentan ---
+# Evita el "Cleanup recv buffer before send" / desincronización RS-485 (típico en L2),
+# para que la verificación y la reparación no fallen ni se salten una placa.
+def _flush_serial(cli):
+    try:
+        sk = getattr(cli, "socket", None)
+        if sk is not None:
+            try: sk.reset_input_buffer()
+            except Exception: pass
+            try: sk.reset_output_buffer()
+            except Exception: pass
+    except Exception:
+        pass
+
+def robust_read(cli, address, count, slave, tries=3, pause=0.15):
+    r = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        r = cli.read_holding_registers(address=address, count=count, slave=slave)
+        if r is not None and not r.isError():
+            return r
+        time.sleep(pause)
+    return r
+
+def robust_write(cli, address, value, slave, tries=3, pause=0.15):
+    w = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        w = cli.write_register(address=address, value=value, slave=slave)
+        if w is not None and not w.isError():
+            return w
+        time.sleep(pause)
+    return w
+
 # Definir parametros a verificar con sus registros y rangos correctos
 # Formato: registro: (nombre, valor_min, valor_max, valores_exactos)
 # Si valores_exactos no es None, se usa en lugar de min/max
@@ -104,7 +138,7 @@ for unit_id in [1, 2, 3]:
         success = True
         for start in range(0, 96, 40):
             count = min(40, 96 - start)
-            result = client.read_holding_registers(address=start, count=count, slave=unit_id)
+            result = robust_read(client, start, count, unit_id)
             if result.isError():
                 success = False
                 break
@@ -236,6 +270,40 @@ if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
     sys.exit(1)
 
+# --- Lecturas/escrituras robustas: vacían el buffer serie y reintentan ---
+# Evita el "Cleanup recv buffer before send" / desincronización RS-485 (típico en L2),
+# para que la verificación y la reparación no fallen ni se salten una placa.
+def _flush_serial(cli):
+    try:
+        sk = getattr(cli, "socket", None)
+        if sk is not None:
+            try: sk.reset_input_buffer()
+            except Exception: pass
+            try: sk.reset_output_buffer()
+            except Exception: pass
+    except Exception:
+        pass
+
+def robust_read(cli, address, count, slave, tries=3, pause=0.15):
+    r = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        r = cli.read_holding_registers(address=address, count=count, slave=slave)
+        if r is not None and not r.isError():
+            return r
+        time.sleep(pause)
+    return r
+
+def robust_write(cli, address, value, slave, tries=3, pause=0.15):
+    w = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        w = cli.write_register(address=address, value=value, slave=slave)
+        if w is not None and not w.isError():
+            return w
+        time.sleep(pause)
+    return w
+
 print("  ┌─────────────────────────────────────────────────────────────┐")
 print("  │  VALORES ACTUALES                                          │")
 print("  ├─────────────────────────────────────────────────────────────┤")
@@ -250,7 +318,7 @@ for unit_id in [1, 2, 3]:
     fase = {1: "L1", 2: "L2", 3: "L3"}[unit_id]
     
     try:
-        result = client.read_holding_registers(address=55, count=2, slave=unit_id)
+        result = robust_read(client, 55, 2, unit_id)
         if result.isError():
             print(f"  │   {fase}    │  [X] Error leyendo        │  [X] Error leyendo   │")
             errores_lectura.append(fase)
@@ -406,6 +474,40 @@ if not client.connect():
     print("  [X] No se pudo conectar al puerto serie")
     sys.exit(1)
 
+# --- Lecturas/escrituras robustas: vacían el buffer serie y reintentan ---
+# Evita el "Cleanup recv buffer before send" / desincronización RS-485 (típico en L2),
+# para que la verificación y la reparación no fallen ni se salten una placa.
+def _flush_serial(cli):
+    try:
+        sk = getattr(cli, "socket", None)
+        if sk is not None:
+            try: sk.reset_input_buffer()
+            except Exception: pass
+            try: sk.reset_output_buffer()
+            except Exception: pass
+    except Exception:
+        pass
+
+def robust_read(cli, address, count, slave, tries=3, pause=0.15):
+    r = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        r = cli.read_holding_registers(address=address, count=count, slave=slave)
+        if r is not None and not r.isError():
+            return r
+        time.sleep(pause)
+    return r
+
+def robust_write(cli, address, value, slave, tries=3, pause=0.15):
+    w = None
+    for _ in range(tries):
+        _flush_serial(cli)
+        w = cli.write_register(address=address, value=value, slave=slave)
+        if w is not None and not w.isError():
+            return w
+        time.sleep(pause)
+    return w
+
 REG55_VALUE = $REG55_VALUE
 REG56_VALUE = $REG56_VALUE
 
@@ -421,7 +523,7 @@ for unit_id in [1, 2, 3]:
     
     # Primero leer valores actuales
     try:
-        result = client.read_holding_registers(address=55, count=2, slave=unit_id)
+        result = robust_read(client, 55, 2, unit_id)
         if result.isError():
             print("[X] Error leyendo")
             total_errores += 1
@@ -435,7 +537,7 @@ for unit_id in [1, 2, 3]:
         # Verificar y reparar registro 55
         if current_55 not in [0, 2]:
             print(f"\n       Reg 55: {current_55} → {REG55_VALUE}", end="", flush=True)
-            write_result = client.write_register(address=55, value=REG55_VALUE, slave=unit_id)
+            write_result = robust_write(client, 55, REG55_VALUE, unit_id)
             if write_result.isError():
                 print(" [X]", end="")
                 total_errores += 1
@@ -447,7 +549,7 @@ for unit_id in [1, 2, 3]:
         # Verificar y reparar registro 56
         if current_56 < 1760 or current_56 > 2640:
             print(f"\n       Reg 56: {current_56} → {REG56_VALUE}", end="", flush=True)
-            write_result = client.write_register(address=56, value=REG56_VALUE, slave=unit_id)
+            write_result = robust_write(client, 56, REG56_VALUE, unit_id)
             if write_result.isError():
                 print(" [X]", end="")
                 total_errores += 1
