@@ -47,7 +47,9 @@ CONN_FUNC = (
     "const online = !!(msg.status && msg.status.fill === 'green');\n"
     "const prev = global.get('mqttOnline');\n"
     "global.set('mqttOnline', online);\n"
-    "if (online && prev === false) {\n"
+    "// Dispara al pasar a online desde NO-online (incluye el primer connect\n"
+    "// tras reiniciar, donde prev es undefined): destraba la cola de recuperación.\n"
+    "if (online && prev !== true) {\n"
     "    return { control: 'FAIL' };\n"
     "}\n"
     "return null;\n"
@@ -115,11 +117,17 @@ def is_applied(flows):
 
 def cmd_apply(flows):
     idx = _index(flows)
+    changed = 0
+    # Auto-reparación: si ya está aplicado pero el código del function 'conn'
+    # cambió (p.ej. una corrección), actualizarlo en sitio.
+    if CONN in idx and idx[CONN].get("func") != CONN_FUNC:
+        idx[CONN]["func"] = CONN_FUNC
+        changed = 1
     if ROUTER in idx:
-        return 0
+        return changed  # ya aplicado (quizá con func recién actualizado)
     # requiere el pipeline de publicación presente
     if not all(k in idx for k in (LIMPIA, GD, MQTTOUT)):
-        return 0
+        return changed
     # "Limpia msg" ya no va al guaranteed-delivery, va al router
     _rewire(flows, LIMPIA, GD, ROUTER)
     flows.append(router_node())
