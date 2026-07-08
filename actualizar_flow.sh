@@ -597,6 +597,36 @@ if changed:
         fi
     fi
 
+    # Parche: arreglo del ENVÍO GARANTIZADO por MQTT (correlar por id en vez de
+    # por posición). Evita que la cola de envío se quede atascada tras una
+    # desconexión. Opción del script: se aplica por defecto; se desactiva con
+    # FIX_MQTT_DELIVERY=0. NO toca la cola (~/.node-red/context), solo el grafo.
+    if [ "${FIX_MQTT_DELIVERY:-1}" = "1" ]; then
+        MQTTFIX_PATH=""
+        for candidato in /opt/rpi-azure-bridge/fix_mqtt_delivery.py \
+                         /home/gesinne/rpi-azure-bridge/fix_mqtt_delivery.py \
+                         /home/pi/rpi-azure-bridge/fix_mqtt_delivery.py \
+                         "$(dirname "$0")/fix_mqtt_delivery.py"; do
+            if [ -f "$candidato" ]; then
+                MQTTFIX_PATH="$candidato"
+                break
+            fi
+        done
+        if [ -n "$MQTTFIX_PATH" ]; then
+            MQTTFIX_OUT=$(python3 "$MQTTFIX_PATH" "$NODERED_DIR/flows.json" --apply 2>/dev/null | grep -oE 'applied=[0-9]+' | cut -d= -f2)
+            MQTTFIX_OUT=${MQTTFIX_OUT:-0}
+            if [ "$MQTTFIX_OUT" -gt 0 ]; then
+                echo "  [OK] Arreglo envío MQTT (correlar por id) APLICADO"
+            else
+                echo "  [i] Arreglo envío MQTT ya estaba aplicado"
+            fi
+        else
+            echo "  [!] fix_mqtt_delivery.py no encontrado; no se aplica el arreglo de envío MQTT"
+        fi
+    else
+        echo "  [i] FIX_MQTT_DELIVERY=0 -> arreglo de envío MQTT NO aplicado"
+    fi
+
     echo "  [~] Parando Node-RED..."
     sudo systemctl stop nodered
     sleep 1
