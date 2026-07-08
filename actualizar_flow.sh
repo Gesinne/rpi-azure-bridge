@@ -627,6 +627,36 @@ if changed:
         echo "  [i] FIX_MQTT_DELIVERY=0 -> arreglo de envío MQTT NO aplicado"
     fi
 
+    # Parche: publicación MQTT por DOS CAMINOS (vivo directo + recuperación en
+    # paralelo). El dato actual no espera detrás de la cola; la cola acumula el
+    # máximo sin perder datos. Sin duplicados gracias a la ingestión idempotente.
+    # Opción del script: por defecto sí; desactivar con FIX_MQTT_TWOPATH=0.
+    if [ "${FIX_MQTT_TWOPATH:-1}" = "1" ]; then
+        TWOPATH_PATH=""
+        for candidato in /opt/rpi-azure-bridge/fix_mqtt_twopath.py \
+                         /home/gesinne/rpi-azure-bridge/fix_mqtt_twopath.py \
+                         /home/pi/rpi-azure-bridge/fix_mqtt_twopath.py \
+                         "$(dirname "$0")/fix_mqtt_twopath.py"; do
+            if [ -f "$candidato" ]; then
+                TWOPATH_PATH="$candidato"
+                break
+            fi
+        done
+        if [ -n "$TWOPATH_PATH" ]; then
+            TWOPATH_OUT=$(python3 "$TWOPATH_PATH" "$NODERED_DIR/flows.json" --apply 2>/dev/null | grep -oE 'applied=[0-9]+' | cut -d= -f2)
+            TWOPATH_OUT=${TWOPATH_OUT:-0}
+            if [ "$TWOPATH_OUT" -gt 0 ]; then
+                echo "  [OK] Publicación MQTT por dos caminos APLICADA"
+            else
+                echo "  [i] Dos caminos MQTT ya estaba aplicado"
+            fi
+        else
+            echo "  [!] fix_mqtt_twopath.py no encontrado; no se aplica dos caminos"
+        fi
+    else
+        echo "  [i] FIX_MQTT_TWOPATH=0 -> dos caminos MQTT NO aplicado"
+    fi
+
     echo "  [~] Parando Node-RED..."
     sudo systemctl stop nodered
     sleep 1
