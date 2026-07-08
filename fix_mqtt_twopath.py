@@ -39,6 +39,7 @@ MQTTOUT = "d74f3c5aeaf1a2a5"    # nodo mqtt out
 ROUTER = "tw0pathrouter001"     # switch nuevo (vivo/recuperación)
 STATUS = "tw0pathstatus001"     # status del mqtt out
 CONN = "tw0pathconn00001"       # function estado conexión
+RETRY = "tw0pathretry001"       # inject periódico __trigger (drenar la cola)
 
 CONN_FUNC = (
     "// Mantiene global.mqttOnline según el estado del nodo 'mqtt out'.\n"
@@ -83,6 +84,20 @@ def conn_node():
     }
 
 
+def retry_node():
+    # Inject periódico que manda control:__trigger a la cola cada 5 s.
+    # Es el "retry" que faltaba: sin él, tras un FAIL la cola se queda en
+    # waitingForTrigger y NO drena (los dos caminos routean los mensajes nuevos
+    # al vivo, así que ya no le entra nada que la dispare). Con esto, drena sola.
+    return {
+        "id": RETRY, "type": "inject", "z": TAB_Z, "g": GROUP_G,
+        "name": "retry drenar cola",
+        "props": [{"p": "control", "v": "__trigger", "vt": "str"}],
+        "repeat": "5", "crontab": "", "once": False, "onceDelay": 0.1,
+        "topic": "", "x": 2500, "y": 420, "wires": [[GD]],
+    }
+
+
 def _index(flows):
     return {n["id"]: n for n in flows if isinstance(n, dict) and "id" in n}
 
@@ -112,7 +127,8 @@ def _group_del(flows, ids):
 
 
 def is_applied(flows):
-    return ROUTER in _index(flows)
+    idx = _index(flows)
+    return ROUTER in idx and RETRY in idx
 
 
 def cmd_apply(flows):
@@ -123,8 +139,14 @@ def cmd_apply(flows):
     if CONN in idx and idx[CONN].get("func") != CONN_FUNC:
         idx[CONN]["func"] = CONN_FUNC
         changed = 1
+    # Auto-reparación: versión vieja de dos caminos (router presente) pero sin el
+    # inject de retry -> añadirlo (es lo que hace que la cola drene de verdad).
+    if ROUTER in idx and RETRY not in idx:
+        flows.append(retry_node())
+        _group_add(flows, [RETRY])
+        changed = 1
     if ROUTER in idx:
-        return changed  # ya aplicado (quizá con func recién actualizado)
+        return changed  # ya aplicado (quizá recién auto-reparado)
     # requiere el pipeline de publicación presente
     if not all(k in idx for k in (LIMPIA, GD, MQTTOUT)):
         return changed
@@ -133,18 +155,19 @@ def cmd_apply(flows):
     flows.append(router_node())
     flows.append(status_node())
     flows.append(conn_node())
-    _group_add(flows, [ROUTER, STATUS, CONN])
+    flows.append(retry_node())
+    _group_add(flows, [ROUTER, STATUS, CONN, RETRY])
     return 1
 
 
 def cmd_remove(flows):
     idx = _index(flows)
-    if ROUTER not in idx:
+    if ROUTER not in idx and RETRY not in idx:
         return 0
     # volver: "Limpia msg" -> guaranteed-delivery
     _rewire(flows, LIMPIA, ROUTER, GD)
-    flows[:] = [n for n in flows if not (isinstance(n, dict) and n.get("id") in (ROUTER, STATUS, CONN))]
-    _group_del(flows, [ROUTER, STATUS, CONN])
+    flows[:] = [n for n in flows if not (isinstance(n, dict) and n.get("id") in (ROUTER, STATUS, CONN, RETRY))]
+    _group_del(flows, [ROUTER, STATUS, CONN, RETRY])
     return 1
 
 
