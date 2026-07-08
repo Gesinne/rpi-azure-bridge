@@ -597,64 +597,27 @@ if changed:
         fi
     fi
 
-    # Parche: arreglo del ENVÍO GARANTIZADO por MQTT (correlar por id en vez de
-    # por posición). Evita que la cola de envío se quede atascada tras una
-    # desconexión. Opción del script: se aplica por defecto; se desactiva con
-    # FIX_MQTT_DELIVERY=0. NO toca la cola (~/.node-red/context), solo el grafo.
-    if [ "${FIX_MQTT_DELIVERY:-1}" = "1" ]; then
-        MQTTFIX_PATH=""
-        for candidato in /opt/rpi-azure-bridge/fix_mqtt_delivery.py \
-                         /home/gesinne/rpi-azure-bridge/fix_mqtt_delivery.py \
-                         /home/pi/rpi-azure-bridge/fix_mqtt_delivery.py \
-                         "$(dirname "$0")/fix_mqtt_delivery.py"; do
-            if [ -f "$candidato" ]; then
-                MQTTFIX_PATH="$candidato"
-                break
+    # ── Mejorar MQTT (OPCIÓN explícita, NO se aplica sola) ──
+    # Ofrece aplicar las mejoras de publicación MQTT (envío por id + dos
+    # caminos). Es una opción, no un parche silencioso. Script dedicado aparte:
+    # mejorar_mqtt.sh. No toca la cola (~/.node-red/context), solo el grafo.
+    read -p "  ¿Aplicar mejoras MQTT (envío por id + dos caminos)? [y/N]: " APLICAR_MQTT
+    if [[ "$APLICAR_MQTT" =~ ^[Yy]$ ]]; then
+        for par in fix_mqtt_delivery.py fix_mqtt_twopath.py; do
+            PP=""
+            for c in /opt/rpi-azure-bridge/$par /home/gesinne/rpi-azure-bridge/$par \
+                     /home/pi/rpi-azure-bridge/$par "$(dirname "$0")/$par"; do
+                [ -f "$c" ] && { PP="$c"; break; }
+            done
+            if [ -n "$PP" ]; then
+                OUT=$(python3 "$PP" "$NODERED_DIR/flows.json" --apply 2>/dev/null | grep -oE 'applied=[0-9]+' | cut -d= -f2)
+                echo "  [OK] $par (applied=${OUT:-0})"
+            else
+                echo "  [!] $par no encontrado (haz 'git pull' del bridge)"
             fi
         done
-        if [ -n "$MQTTFIX_PATH" ]; then
-            MQTTFIX_OUT=$(python3 "$MQTTFIX_PATH" "$NODERED_DIR/flows.json" --apply 2>/dev/null | grep -oE 'applied=[0-9]+' | cut -d= -f2)
-            MQTTFIX_OUT=${MQTTFIX_OUT:-0}
-            if [ "$MQTTFIX_OUT" -gt 0 ]; then
-                echo "  [OK] Arreglo envío MQTT (correlar por id) APLICADO"
-            else
-                echo "  [i] Arreglo envío MQTT ya estaba aplicado"
-            fi
-        else
-            echo "  [!] fix_mqtt_delivery.py no encontrado; no se aplica el arreglo de envío MQTT"
-        fi
     else
-        echo "  [i] FIX_MQTT_DELIVERY=0 -> arreglo de envío MQTT NO aplicado"
-    fi
-
-    # Parche: publicación MQTT por DOS CAMINOS (vivo directo + recuperación en
-    # paralelo). El dato actual no espera detrás de la cola; la cola acumula el
-    # máximo sin perder datos. Sin duplicados gracias a la ingestión idempotente.
-    # Opción del script: por defecto sí; desactivar con FIX_MQTT_TWOPATH=0.
-    if [ "${FIX_MQTT_TWOPATH:-1}" = "1" ]; then
-        TWOPATH_PATH=""
-        for candidato in /opt/rpi-azure-bridge/fix_mqtt_twopath.py \
-                         /home/gesinne/rpi-azure-bridge/fix_mqtt_twopath.py \
-                         /home/pi/rpi-azure-bridge/fix_mqtt_twopath.py \
-                         "$(dirname "$0")/fix_mqtt_twopath.py"; do
-            if [ -f "$candidato" ]; then
-                TWOPATH_PATH="$candidato"
-                break
-            fi
-        done
-        if [ -n "$TWOPATH_PATH" ]; then
-            TWOPATH_OUT=$(python3 "$TWOPATH_PATH" "$NODERED_DIR/flows.json" --apply 2>/dev/null | grep -oE 'applied=[0-9]+' | cut -d= -f2)
-            TWOPATH_OUT=${TWOPATH_OUT:-0}
-            if [ "$TWOPATH_OUT" -gt 0 ]; then
-                echo "  [OK] Publicación MQTT por dos caminos APLICADA"
-            else
-                echo "  [i] Dos caminos MQTT ya estaba aplicado"
-            fi
-        else
-            echo "  [!] fix_mqtt_twopath.py no encontrado; no se aplica dos caminos"
-        fi
-    else
-        echo "  [i] FIX_MQTT_TWOPATH=0 -> dos caminos MQTT NO aplicado"
+        echo "  [i] Mejoras MQTT no aplicadas (opción; luego con ./mejorar_mqtt.sh)"
     fi
 
     echo "  [~] Parando Node-RED..."
