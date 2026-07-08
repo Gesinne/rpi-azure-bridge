@@ -31,6 +31,7 @@ buscar() {
 }
 DELIVERY="$(buscar fix_mqtt_delivery.py || true)"
 TWOPATH="$(buscar fix_mqtt_twopath.py || true)"
+BORRAR="$(buscar fix_borrar_cola.py || true)"
 
 # Localizar el flows.json de Node-RED
 FLOW=""
@@ -47,11 +48,13 @@ fi
 MODE="${1:-}"
 
 if [ "$MODE" = "--check" ]; then
-    D=1; T=1
+    D=1; T=1; B=1
     python3 "$DELIVERY" "$FLOW" --check && D=0 || true
     python3 "$TWOPATH"  "$FLOW" --check && T=0 || true
-    echo "  Envío por id : $([ $D -eq 0 ] && echo APLICADO || echo NO)"
-    echo "  Dos caminos  : $([ $T -eq 0 ] && echo APLICADO || echo NO)"
+    [ -n "$BORRAR" ] && { python3 "$BORRAR" "$FLOW" --check && B=0 || true; }
+    echo "  Envío por id  : $([ $D -eq 0 ] && echo APLICADO || echo NO)"
+    echo "  Dos caminos   : $([ $T -eq 0 ] && echo APLICADO || echo NO)"
+    echo "  Botón borrar  : $([ $B -eq 0 ] && echo APLICADO || echo NO)"
     exit 0
 fi
 
@@ -64,6 +67,10 @@ D_OUT=$(python3 "$DELIVERY" "$FLOW" --apply 2>/dev/null | grep -oE 'applied=[0-9
 echo "  [OK] Envío garantizado por id   (applied=${D_OUT:-0})"
 T_OUT=$(python3 "$TWOPATH" "$FLOW" --apply 2>/dev/null | grep -oE 'applied=[0-9]+' | cut -d= -f2 || echo 0)
 echo "  [OK] Publicación por dos caminos (applied=${T_OUT:-0})"
+if [ -n "$BORRAR" ]; then
+    B_OUT=$(python3 "$BORRAR" "$FLOW" --apply 2>/dev/null | grep -oE 'applied=[0-9]+' | cut -d= -f2 || echo 0)
+    echo "  [OK] Botón 'Borrar cola' arreglado (applied=${B_OUT:-0})"
+fi
 
 if [ "$MODE" = "--no-restart" ]; then
     echo "  [i] Node-RED NO reiniciado (--no-restart). La mejora se aplica al reiniciar."
