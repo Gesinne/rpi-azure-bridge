@@ -634,6 +634,7 @@ while true; do
     echo "  7) Cambiar velocidad Modbus (placas)"
     echo "  8) Rescatar bus Modbus partido"
     echo "  9) Cambiar baudrate Node-RED (solo flows.json)"
+    echo " 10) Mejorar MQTT (envío por id + dos caminos)"
     # Opciones de diagnóstico Modbus (ocultas — el código de los cases sigue activo)
     # echo " 10) Buscar placa (escanear bus Modbus)"
     # echo " 11) Buscar placa con paridades alternativas (E/O, 2 stopbits)"
@@ -644,7 +645,7 @@ while true; do
     # echo "  R) Reiniciar puerto serie RS485 (recuperar bus colgado)"
     echo "  0) Salir"
     echo ""
-    read -p "  Opción [0-9]: " OPTION
+    read -p "  Opción [0-10]: " OPTION
 
     case $OPTION in
         0)
@@ -1751,6 +1752,27 @@ if chronos_id:
                 fi
             fi
             
+            volver_menu
+            ;;
+        10)
+            # Mejorar MQTT (envío por id + dos caminos) — opción explícita
+            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            if [ -f "$SCRIPT_DIR/mejorar_mqtt.sh" ]; then
+                bash "$SCRIPT_DIR/mejorar_mqtt.sh"
+            elif [ -f "$INSTALL_DIR/mejorar_mqtt.sh" ]; then
+                bash "$INSTALL_DIR/mejorar_mqtt.sh"
+            else
+                MQTT_SCRIPT_URL="https://raw.githubusercontent.com/Gesinne/rpi-azure-bridge/main/mejorar_mqtt.sh"
+                TEMP_MQTT_SCRIPT="/tmp/mejorar_mqtt_$$.sh"
+                if curl -sL "$MQTT_SCRIPT_URL" -o "$TEMP_MQTT_SCRIPT" 2>/dev/null || wget -qO "$TEMP_MQTT_SCRIPT" "$MQTT_SCRIPT_URL" 2>/dev/null; then
+                    chmod +x "$TEMP_MQTT_SCRIPT"
+                    bash "$TEMP_MQTT_SCRIPT"
+                    rm -f "$TEMP_MQTT_SCRIPT"
+                else
+                    echo "  [X] No se pudo encontrar mejorar_mqtt.sh"
+                fi
+            fi
+
             volver_menu
             ;;
         4)
