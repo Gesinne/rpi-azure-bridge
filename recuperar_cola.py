@@ -18,6 +18,7 @@ Si da MemoryError (Pi con poca RAM), para Node-RED antes:
     sudo systemctl start nodered
 """
 import json
+import re
 import sys
 import os
 import shutil
@@ -27,6 +28,26 @@ from collections import defaultdict
 CTX_DEFAULT = os.path.expanduser("~/.node-red/context/9a8e08df43087b8a/flow.json")
 HOST = "57.129.130.106"
 PORT = "1883"
+
+
+def read_creds(user_ov, pass_ov):
+    """Lee MQTT_USER/MQTT_PASS de fix_mqtt_credentials.sh (junto al script o en el
+    repo del bridge) para autenticar contra el broker sin teclear nada."""
+    if user_ov and pass_ov:
+        return user_ov, pass_ov
+    here = os.path.dirname(os.path.abspath(__file__))
+    cands = [here, "/opt/rpi-azure-bridge",
+             os.path.expanduser("~/rpi-azure-bridge"),
+             "/home/gesinne/rpi-azure-bridge", "/home/pi/rpi-azure-bridge"]
+    for d in cands:
+        f = os.path.join(d, "fix_mqtt_credentials.sh")
+        if os.path.exists(f):
+            txt = open(f, errors="ignore").read()
+            mu = re.search(r'MQTT_USER\s*=\s*"([^"]*)"', txt)
+            mp = re.search(r'MQTT_PASS\s*=\s*"([^"]*)"', txt)
+            if mu and mp:
+                return user_ov or mu.group(1), pass_ov or mp.group(1)
+    return user_ov, pass_ov
 
 
 def find_queue(obj):
@@ -58,6 +79,10 @@ def main():
     dry = "--dry" in sys.argv
     host = arg("--host", HOST)
     port = arg("--port", PORT)
+    user, pw = read_creds(arg("--user", None), arg("--pass", None))
+    if not (user and pw):
+        print("[!] Sin credenciales MQTT (no encontré fix_mqtt_credentials.sh). "
+              "Pásalas con --user U --pass P si el broker las pide.")
 
     if not os.path.exists(path):
         print(f"[X] No existe {path}")
@@ -112,10 +137,12 @@ def main():
         with open(tmp, "w") as f:
             f.write("\n".join(ps) + "\n")
         print(f"[~] Publicando {len(ps)} -> {t} ...")
-        r = subprocess.run(
-            ["mosquitto_pub", "-h", host, "-p", port, "-t", t, "-q", "1", "-l"],
-            stdin=open(tmp),
-        )
+        cmd = ["mosquitto_pub", "-h", host, "-p", port, "-t", t, "-q", "1", "-l"]
+        if user:
+            cmd += ["-u", user]
+        if pw:
+            cmd += ["-P", pw]
+        r = subprocess.run(cmd, stdin=open(tmp))
         os.remove(tmp)
         if r.returncode == 0:
             total += len(ps)
