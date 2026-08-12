@@ -695,6 +695,7 @@ while true; do
             echo "    13) Recuperar baudrate/framing — broadcast multi-config"
             echo "    14) Sniffer pasivo del bus Modbus"
             echo "    15) Leer placa con raw serial (sin pymodbus, timeout largo)"
+            echo "    17) Cambiar velocidad SIN leer (broadcast a ciegas, sin saber la actual)"
             echo ""
             continue
             ;;
@@ -7384,6 +7385,113 @@ EOFRAW
             echo ""
             echo "  [OK] Puerto reiniciado. Espera ~15s a que Node-RED termine"
             echo "       de cargar el flow y empiece a leer las placas."
+            volver_menu
+            ;;
+        17)
+            # Cambiar velocidad Modbus A CIEGAS (broadcast reg 61, sin leer la actual)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Cambiar velocidad SIN leer (broadcast a ciegas)"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Manda reg 61 = <valor> a TODAS las placas (broadcast) en las 3"
+            echo "  velocidades. Útil cuando una placa NO responde y no se sabe en qué"
+            echo "  velocidad está: vaya donde vaya, recibe el cambio."
+            echo ""
+            echo "    0) 115200"
+            echo "    1) 57600"
+            echo "    2) 38400"
+            echo ""
+            read -p "  Nueva velocidad [0/1/2] (ENTER cancela): " NEWVEL17
+            case "$NEWVEL17" in
+                0) NB17="115200" ;;
+                1) NB17="57600" ;;
+                2) NB17="38400" ;;
+                *) echo "  [~] Cancelado"; volver_menu; continue ;;
+            esac
+            echo ""
+            read -p "  ¿Broadcast reg61=$NEWVEL17 ($NB17) a TODAS las placas? [s/N]: " C17
+            if [ "$C17" != "s" ] && [ "$C17" != "S" ]; then
+                echo "  [~] Cancelado"; volver_menu; continue
+            fi
+            echo ""
+            echo "  [!] Parando servicios temporalmente..."
+            sudo systemctl stop nodered 2>/dev/null
+            docker stop gesinne-rpi >/dev/null 2>&1 || true
+            if kiosk_is_running 2>/dev/null; then kiosk_stop 2>/dev/null || true; fi
+            sleep 3
+            echo "  [OK] Servicios parados"
+            echo ""
+            SCAN_PORT=""
+            for port in /dev/ttyAMA0 /dev/serial0 /dev/ttyUSB0 /dev/ttyACM0 /dev/ttyS0; do
+                [ -e "$port" ] && SCAN_PORT="$port" && break
+            done
+            if [ -z "$SCAN_PORT" ]; then
+                echo "  [X] No se encontró puerto serie"
+                sudo systemctl start nodered 2>/dev/null
+                docker start gesinne-rpi >/dev/null 2>&1 || true
+                volver_menu; continue
+            fi
+            python3 << EOFVEL17
+import serial, struct, time
+PUERTO = "$SCAN_PORT"
+TARGET = $NEWVEL17
+def crc16(d):
+    c = 0xFFFF
+    for b in d:
+        c ^= b
+        for _ in range(8):
+            c = ((c >> 1) ^ 0xA001) if (c & 1) else (c >> 1)
+    return c
+def wr(ser, sl, reg, val):
+    pdu = struct.pack(">BBHH", sl, 6, reg, val)
+    ser.reset_input_buffer()
+    ser.write(pdu + struct.pack("<H", crc16(pdu)))
+    ser.flush()
+    time.sleep(0.12)
+NB = {0: '115200', 1: '57600', 2: '38400'}[TARGET]
+print("  Broadcast reg61=%d (%s) a TODAS las placas, en las 3 velocidades..." % (TARGET, NB))
+for baud in (115200, 57600, 38400):
+    try:
+        ser = serial.Serial(PUERTO, baudrate=baud, bytesize=8, parity='N', stopbits=1, timeout=0.3)
+    except Exception as e:
+        print("    [!] no abre a %d: %s" % (baud, e)); continue
+    try:
+        ser.break_condition = True; time.sleep(0.05); ser.break_condition = False
+    except Exception: pass
+    ser.reset_input_buffer(); time.sleep(0.1)
+    # Habilitar config + cambiar velocidad (x3 por si se pierde alguna trama)
+    for _ in range(3):
+        wr(ser, 0, 30, 43981)   # habilitar tarjeta
+        wr(ser, 0, 40, 47818)   # habilitar config
+        wr(ser, 0, 61, TARGET)  # nueva velocidad
+    ser.close()
+    print("    · enviado a %d baud" % baud)
+    time.sleep(0.2)
+# Cache de baudrate para que los servicios reconecten a la nueva velocidad
+try:
+    import os as _os, json as _json, glob as _glob
+    from datetime import datetime as _dt
+    _p = None
+    for _d in sorted(_glob.glob('/home/*/config')):
+        if _os.path.isdir(_d): _p = _os.path.join(_d, 'baudrate_cache.json'); break
+    if _p is None: _p = '/tmp/baudrate_cache.json'
+    _os.makedirs(_os.path.dirname(_p), exist_ok=True)
+    with open(_p, 'w') as _f:
+        _json.dump({'port': PUERTO, 'baudrate': int(NB), 'ts': _dt.utcnow().isoformat() + 'Z'}, _f, indent=2)
+    print("  [OK] Cache de baudrate actualizada a %s" % NB)
+except Exception as e:
+    print("  [!] no se pudo actualizar la cache:", e)
+print("")
+print("  [OK] Broadcast completado. Todas las placas deberían estar a %s baud." % NB)
+print("       Si Node-RED tiene el baudrate FIJO en el flow, usa la opción 9")
+print("       (Cambiar baudrate Node-RED) para dejarlo en %s." % NB)
+EOFVEL17
+            echo ""
+            echo "  [~] Reiniciando servicios..."
+            sudo systemctl start nodered 2>/dev/null
+            docker start gesinne-rpi >/dev/null 2>&1 || true
+            echo "  [OK] Servicios reiniciados"
             volver_menu
             ;;
         p|P)
