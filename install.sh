@@ -272,12 +272,33 @@ INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
 OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
 
 # Aviso por email si CAMBIÓ una placa (Nº serie reg 41) o el FW (reg 100) tras un
-# reinicio. @reboot: espera a que arranque el sistema, para servicios, lee las 3
-# placas, compara con el último snapshot y, si hay cambio, manda email (enviar_email.py).
+# reinicio. Servicio systemd que corre MUY PRONTO — ANTES de docker/nodered (así el
+# puerto /dev/ttyAMA0 está libre, sin parar nada) y DESPUÉS de la red (para el email).
+# Lee las 3 placas, compara con el snapshot y, si hay cambio, manda email.
 AVISO_PLACA="$INSTALL_DIR/aviso_cambio_placa.py"
-if [ -f "$AVISO_PLACA" ] && ! crontab -l 2>/dev/null | grep -q "aviso_cambio_placa"; then
-    (crontab -l 2>/dev/null; echo "@reboot sleep 90 && /usr/bin/python3 $AVISO_PLACA >> /var/log/aviso_cambio_placa.log 2>&1") | crontab -
-    echo "  [OK] Aviso de cambio de placa/FW tras reinicio: instalado (@reboot)"
+AVISO_UNIT="/etc/systemd/system/aviso-cambio-placa.service"
+# Limpia el crontab antiguo si una versión previa lo dejó (ahora es systemd).
+crontab -l 2>/dev/null | grep -v "aviso_cambio_placa" | crontab - 2>/dev/null || true
+if [ -f "$AVISO_PLACA" ]; then
+    cat > "$AVISO_UNIT" <<UNIT
+[Unit]
+Description=Aviso cambio de placa/FW tras reinicio (Gesinne)
+After=network-online.target
+Wants=network-online.target
+Before=docker.service nodered.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 $AVISO_PLACA
+StandardOutput=append:/var/log/aviso_cambio_placa.log
+StandardError=append:/var/log/aviso_cambio_placa.log
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    systemctl daemon-reload 2>/dev/null
+    systemctl enable aviso-cambio-placa.service 2>/dev/null
+    echo "  [OK] Aviso de cambio de placa/FW tras reinicio: instalado (antes de docker/nodered)"
 fi
 
 # Función para mostrar config de Node-RED

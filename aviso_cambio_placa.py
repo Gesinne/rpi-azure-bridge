@@ -9,13 +9,17 @@ de responder / aparece), envía un email a través de enviar_email.py.
 
 - Lector RAW serial (pyserial + CRC16), el mismo método probado del menú
   "Leer placa con raw serial" — no depende de pymodbus.
-- Para leer necesita el puerto: para Node-RED + contenedor gesinne-rpi, lee, y los
-  vuelve a arrancar. Un único hueco corto por reinicio (infrecuente).
+- Se lanza por systemd MUY PRONTO en el arranque, ANTES de docker/nodered, así el
+  puerto /dev/ttyAMA0 está libre (lo coge el contenedor gesinne-rpi) y NO hay que
+  parar Node-RED — se lee rápido y se sigue. (After=network-online → email OK.)
 - El primer arranque solo guarda el snapshot (no avisa).
+- Salvaguardas anti-falsos-positivos: si NINGUNA placa responde (contención/boot
+  raro) no avisa ni pisa el snapshot; "deja de responder" solo avisa si alguna otra
+  fase SÍ respondió (prueba de que el bus va).
 
 Snapshot: /var/lib/gesinne/placas_snapshot.json (override con env SNAP_FILE).
 """
-import sys, os, time, json, subprocess, socket
+import sys, os, time, json, socket
 
 SNAP = os.environ.get('SNAP_FILE', '/var/lib/gesinne/placas_snapshot.json')
 BRIDGE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,14 +29,6 @@ try:
     import serial
 except ImportError:
     print("[aviso] pyserial no instalado"); sys.exit(0)
-
-
-def svc(action):
-    """Para/arranca Node-RED y el contenedor para liberar/soltar el puerto serie."""
-    subprocess.run(['systemctl', action, 'nodered'],
-                   stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-    subprocess.run(['docker', action, 'gesinne-rpi'],
-                   stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
 
 def crc16(data):
@@ -133,14 +129,16 @@ def diff(prev, actual):
 
 
 def main():
-    svc('stop')
-    time.sleep(3)
-    try:
-        actual = leer_placas()
-    finally:
-        svc('start')
+    # Se lee directamente: por el orden systemd (antes de docker/nodered) el puerto
+    # está libre y no hay que parar nada.
+    actual = leer_placas()
     if actual is None:
         print("[aviso] sin puerto serie"); return
+
+    # Salvaguarda: si NINGUNA placa respondió, no es fiable (contención/arranque) →
+    # no avisar ni pisar el snapshot bueno.
+    if not any(actual.get(L) for L in ('L1', 'L2', 'L3')):
+        print("[aviso] ninguna placa respondió — no se toca el snapshot ni se avisa"); return
 
     prev = None
     try:
@@ -175,10 +173,18 @@ def main():
 
     try:
         from enviar_email import enviar_email
-        enviar_email(cuerpo, asunto="⚠️ Cambio de placa/FW tras reinicio · %s" % equipo, numero_serie=equipo)
-        print("[aviso] email enviado:", cambios)
     except Exception as e:
-        print("[aviso] fallo enviando email:", e)
+        print("[aviso] no se pudo importar enviar_email:", e); return
+    # Reintentos: arrancamos pronto en el boot, la red puede tardar en estar lista.
+    asunto = "⚠️ Cambio de placa/FW tras reinicio · %s" % equipo
+    for intento in range(1, 6):
+        try:
+            enviar_email(cuerpo, asunto=asunto, numero_serie=equipo)
+            print("[aviso] email enviado:", cambios); return
+        except Exception as e:
+            print("[aviso] email intento %d falló: %s" % (intento, e))
+            time.sleep(15)
+    print("[aviso] no se pudo enviar el email tras varios intentos")
 
 
 if __name__ == '__main__':
