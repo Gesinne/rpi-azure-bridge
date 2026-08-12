@@ -648,6 +648,26 @@ while true; do
     read -p "  Opción [0-10]: " OPTION
 
     case $OPTION in
+        # ── Acceso OCULTO a las herramientas de recuperación del bus Modbus ──
+        # No aparecen en el menú. Se abren tecleando la palabra clave "recuperar_patry".
+        # Muestra los números; teclea el número para lanzar la herramienta (cases 11-16).
+        recuperar_patry|RECUPERAR_PATRY|recuperar-patry|recuperar)
+            echo ""
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  🔧 Recuperación de placas (modo Patry — oculto)"
+            echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  Diagnóstico/recuperación del bus Modbus. Teclea el número:"
+            echo ""
+            echo "    16) Buscar placa (escanear bus — todos los baudrates y slaves)"
+            echo "    11) Buscar placa — paridades alternativas (E/O, 2 stopbits)"
+            echo "    12) Recuperar placa muda — broadcast BYPASS"
+            echo "    13) Recuperar baudrate/framing — broadcast multi-config"
+            echo "    14) Sniffer pasivo del bus Modbus"
+            echo "    15) Leer placa con raw serial (sin pymodbus, timeout largo)"
+            echo ""
+            continue
+            ;;
         0)
             echo ""
             echo "  [B] ¡Hasta luego!"
@@ -6128,8 +6148,9 @@ except Exception as e:
             sudo bash "$FIRMWARE_SCRIPT" nodered-baud
             volver_menu
             ;;
-        10)
+        16)
             # Buscar placa - escanea bus Modbus en todos los baudrates y slave IDs
+            # (era la opción 10, que colisionaba con "Mejorar MQTT" y quedaba muerta)
             echo ""
             echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Buscar placa (escaneo del bus Modbus)"
