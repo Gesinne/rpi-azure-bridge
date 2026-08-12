@@ -271,6 +271,15 @@ fi
 INSTALL_DIR="/home/$(logname 2>/dev/null || echo 'pi')/rpi-azure-bridge"
 OVERRIDE_FILE="$INSTALL_DIR/docker-compose.override.yml"
 
+# Aviso por email si CAMBIÓ una placa (Nº serie reg 41) o el FW (reg 100) tras un
+# reinicio. @reboot: espera a que arranque el sistema, para servicios, lee las 3
+# placas, compara con el último snapshot y, si hay cambio, manda email (enviar_email.py).
+AVISO_PLACA="$INSTALL_DIR/aviso_cambio_placa.py"
+if [ -f "$AVISO_PLACA" ] && ! crontab -l 2>/dev/null | grep -q "aviso_cambio_placa"; then
+    (crontab -l 2>/dev/null; echo "@reboot sleep 90 && /usr/bin/python3 $AVISO_PLACA >> /var/log/aviso_cambio_placa.log 2>&1") | crontab -
+    echo "  [OK] Aviso de cambio de placa/FW tras reinicio: instalado (@reboot)"
+fi
+
 # Función para mostrar config de Node-RED
 show_nodered_config() {
     USER_HOME="/home/$(logname 2>/dev/null || echo 'pi')"
