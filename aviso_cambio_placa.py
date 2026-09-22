@@ -19,7 +19,7 @@ de responder / aparece), envía un email a través de enviar_email.py.
 
 Snapshot: /var/lib/gesinne/placas_snapshot.json (override con env SNAP_FILE).
 """
-import sys, os, time, json, socket
+import sys, os, time, json, socket, glob
 
 SNAP = os.environ.get('SNAP_FILE', '/var/lib/gesinne/placas_snapshot.json')
 BRIDGE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -83,6 +83,22 @@ def find_port():
     for p in ['/dev/ttyAMA0', '/dev/serial0', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyS0']:
         if os.path.exists(p):
             return p
+    return None
+
+
+def serie_equipo():
+    """Nº de serie del EQUIPO Gesinne (p.ej. 00089), leido de equipo_config.json
+    (mismo fichero que usa el bridge para el s_n del MQTT). Sirve para identificar
+    en el correo de QUE equipo se trata, no solo el hostname de la RPi. None si no
+    se encuentra."""
+    try:
+        for f in glob.glob('/home/*/config/equipo_config.json'):
+            with open(f) as cf:
+                s = (json.load(cf) or {}).get('serie')
+            if s:
+                return str(s)
+    except Exception:
+        pass
     return None
 
 
@@ -162,8 +178,11 @@ def main():
         print("[aviso] sin cambios de placa/FW"); return
 
     equipo = socket.gethostname()
-    cuerpo = ("Tras el reinicio de la RPi (%s) se han detectado cambios en las placas:\n\n"
-              % equipo)
+    serie = serie_equipo()
+    ident = ("equipo %s" % serie) if serie else ("RPi %s" % equipo)
+    cabecera_rpi = ("RPi %s%s" % (equipo, (" · equipo S/N %s" % serie) if serie else ""))
+    cuerpo = ("Tras el reinicio de la %s se han detectado cambios en las placas:\n\n"
+              % cabecera_rpi)
     cuerpo += "\n".join("  - " + c for c in cambios)
     cuerpo += "\n\nEstado actual (Nº serie / FW por fase):\n"
     for L in ('L1', 'L2', 'L3'):
@@ -176,10 +195,10 @@ def main():
     except Exception as e:
         print("[aviso] no se pudo importar enviar_email:", e); return
     # Reintentos: arrancamos pronto en el boot, la red puede tardar en estar lista.
-    asunto = "⚠️ Cambio de placa/FW tras reinicio · %s" % equipo
+    asunto = "⚠️ Cambio de placa/FW tras reinicio · %s" % ident
     for intento in range(1, 6):
         try:
-            enviar_email(cuerpo, asunto=asunto, numero_serie=equipo)
+            enviar_email(cuerpo, asunto=asunto, numero_serie=(serie or equipo))
             print("[aviso] email enviado:", cambios); return
         except Exception as e:
             print("[aviso] email intento %d falló: %s" % (intento, e))
