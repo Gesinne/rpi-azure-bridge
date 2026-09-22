@@ -289,6 +289,13 @@ Before=docker.service nodered.service
 
 [Service]
 Type=oneshot
+# Autoactualización: antes de leer las placas baja la última versión del repo
+# (la red ya está lista por After=network-online). Tolerante a fallos: el guión
+# inicial hace que un error (sin red, o repo sin .git porque vino por tar.gz) se
+# ignore y se ejecute la versión local. safe.directory evita el "dubious
+# ownership" al hacer git como root sobre el repo del usuario; timeout evita
+# que un git colgado bloquee el arranque.
+ExecStartPre=-/usr/bin/timeout 40 /usr/bin/git -c safe.directory=$INSTALL_DIR -C $INSTALL_DIR pull --ff-only
 ExecStart=/usr/bin/python3 $AVISO_PLACA
 StandardOutput=append:/var/log/aviso_cambio_placa.log
 StandardError=append:/var/log/aviso_cambio_placa.log
