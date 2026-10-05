@@ -62,29 +62,92 @@ if [ "$1" != "--updated" ]; then
     USER_HOME="/home/$(logname 2>/dev/null || echo ${SUDO_USER:-$USER})"
     INSTALL_DIR="$USER_HOME/rpi-azure-bridge"
 
-    download_repo_fallback() {
+    REPO_URL="https://github.com/Gesinne/rpi-azure-bridge.git"
+    TARBALL_URL="https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main"
+
+    # Corte por inactividad: en 4G flojo, git sin esto se queda colgado
+    # indefinidamente en vez de fallar y dejar paso al siguiente método.
+    GIT_SLOW=(-c http.lowSpeedLimit=100 -c http.lowSpeedTime=120)
+
+    # Las descargas van SIEMPRE a un temporal y solo sustituyen a
+    # $INSTALL_DIR cuando han salido bien. Antes se hacía "rm -rf" del
+    # destino ANTES de descargar, así que un corte de red a mitad —el pan
+    # de cada día en las placas 4G— dejaba el equipo sin software.
+    download_repo_clone() {
         local dest_dir="$1"
-        local tmp_tgz="/tmp/rpi_azure_bridge_${$}.tgz"
-        rm -rf "$dest_dir" 2>/dev/null || true
-        mkdir -p "$dest_dir"
-        if curl -fsSL "https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main" -o "$tmp_tgz" 2>/dev/null \
-           || wget -qO "$tmp_tgz" "https://codeload.github.com/Gesinne/rpi-azure-bridge/tar.gz/refs/heads/main" 2>/dev/null; then
-            if tar -xzf "$tmp_tgz" -C "$dest_dir" --strip-components=1 2>/dev/null; then
-                rm -f "$tmp_tgz" 2>/dev/null || true
-                return 0
+        local tmp_dir="/tmp/rpi_azure_bridge_clone_$$"
+        rm -rf "$tmp_dir" 2>/dev/null || true
+        # --depth 1: el historial son ~20 MB y aquí no se usa para nada.
+        # A 3 KB/s (SIM estrangulada) clonarlo entero son ~2 horas.
+        if timeout 900 git "${GIT_SLOW[@]}" clone --depth 1 "$REPO_URL" "$tmp_dir" \
+           && [ -f "$tmp_dir/install.sh" ]; then
+            rm -rf "$dest_dir" 2>/dev/null || true
+            mv "$tmp_dir" "$dest_dir" && return 0
+        fi
+        rm -rf "$tmp_dir" 2>/dev/null || true
+        return 1
+    }
+
+    # Último recurso: tarball (~200 KB, sin historial). Deja el directorio
+    # SIN .git, y firmware.sh / actualizar_flow.sh hacen "git pull" sobre él,
+    # asi que va DESPUES del clone, no antes.
+    download_repo_tarball() {
+        local dest_dir="$1"
+        local tmp_tgz="/tmp/rpi_azure_bridge_$$.tgz"
+        local tmp_dir="/tmp/rpi_azure_bridge_$$.d"
+        rm -rf "$tmp_tgz" "$tmp_dir" 2>/dev/null || true
+        mkdir -p "$tmp_dir"
+        if timeout 600 curl -fsSL "$TARBALL_URL" -o "$tmp_tgz" 2>/dev/null \
+           || timeout 600 wget -qO "$tmp_tgz" "$TARBALL_URL" 2>/dev/null; then
+            if tar -xzf "$tmp_tgz" -C "$tmp_dir" --strip-components=1 2>/dev/null \
+               && [ -f "$tmp_dir/install.sh" ]; then
+                rm -rf "$dest_dir" 2>/dev/null || true
+                mv "$tmp_dir" "$dest_dir" && { rm -f "$tmp_tgz"; return 0; }
             fi
         fi
-        rm -f "$tmp_tgz" 2>/dev/null || true
+        rm -rf "$tmp_tgz" "$tmp_dir" 2>/dev/null || true
         return 1
     }
 
     echo ""
     echo "  [~] Obteniendo última versión..."
 
-    rm -rf "$INSTALL_DIR" 2>/dev/null || true
-    if ! git clone https://github.com/Gesinne/rpi-azure-bridge.git "$INSTALL_DIR" 2>/dev/null; then
-        if ! download_repo_fallback "$INSTALL_DIR"; then
+    REPO_OK=0
+
+    # 1) Si ya hay repo, actualización incremental: unos KB en vez de MB.
+    #    Es el caso del 99% de las placas, ya instaladas.
+    if [ -d "$INSTALL_DIR/.git" ]; then
+        # main o master: hay placas con clones antiguos (firmware.sh hace lo mismo).
+        for BR in main master; do
+            if timeout 600 git "${GIT_SLOW[@]}" -C "$INSTALL_DIR" fetch --depth 1 origin "$BR" 2>/dev/null \
+               && git -C "$INSTALL_DIR" reset --hard "origin/$BR" >/dev/null 2>&1; then
+                REPO_OK=1
+                echo "  [OK] Repo actualizado"
+                break
+            fi
+        done
+        [ "$REPO_OK" -eq 0 ] && echo "  [!]  No se pudo actualizar el repo existente, se intenta descarga completa"
+    fi
+
+    # 2) Clone superficial.  3) Tarball.  Los dos, a temporal.
+    if [ "$REPO_OK" -eq 0 ] && download_repo_clone "$INSTALL_DIR"; then
+        REPO_OK=1
+        echo "  [OK] Repo descargado"
+    fi
+    if [ "$REPO_OK" -eq 0 ] && download_repo_tarball "$INSTALL_DIR"; then
+        REPO_OK=1
+        echo "  [OK] Repo descargado (sin historial)"
+    fi
+
+    # 4) Sin red: seguir con la copia que ya tiene la placa en vez de
+    #    abortar. Antes se salía con exit 1 y el menú era inalcanzable.
+    if [ "$REPO_OK" -eq 0 ]; then
+        if [ -f "$INSTALL_DIR/install.sh" ]; then
+            echo "  [!]  Sin acceso a github.com: se usa la copia local de la placa"
+        else
             echo "  [X] No se pudo descargar el software (sin acceso a github.com)"
+            echo "      Si la placa ya tenía el repo, ve directo al menú con:"
+            echo "      sudo bash \$HOME/rpi-azure-bridge/install.sh --updated"
             exit 1
         fi
     fi
