@@ -67,7 +67,10 @@ if [ "$1" != "--updated" ]; then
 
     # Corte por inactividad: en 4G flojo, git sin esto se queda colgado
     # indefinidamente en vez de fallar y dejar paso al siguiente método.
-    GIT_SLOW=(-c http.lowSpeedLimit=100 -c http.lowSpeedTime=120)
+    # safe.directory: el repo lo clonó root (esto va con sudo) y git aborta con
+    # "dubious ownership" en cuanto el dueño del directorio no coincide con
+    # quien ejecuta. Sin esto, el fetch incremental falla y se cae al clone.
+    GIT_SLOW=(-c http.lowSpeedLimit=100 -c http.lowSpeedTime=120 -c safe.directory="$INSTALL_DIR")
 
     # Las descargas van SIEMPRE a un temporal y solo sustituyen a
     # $INSTALL_DIR cuando han salido bien. Antes se hacía "rm -rf" del
@@ -120,7 +123,7 @@ if [ "$1" != "--updated" ]; then
         # main o master: hay placas con clones antiguos (firmware.sh hace lo mismo).
         for BR in main master; do
             if timeout 600 git "${GIT_SLOW[@]}" -C "$INSTALL_DIR" fetch --depth 1 origin "$BR" 2>/dev/null \
-               && git -C "$INSTALL_DIR" reset --hard "origin/$BR" >/dev/null 2>&1; then
+               && git "${GIT_SLOW[@]}" -C "$INSTALL_DIR" reset --hard "origin/$BR" >/dev/null 2>&1; then
                 REPO_OK=1
                 echo "  [OK] Repo actualizado"
                 break
