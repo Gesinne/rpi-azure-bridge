@@ -11,7 +11,16 @@
 #
 
 # Función de limpieza al salir (interrupción, error, etc.)
+# Estado de los servicios al arrancar, para poder restaurarlos si el script
+# muere a mitad: varias opciones paran Node-RED para liberar el puerto serie y,
+# si se corta el túnel 4G ahí, la placa deja de enviar datos.
+NR_WAS_ACTIVE=0
+systemctl is-active --quiet nodered 2>/dev/null && NR_WAS_ACTIVE=1
+DK_WAS_ACTIVE=0
+docker ps --format '{{.Names}}' 2>/dev/null | grep -qx gesinne-rpi && DK_WAS_ACTIVE=1
+
 cleanup_on_exit() {
+    local rc=${1:-0}
     # Housekeeping silencioso: ajustar permisos de node_modules tras
     # cualquier instalacion/cambio. No mostramos nada al usuario.
     for d in /home/*/.node-red/node_modules; do
@@ -20,10 +29,30 @@ cleanup_on_exit() {
             sudo chown -R "$OWNER" "$d" 2>/dev/null || true
         fi
     done
+    # Salida limpia: el script ya ha dejado los servicios como quería.
+    [ "$rc" -eq 0 ] && return 0
+    local hecho=0
+    if [ "$NR_WAS_ACTIVE" -eq 1 ] && ! systemctl is-active --quiet nodered 2>/dev/null; then
+        sudo systemctl start nodered 2>/dev/null && hecho=1
+    fi
+    if [ "$DK_WAS_ACTIVE" -eq 1 ] && ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx gesinne-rpi; then
+        docker start gesinne-rpi >/dev/null 2>&1 && hecho=1
+    fi
+    if [ "$hecho" -eq 1 ]; then
+        echo ""
+        echo "  [!]  El script ha terminado antes de tiempo: se han rearrancado los"
+        echo "       servicios para que la placa siga enviando datos."
+    fi
 }
 
 # Capturar señales de interrupción (Ctrl+C, cierre terminal, etc.)
-trap cleanup_on_exit EXIT
+trap 'cleanup_on_exit $?' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+# Ctrl+Z dejaría el script suspendido con Node-RED parado y sin avisar: se
+# ignora. Para abortar, Ctrl+C, que sí restaura los servicios.
+trap '' TSTP
 
 # Si se ejecuta desde curl/pipe, descargar y ejecutar localmente
 if [ ! -t 0 ] && [ -z "$GESINNE_DOWNLOADED" ]; then

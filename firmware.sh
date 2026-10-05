@@ -21,6 +21,39 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# ── Red de seguridad: Node-RED y el contenedor se paran para liberar el puerto
+# serie. Si el script muere a mitad —túnel 4G caído, Ctrl+C, un error— la placa
+# se queda sin enviar datos hasta que alguien vuelva a entrar a arrancarla.
+NR_WAS_ACTIVE=0
+systemctl is-active --quiet nodered 2>/dev/null && NR_WAS_ACTIVE=1
+DK_WAS_ACTIVE=0
+docker ps --format '{{.Names}}' 2>/dev/null | grep -qx gesinne-rpi && DK_WAS_ACTIVE=1
+
+_restaura_servicios() {
+    local rc=$1
+    # Salida limpia: el script ya los ha dejado como quería.
+    [ "$rc" -eq 0 ] && return 0
+    local hecho=0
+    if [ "$NR_WAS_ACTIVE" -eq 1 ] && ! systemctl is-active --quiet nodered 2>/dev/null; then
+        sudo systemctl start nodered 2>/dev/null && hecho=1
+    fi
+    if [ "$DK_WAS_ACTIVE" -eq 1 ] && ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx gesinne-rpi; then
+        docker start gesinne-rpi >/dev/null 2>&1 && hecho=1
+    fi
+    if [ "$hecho" -eq 1 ]; then
+        echo ""
+        echo "  [!]  El script ha terminado antes de tiempo: se han rearrancado los"
+        echo "       servicios para que la placa siga enviando datos."
+    fi
+}
+trap '_restaura_servicios $?' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+# Ctrl+Z dejaría el script suspendido con el bus tomado y Node-RED parado, sin
+# avisar a nadie: se ignora. Para abortar, Ctrl+C, que sí restaura.
+trap '' TSTP
+
 # Función para verificar parametrización
 verificar_parametrizacion() {
     echo ""
