@@ -16,6 +16,37 @@ echo ""
 CACHE_DIR="/opt/nodered-flows-cache"
 CREDS_FILE="/opt/nodered-flows-cache/.git_credentials"
 
+# ── Red de seguridad para Node-RED ────────────────────────────────────────
+# Este script para Node-RED a mitad y solo lo arranca al final, preguntando.
+# Si muere antes de llegar ahí —túnel 4G caído, Ctrl+C, un error con set -e—
+# la placa se queda sin enviar datos hasta que alguien vuelva a entrar.
+NR_WAS_ACTIVE=0
+systemctl is-active --quiet nodered 2>/dev/null && NR_WAS_ACTIVE=1
+
+_restaura_nodered() {
+    local rc=$1
+    [ "$NR_WAS_ACTIVE" -eq 1 ] || return 0
+    # Salida limpia: se respeta la decisión del usuario, que puede haber dicho
+    # que no quiere arrancarlo todavía.
+    [ "$rc" -eq 0 ] && return 0
+    systemctl is-active --quiet nodered 2>/dev/null && return 0
+    echo ""
+    echo "  [!]  El script ha terminado antes de tiempo con Node-RED parado."
+    echo "  [~] Arrancándolo para no dejar la placa sin enviar datos..."
+    if sudo systemctl start nodered 2>/dev/null; then
+        echo "  [OK] Node-RED arrancado"
+    else
+        echo "  [X] No se pudo: hazlo a mano con 'sudo systemctl start nodered'"
+    fi
+}
+trap '_restaura_nodered $?' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+# Ctrl+Z dejaría el script suspendido con Node-RED parado y sin avisar a nadie,
+# así que se ignora. Para abortar, Ctrl+C, que sí restaura el servicio.
+trap '' TSTP
+
 # Función para añadir credenciales de chronos-config
 crear_chronos_credentials() {
     NODERED_DIR="$1"
@@ -110,74 +141,95 @@ NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
 echo ""
 echo "  [v] Obteniendo versiones disponibles..."
 
-# Función para clonar/actualizar repo
+# Último stderr de git, para saber POR QUÉ ha fallado.
+GIT_ERR=""
+
+# ¿GitHub rechaza las credenciales, o simplemente no hay red? Distinguirlo es
+# lo que evita borrar un token bueno porque el 4G se ha caído.
+# GIT_TERMINAL_PROMPT=0 hace que git falle en vez de quedarse esperando el
+# usuario por teclado (en cron o Raspberry Pi Connect eso es un cuelgue eterno).
+es_fallo_de_credenciales() {
+    echo "$1" | grep -qiE "authentication failed|invalid username or password|could not read username|could not read password|repository not found|terminal prompts disabled|403|401"
+}
+
+# Clona a un temporal y solo sustituye la caché cuando ha salido bien: antes se
+# hacía "rm -rf" de la caché ANTES de clonar, así que un corte de red la perdía.
 clone_repo() {
-    # Preservar credenciales antes de borrar
     local saved_creds=""
     if [ -f "$CREDS_FILE" ]; then
-        saved_creds=$(cat "$CREDS_FILE")
+        saved_creds=$(sudo cat "$CREDS_FILE" 2>/dev/null || true)
     fi
-    
-    rm -rf "$CACHE_DIR"
-    sudo mkdir -p "$CACHE_DIR" 2>/dev/null
-    sudo chown $(whoami) "$CACHE_DIR" 2>/dev/null
-    
-    # Restaurar credenciales
+
+    local tmp_dir="/tmp/nodered_flows_$$"
+    rm -rf "$tmp_dir" 2>/dev/null || true
+
+    local rc=0
+    GIT_ERR=$(GIT_TERMINAL_PROMPT=0 timeout 600 git clone -q --depth 1 "$NODERED_REPO" "$tmp_dir" 2>&1) || rc=$?
+    if [ "$rc" -ne 0 ] || [ ! -d "$tmp_dir/.git" ]; then
+        rm -rf "$tmp_dir" 2>/dev/null || true
+        return 1
+    fi
+
+    sudo rm -rf "$CACHE_DIR"
+    sudo mkdir -p "$(dirname "$CACHE_DIR")" 2>/dev/null || true
+    sudo mv "$tmp_dir" "$CACHE_DIR"
+    sudo chown -R "$(whoami)" "$CACHE_DIR" 2>/dev/null || true
+
     if [ -n "$saved_creds" ]; then
         echo "$saved_creds" | sudo tee "$CREDS_FILE" > /dev/null
         sudo chmod 600 "$CREDS_FILE"
     fi
-    
-    git clone -q --depth 1 "$NODERED_REPO" "$CACHE_DIR" 2>/dev/null
+    return 0
+}
+
+# Solo se llama cuando GitHub ha rechazado de verdad las credenciales.
+pedir_token_nuevo() {
+    echo "  [X] GitHub rechaza las credenciales guardadas."
+    sudo rm -f "$CREDS_FILE"
+    echo ""
+    echo "  [K] Usuario: $GIT_USER"
+    read -s -p "  Nuevo Token/Contraseña: " GIT_TOKEN
+    echo ""
+    NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
+    if ! clone_repo; then
+        echo "  [X] Error: credenciales incorrectas"
+        exit 1
+    fi
+    sudo mkdir -p "$CACHE_DIR" 2>/dev/null
+    echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
+    echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
+    sudo chmod 600 "$CREDS_FILE"
+    echo "  [D] Nuevas credenciales guardadas"
 }
 
 if [ -d "$CACHE_DIR/.git" ]; then
-    # Ya existe, actualizar
+    # Ya existe: actualización incremental (unos KB).
     cd "$CACHE_DIR"
-    git remote set-url origin "$NODERED_REPO" 2>/dev/null
-    if ! git pull -q 2>/dev/null; then
-        echo "  [!]  Error actualizando, re-clonando..."
-        if ! clone_repo; then
-            echo "  [X] Token inválido. Borrando y pidiendo nuevo..."
-            sudo rm -f "$CREDS_FILE"
-            rm -rf "$CACHE_DIR"
-            echo ""
-            echo "  [K] Usuario: $GIT_USER"
-            read -s -p "  Nuevo Token/Contraseña: " GIT_TOKEN
-            echo ""
-            NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
-            if ! clone_repo; then
-                echo "  [X] Error: credenciales incorrectas"
-                exit 1
-            fi
-            # Guardar nuevas credenciales
-            sudo mkdir -p "$CACHE_DIR" 2>/dev/null
-            echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
-            echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
-            sudo chmod 600 "$CREDS_FILE"
-            echo "  [D] Nuevas credenciales guardadas"
+    git remote set-url origin "$NODERED_REPO" 2>/dev/null || true
+    PULL_RC=0
+    GIT_ERR=$(GIT_TERMINAL_PROMPT=0 timeout 600 git pull -q 2>&1) || PULL_RC=$?
+    if [ "$PULL_RC" -ne 0 ]; then
+        echo "  [!]  No se pudo actualizar: $(echo "$GIT_ERR" | head -1)"
+        if es_fallo_de_credenciales "$GIT_ERR"; then
+            pedir_token_nuevo
+        else
+            # Fallo de red: se sigue con la caché que ya tiene la placa. Antes se
+            # re-clonaba y, si eso también fallaba, se borraba el token bueno.
+            echo "  [!]  Parece la red, no las credenciales: se usa la caché local"
+            echo "       (el token guardado no se toca)"
         fi
     fi
 else
-    # Primera vez, clonar
+    # Primera vez: no hay caché que preservar.
     if ! clone_repo; then
-        echo "  [X] Token inválido. Pidiendo nuevo..."
-        sudo rm -f "$CREDS_FILE"
-        echo ""
-        echo "  [K] Usuario: $GIT_USER"
-        read -s -p "  Nuevo Token/Contraseña: " GIT_TOKEN
-        echo ""
-        NODERED_REPO="https://${GIT_USER}:${GIT_TOKEN}@github.com/Gesinne/NODERED.git"
-        if ! clone_repo; then
-            echo "  [X] Error: credenciales incorrectas"
+        if es_fallo_de_credenciales "$GIT_ERR"; then
+            pedir_token_nuevo
+        else
+            echo "  [X] No se pudo descargar el repo de flows, y no es problema de"
+            echo "      credenciales: $(echo "$GIT_ERR" | head -1)"
+            echo "      El token guardado NO se ha tocado. Reintenta con mejor red."
             exit 1
         fi
-        # Guardar nuevas credenciales
-        sudo mkdir -p "$CACHE_DIR" 2>/dev/null
-        echo "GIT_USER=\"$GIT_USER\"" | sudo tee "$CREDS_FILE" > /dev/null
-        echo "GIT_TOKEN=\"$GIT_TOKEN\"" | sudo tee -a "$CREDS_FILE" > /dev/null
-        sudo chmod 600 "$CREDS_FILE"
-        echo "  [D] Nuevas credenciales guardadas"
     fi
 fi
 
