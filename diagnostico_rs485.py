@@ -10,7 +10,7 @@ y reporta:
   - errores por tipo (timeout, CRC, frame incompleto)
 
 Uso:
-    python3 diagnostico_rs485.py [--port /dev/ttyUSB0] [--baud 115200]
+    python3 diagnostico_rs485.py [--port /dev/ttyAMA0] [--baud 115200]
                                   [--ciclos 1000] [--slaves 1,2,3]
 """
 import argparse
@@ -62,7 +62,10 @@ def parse_response(resp: bytes, slave: int):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--port", default="/dev/ttyUSB0")
+    # En toda la flota el RS-485 va por el UART de los pines (ttyAMA0), igual que
+    # en lee_estado_placas.py y escribe_registro.py. Para un adaptador USB-RS485
+    # de banco, pasar --port /dev/ttyUSB0 explicitamente.
+    p.add_argument("--port", default="/dev/ttyAMA0")
     p.add_argument("--baud", type=int, default=115200)
     p.add_argument("--ciclos", type=int, default=1000)
     p.add_argument("--slaves", default="1,2,3")
