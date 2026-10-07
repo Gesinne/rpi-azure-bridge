@@ -41,8 +41,14 @@ def build_read_holding(slave: int, addr: int, qty: int) -> bytes:
 
 def parse_response(resp: bytes, slave: int):
     """Devuelve (ok, motivo, valor)."""
+    # Distinguir silencio de trama truncada: antes las dos cosas caian en
+    # "frame_corto" y no se podia saber si la placa no contestaba (problema
+    # electrico: alimentacion, tierra comun, polarizacion del bus) o si
+    # contestaba a medias (timing del DE/RE, colision, ruido).
+    if not resp:
+        return False, "sin_respuesta", None
     if len(resp) < 5:
-        return False, "frame_corto", None
+        return False, "frame_corto_%dB" % len(resp), None
     if resp[0] != slave:
         return False, "slave_id_mal", None
     if resp[1] & 0x80:
@@ -76,7 +82,7 @@ def main():
     slaves = [int(s) for s in args.slaves.split(",")]
     ser = serial.Serial(args.port, args.baud, timeout=args.timeout)
 
-    stats = {s: {"ok": 0, "errores": defaultdict(int), "tiempos": []} for s in slaves}
+    stats = {s: {"ok": 0, "errores": defaultdict(int), "tiempos": [], "muestras": []} for s in slaves}
 
     print(f"[*] Puerto {args.port} @ {args.baud} baud, {args.ciclos} ciclos a slaves {slaves}, registro {args.addr}")
     t0 = time.time()
@@ -89,6 +95,8 @@ def main():
             resp = ser.read(7)  # respuesta esperada: 1+1+1+2+2 = 7 bytes
             t_recv = time.perf_counter()
             ok, motivo, val = parse_response(resp, sl)
+            if not ok and resp and len(stats[sl]["muestras"]) < 3:
+                stats[sl]["muestras"].append(resp.hex(" "))
             dt = (t_recv - t_send) * 1000  # ms
             if ok:
                 stats[sl]["ok"] += 1
@@ -118,6 +126,17 @@ def main():
             jit_str = "-"
         err_str = ", ".join(f"{k}={v}" for k, v in sorted(s["errores"].items())) or "-"
         print(f"{sl:<6} {s['ok']:>6} {pct:>5.1f} {t_str:>10} {jit_str:>6}  {err_str}")
+
+    # Si ha llegado algo que no era una respuesta valida, ensenarlo: unos pocos
+    # bytes sueltos apuntan a timing/eco, y basura distinta a ruido en el par.
+    hay = any(stats[sl]["muestras"] for sl in slaves)
+    if hay:
+        print("\n[*] Muestras de lo recibido en los fallos (hex):")
+        for sl in slaves:
+            for m in stats[sl]["muestras"]:
+                print(f"    slave {sl}: {m}")
+    else:
+        print("\n[i] En los fallos no llego NI UN BYTE (silencio total del bus).")
 
 
 if __name__ == "__main__":
