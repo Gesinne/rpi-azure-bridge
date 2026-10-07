@@ -207,7 +207,20 @@ if [ -d "$CACHE_DIR/.git" ]; then
     cd "$CACHE_DIR"
     git remote set-url origin "$NODERED_REPO" 2>/dev/null || true
     PULL_RC=0
-    GIT_ERR=$(GIT_TERMINAL_PROMPT=0 timeout 600 git pull -q 2>&1) || PULL_RC=$?
+    # fetch + reset --hard a la rama del servidor: fuerza la caché a la versión
+    # remota y DESCARTA cualquier cambio local de la caché (los flows de verdad
+    # están en ~/.node-red). Antes se hacía "git pull" y, si la caché tenía
+    # cambios locales, el merge fallaba con "local changes would be overwritten"
+    # y el script lo confundía con un fallo de red (se quedaba con la caché vieja).
+    GIT_ERR=$(GIT_TERMINAL_PROMPT=0 timeout 600 git fetch -q origin 2>&1) || PULL_RC=$?
+    if [ "$PULL_RC" -eq 0 ]; then
+        BR=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##')
+        [ -z "$BR" ] && BR=$(git remote show origin 2>/dev/null | sed -n 's/.*HEAD branch: //p')
+        [ -z "$BR" ] && BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+        [ -z "$BR" ] && BR="main"
+        git reset --hard "origin/$BR" -q 2>/dev/null || git reset --hard -q 2>/dev/null
+        git clean -fd -q 2>/dev/null
+    fi
     if [ "$PULL_RC" -ne 0 ]; then
         echo "  [!]  No se pudo actualizar: $(echo "$GIT_ERR" | head -1)"
         if es_fallo_de_credenciales "$GIT_ERR"; then
