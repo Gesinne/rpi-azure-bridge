@@ -93,13 +93,51 @@ def llaves(c, slave):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--slave', type=int, required=True, help='1, 2 o 3')
+    p.add_argument('--slave', type=int, help='1, 2 o 3 (no hace falta con --buscar)')
     p.add_argument('--vel', type=int, choices=sorted(COD), help='velocidad nueva')
     p.add_argument('--baud', type=int, default=115200, help='velocidad ACTUAL de la placa')
     p.add_argument('--port', default='/dev/ttyAMA0')
     p.add_argument('--ver', action='store_true', help='solo mirar, no escribe nada')
+    p.add_argument('--buscar', action='store_true',
+                   help='prueba las 3 velocidades y dice donde responde cada placa')
     p.add_argument('--si', action='store_true', help='no preguntar')
     a = p.parse_args()
+
+    # Mapa del bus: tras un cambio a medias, cada placa puede estar a una velocidad
+    # distinta, y hasta saber donde esta cada una no se puede mover ninguna.
+    if a.buscar:
+        slaves = [a.slave] if a.slave else [1, 2, 3]
+        print(f"  Buscando L{slaves} en 115200 / 57600 / 38400 ...\n")
+        encontradas = {}
+        for b in (115200, 57600, 38400):
+            c = abrir(a.port, b)
+            if not c:
+                print(f"  [X] no se pudo abrir el puerto a {b}"); continue
+            for s_ in slaves:
+                if s_ in encontradas:
+                    continue
+                v = leer(c, s_, REG_VEL, intentos=4)
+                if v is None:
+                    continue
+                e = leer(c, s_, REG_ESTADO, intentos=3)
+                est_txt = 'BYPASS' if e == 0 else 'REGULACION' if e == 2 else f'reg31={e}'
+                encontradas[s_] = (b, v, e)
+                print(f"  L{s_}: responde a {b} baud  |  reg61={v} ({BAUD.get(v, '?')})  |  {est_txt}")
+            c.close()
+        mudas = [s_ for s_ in slaves if s_ not in encontradas]
+        if mudas:
+            print(f"\n  L{mudas} no contesta a ninguna de las tres velocidades.")
+            print("  Eso ya no es velocidad: mira el par, la alimentacion o la placa.")
+        if len(set(v[0] for v in encontradas.values())) > 1:
+            print("\n  [!] Hay placas a velocidades DISTINTAS: el flow solo puede hablar a una.")
+            print("      Igualalas todas a la del flow (115200), una a una:")
+            for s_, (b, _, _) in sorted(encontradas.items()):
+                if b != 115200:
+                    print(f"        python3 {p} --slave {s_} --vel 115200 --baud {b}")
+        return
+
+    if not a.slave:
+        print("[X] hace falta --slave (o usa --buscar)"); sys.exit(1)
 
     c = abrir(a.port, a.baud)
     if not c:
