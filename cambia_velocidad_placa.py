@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""
+Cambia la velocidad Modbus (registro 61) de UNA placa.
+
+POR QUE HACE FALTA
+`escribe_registro.py` no sirve para el reg 61: la placa RECHAZA esa escritura si
+no esta en bypass, y las dos llaves de desbloqueo (reg 30 = 43981, reg 40 = 47818)
+CADUCAN al cerrar el puerto, asi que con comandos separados no funciona — tiene
+que ir todo en la misma sesion. Y `firmware.sh` lo hace bien pero cambia las TRES
+a la vez, de forma sincronizada, que es lo correcto en condiciones normales.
+Esto es para el caso de diagnostico: probar una placa sola a otra velocidad.
+
+OJO, LO IMPORTANTE
+Si dejas una placa a 38400 y las otras a 115200, el flow de Node-RED solo puede
+hablar a UNA velocidad: leera la que coincida y perdera las demas. Para que el
+flow lea a la nueva velocidad hay que cambiarselo tambien (lo hace firmware.sh con
+actualizar_baudrate_nodered). Como prueba puntual vale; como estado final, no.
+
+Codigos del registro 61:  0 = 115200   1 = 57600   2 = 38400
+Registro 31 (estado):     0 = BYPASS   2 = REGULACION
+
+Uso:
+    sudo systemctl stop nodered          # SIEMPRE: el flow ocupa el puerto
+    python3 cambia_velocidad_placa.py --slave 1 --ver
+    python3 cambia_velocidad_placa.py --slave 1 --vel 38400
+    python3 cambia_velocidad_placa.py --slave 1 --vel 115200 --baud 38400   # volver
+    sudo systemctl start nodered
+"""
+import argparse, sys, time
+
+LLAVE_30, LLAVE_40 = 43981, 47818        # 0xABCD y 0xBACA
+COD = {115200: 0, 57600: 1, 38400: 2}
+BAUD = {v: k for k, v in COD.items()}
+REG_ESTADO, REG_VEL = 31, 61
+
+try:
+    from pymodbus.client import ModbusSerialClient
+except ImportError:
+    print("[X] falta pymodbus"); sys.exit(1)
+
+
+def abrir(port, baud):
+    c = ModbusSerialClient(port=port, baudrate=baud, bytesize=8, parity='N',
+                           stopbits=1, timeout=0.5)
+    return c if c.connect() else None
+
+
+def leer(c, slave, reg, intentos=5):
+    """Con reintentos: en un bus degradado la primera no suele entrar."""
+    for _ in range(intentos):
+        try:
+            r = c.read_holding_registers(address=reg, count=1, slave=slave)
+            if not r.isError():
+                return r.registers[0]
+        except Exception:
+            pass
+        time.sleep(0.15)
+    return None
+
+
+def escribir(c, slave, reg, valor):
+    try:
+        return not c.write_register(address=reg, value=valor, slave=slave).isError()
+    except Exception:
+        return False
+
+
+def llaves(c, slave):
+    """Las dos llaves de desbloqueo, en esta misma sesion de puerto."""
+    ok30 = escribir(c, slave, 30, LLAVE_30)
+    ok40 = escribir(c, slave, 40, LLAVE_40)
+    return ok30 and ok40
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument('--slave', type=int, required=True, help='1, 2 o 3')
+    p.add_argument('--vel', type=int, choices=sorted(COD), help='velocidad nueva')
+    p.add_argument('--baud', type=int, default=115200, help='velocidad ACTUAL de la placa')
+    p.add_argument('--port', default='/dev/ttyAMA0')
+    p.add_argument('--ver', action='store_true', help='solo mirar, no escribe nada')
+    p.add_argument('--si', action='store_true', help='no preguntar')
+    a = p.parse_args()
+
+    c = abrir(a.port, a.baud)
+    if not c:
+        print(f"[X] no se pudo abrir {a.port} @ {a.baud}"); sys.exit(1)
+
+    vel = leer(c, a.slave, REG_VEL)
+    est = leer(c, a.slave, REG_ESTADO)
+    print(f"  L{a.slave} @ {a.baud}: reg61 = {vel} ({BAUD.get(vel, '?')} baud) | "
+          f"reg31 = {est} ({'BYPASS' if est == 0 else 'REGULACION' if est == 2 else est})")
+
+    if a.ver or a.vel is None:
+        c.close(); return
+
+    # Mismo criterio que firmware.sh: sin poder leer el estado no se escribe a ciegas.
+    if vel is None or est is None:
+        print("[X] no se pueden leer reg61/reg31 — ABORTO sin escribir nada.")
+        print("    Sin esa lectura no es seguro tocar la velocidad.")
+        c.close(); sys.exit(1)
+    if COD[a.vel] == vel:
+        print(f"[i] ya esta a {a.vel}. Nada que hacer."); c.close(); return
+
+    if not a.si:
+        r = input(f"  ¿Escribo reg61={COD[a.vel]} ({a.vel} baud) en L{a.slave}? [s/N]: ")
+        if r.strip().lower() not in ('s', 'si', 'sí'):
+            print("  cancelado"); c.close(); return
+
+    print("  [1/4] llaves de desbloqueo...")
+    if not llaves(c, a.slave):
+        print("[X] la placa no acepta las llaves — ABORTO."); c.close(); sys.exit(1)
+
+    print("  [2/4] a BYPASS (reg31=0), que si no rechaza el cambio...")
+    if not escribir(c, a.slave, REG_ESTADO, 0):
+        print("[X] no se pudo poner en bypass — ABORTO."); c.close(); sys.exit(1)
+    time.sleep(0.5)
+
+    print(f"  [3/4] reg61 = {COD[a.vel]}...")
+    escribir(c, a.slave, REG_VEL, COD[a.vel])   # responde ya a la velocidad nueva: puede dar error
+    c.close()
+    time.sleep(1.0)
+
+    print(f"  [4/4] reconectando a {a.vel} para verificar...")
+    c2 = abrir(a.port, a.vel)
+    if not c2:
+        print(f"[X] no se pudo abrir el puerto a {a.vel}"); sys.exit(1)
+    nueva = leer(c2, a.slave, REG_VEL, intentos=8)
+    if nueva == COD[a.vel]:
+        print(f"  [OK] L{a.slave} responde a {a.vel} baud (reg61={nueva})")
+        if est != 0:
+            if llaves(c2, a.slave) and escribir(c2, a.slave, REG_ESTADO, est):
+                print(f"  [OK] estado restaurado (reg31={est})")
+            else:
+                print(f"  [!] NO se pudo restaurar reg31={est}: la placa se queda en BYPASS.")
+                print(f"      Hazlo a mano a {a.vel} baud o con el menu de firmware.sh.")
+    else:
+        print(f"  [!] no contesta a {a.vel}. Probando si sigue a {a.baud}...")
+        c2.close()
+        c3 = abrir(a.port, a.baud)
+        if c3 and leer(c3, a.slave, REG_VEL, intentos=8) is not None:
+            print(f"  [i] sigue a {a.baud}: el cambio NO se aplico (nada roto).")
+        else:
+            print(f"  [X] no contesta a ninguna de las dos. Prueba el barrido:")
+            print(f"      python3 diagnostico_rs485.py --baud 57600 --slaves {a.slave} --ciclos 20")
+        if c3: c3.close()
+    print("\n  Recuerda: el flow sigue hablando a su velocidad de siempre.")
+    print("  sudo systemctl start nodered")
+
+
+if __name__ == '__main__':
+    main()
