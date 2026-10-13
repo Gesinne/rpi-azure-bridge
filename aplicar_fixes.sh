@@ -57,3 +57,12 @@ echo "  ━━━━━━━━━━━━━━━━━━━━━━━━
 echo "  [OK] Todos los fixes aplicados"
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
+
+# ── FIX completo (oct 2026) ────────────────────────────────────────────────
+# Arregla de una vez el flow entero: cola de envio, boton de borrar cola, los
+# inject "hola", la prioridad del dato actual y que una placa averiada no tumbe
+# la lectura de las demas. Ademas iguala la velocidad del cliente a la de las
+# placas y deja las tres tarjetas activas.
+#   sudo bash fix.sh
+echo ""
+echo "  Para el arreglo completo del flow:  sudo bash $SCRIPT_DIR/fix.sh"
