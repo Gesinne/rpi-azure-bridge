@@ -19,6 +19,10 @@ actualizar_baudrate_nodered). Como prueba puntual vale; como estado final, no.
 Codigos del registro 61:  0 = 115200   1 = 57600   2 = 38400
 Registro 31 (estado):     0 = BYPASS   2 = REGULACION
 
+SI HAY VARIAS PLACAS A VELOCIDADES DISTINTAS, no uses esto: firmware.sh tiene
+"Rescatar bus Modbus", que habla a CADA placa a su velocidad actual y las iguala
+todas a una comun. Esto es para mirar o mover UNA sola.
+
 Uso:
     sudo systemctl stop nodered          # SIEMPRE: el flow ocupa el puerto
     python3 cambia_velocidad_placa.py --slave 1 --ver
@@ -65,11 +69,26 @@ def escribir(c, slave, reg, valor):
         return False
 
 
+def escribir_silencioso(c, slave, reg, valor):
+    """Escribe sin mirar la respuesta.
+
+    Las llaves y el reg 61 contestan con excepcion ("Exception response 134")
+    aunque la escritura SI se aplique — la placa responde ya con otra velocidad, o
+    simplemente no confirma. firmware.sh hace lo mismo con write_silencioso(): si
+    se comprueba el retorno, se aborta un cambio que en realidad habria entrado.
+    """
+    try:
+        c.write_register(address=reg, value=valor, slave=slave)
+    except Exception:
+        pass
+
+
 def llaves(c, slave):
-    """Las dos llaves de desbloqueo, en esta misma sesion de puerto."""
-    ok30 = escribir(c, slave, 30, LLAVE_30)
-    ok40 = escribir(c, slave, 40, LLAVE_40)
-    return ok30 and ok40
+    """Las dos llaves de desbloqueo, en esta misma sesion y en este orden."""
+    escribir_silencioso(c, slave, 30, LLAVE_30)   # habilitar tarjeta
+    time.sleep(0.15)
+    escribir_silencioso(c, slave, 40, LLAVE_40)   # habilitar config
+    time.sleep(0.15)
 
 
 def main():
@@ -107,17 +126,22 @@ def main():
         if r.strip().lower() not in ('s', 'si', 'sí'):
             print("  cancelado"); c.close(); return
 
-    print("  [1/4] llaves de desbloqueo...")
-    if not llaves(c, a.slave):
-        print("[X] la placa no acepta las llaves — ABORTO."); c.close(); sys.exit(1)
+    # Secuencia magica de firmware.sh: reg31=0 -> reg30 -> reg40 -> reg61.
+    # El bypass va PRIMERO: con las llaves puestas antes, la placa rechaza el cambio.
+    print("  [1/4] a BYPASS (reg31=0)...")
+    if est != 0:
+        escribir_silencioso(c, a.slave, REG_ESTADO, 0)
+        time.sleep(0.5)
+        if leer(c, a.slave, REG_ESTADO) != 0:
+            print("[X] no se pudo poner en bypass — ABORTO."); c.close(); sys.exit(1)
+    else:
+        print("      ya estaba en bypass")
 
-    print("  [2/4] a BYPASS (reg31=0), que si no rechaza el cambio...")
-    if not escribir(c, a.slave, REG_ESTADO, 0):
-        print("[X] no se pudo poner en bypass — ABORTO."); c.close(); sys.exit(1)
-    time.sleep(0.5)
+    print("  [2/4] llaves de desbloqueo (reg30, reg40)...")
+    llaves(c, a.slave)
 
     print(f"  [3/4] reg61 = {COD[a.vel]}...")
-    escribir(c, a.slave, REG_VEL, COD[a.vel])   # responde ya a la velocidad nueva: puede dar error
+    escribir_silencioso(c, a.slave, REG_VEL, COD[a.vel])  # contesta ya a la velocidad nueva
     c.close()
     time.sleep(1.0)
 
@@ -129,7 +153,10 @@ def main():
     if nueva == COD[a.vel]:
         print(f"  [OK] L{a.slave} responde a {a.vel} baud (reg61={nueva})")
         if est != 0:
-            if llaves(c2, a.slave) and escribir(c2, a.slave, REG_ESTADO, est):
+            llaves(c2, a.slave)
+            escribir_silencioso(c2, a.slave, REG_ESTADO, est)
+            time.sleep(0.4)
+            if leer(c2, a.slave, REG_ESTADO) == est:
                 print(f"  [OK] estado restaurado (reg31={est})")
             else:
                 print(f"  [!] NO se pudo restaurar reg31={est}: la placa se queda en BYPASS.")
