@@ -16,12 +16,23 @@ de responder / aparece), envía un email a través de enviar_email.py.
 - Salvaguardas anti-falsos-positivos: si NINGUNA placa responde (contención/boot
   raro) no avisa ni pisa el snapshot; "deja de responder" solo avisa si alguna otra
   fase SÍ respondió (prueba de que el bus va).
+- De qué avisa: SOLO del cambio de FW (AVISO_PLACA_AVISAR, por defecto "fw"). El
+  nº de serie y el "deja de responder / ahora responde" los vigila el servidor
+  (vigilarCambioPlaca.js, cron cada 6 h), cotejando la telemetría —que ya trae el
+  nº de serie por fase— con la lectura registrada, y exigiendo que el valor nuevo
+  se sostenga 24 h. Desde aquí se avisaba en CADA arranque y con un correo por
+  equipo: con 112 equipos y los que flapean, era mucho ruido para algo que pasa muy
+  de vez en cuando. El FW no viaja en la telemetría, así que eso se queda aquí.
+  Para volver al aviso completo: AVISO_PLACA_AVISAR="fw,serie,presencia".
 
 Snapshot: /var/lib/gesinne/placas_snapshot.json (override con env SNAP_FILE).
 """
 import sys, os, time, json, socket, glob
 
 SNAP = os.environ.get('SNAP_FILE', '/var/lib/gesinne/placas_snapshot.json')
+# Qué cambios se avisan desde la placa (ver el docstring): el resto lo lleva el
+# servidor sin el ruido de avisar en cada arranque.
+AVISAR = set(x.strip() for x in os.environ.get('AVISO_PLACA_AVISAR', 'fw').split(',') if x.strip())
 BRIDGE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BRIDGE_DIR)
 
@@ -133,15 +144,16 @@ def diff(prev, actual):
         if a == p:
             continue
         if p and not a:
-            cambios.append("%s: DEJA DE RESPONDER (antes serie %s, FW %s)" % (L, p.get('serie'), p.get('fw')))
+            cambios.append(('presencia', "%s: DEJA DE RESPONDER (antes serie %s, FW %s)" % (L, p.get('serie'), p.get('fw'))))
         elif a and not p:
-            cambios.append("%s: AHORA RESPONDE (serie %s, FW %s)" % (L, a.get('serie'), a.get('fw')))
+            cambios.append(('presencia', "%s: AHORA RESPONDE (serie %s, FW %s)" % (L, a.get('serie'), a.get('fw'))))
         else:
             if p.get('serie') != a.get('serie'):
-                cambios.append("%s: CAMBIO DE PLACA — Nº serie %s → %s" % (L, p.get('serie'), a.get('serie')))
+                cambios.append(('serie', "%s: CAMBIO DE PLACA — Nº serie %s → %s" % (L, p.get('serie'), a.get('serie'))))
             if p.get('fw') != a.get('fw'):
-                cambios.append("%s: CAMBIO DE FW — %s → %s" % (L, p.get('fw'), a.get('fw')))
-    return cambios
+                cambios.append(('fw', "%s: CAMBIO DE FW — %s → %s" % (L, p.get('fw'), a.get('fw'))))
+    # el snapshot ya se guardó con TODO lo leído: aquí solo se filtra qué se avisa
+    return [texto for tipo, texto in cambios if tipo in AVISAR]
 
 
 def main():
@@ -175,7 +187,7 @@ def main():
 
     cambios = diff(prev, actual)
     if not cambios:
-        print("[aviso] sin cambios de placa/FW"); return
+        print("[aviso] sin cambios que avisar (se avisa de: %s)" % ','.join(sorted(AVISAR))); return
 
     equipo = socket.gethostname()
     serie = serie_equipo()
@@ -195,7 +207,7 @@ def main():
     except Exception as e:
         print("[aviso] no se pudo importar enviar_email:", e); return
     # Reintentos: arrancamos pronto en el boot, la red puede tardar en estar lista.
-    asunto = "⚠️ Cambio de placa/FW tras reinicio · %s" % ident
+    asunto = "⚠️ %s tras reinicio · %s" % ("Cambio de FW" if AVISAR == {'fw'} else "Cambio de placa/FW", ident)
     for intento in range(1, 6):
         try:
             enviar_email(cuerpo, asunto=asunto, numero_serie=(serie or equipo))
