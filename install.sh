@@ -5256,8 +5256,11 @@ try:
     import subprocess as sp
     enviado = False
 
-    # Enviar a la API de Gesinne (IP directa para evitar Cloudflare)
-    for api_url in ['http://57.129.130.106:5000/api/firmware', 'https://app.gesinne.cloud/api/firmware']:
+    # Enviar a la API de Gesinne. Primero el dominio: desde el 13-oct-2026 el
+    # puerto 5000 esta CERRADO a internet (escuchaba en la tarjeta publica del
+    # servidor y respondia sin token, con todos los datos a la vista). La IP
+    # directa se deja de segunda, como respaldo si el dominio fallara.
+    for api_url in ['https://app.gesinne.cloud/api/firmware', 'http://57.129.130.106:5000/api/firmware']:
         try:
             r = sp.run(['curl', '-sk', '-X', 'POST', api_url,
                 '-H', 'Content-Type: application/json',
