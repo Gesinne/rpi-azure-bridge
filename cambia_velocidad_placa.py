@@ -200,14 +200,44 @@ def main():
                 print(f"  [!] NO se pudo restaurar reg31={est}: la placa se queda en BYPASS.")
                 print(f"      Hazlo a mano a {a.vel} baud o con el menu de firmware.sh.")
     else:
+        # AQUI ESTABA EL FALLO GRAVE: esta rama no restauraba el estado, asi que una
+        # placa que se habia puesto en BYPASS para escribir la velocidad se quedaba
+        # en bypass — sin regular — si la verificacion fallaba. Paso en el equipo
+        # 00152 (SOLIDUS): L1 se quedo en bypass y el cliente estuvo una fase sin
+        # regular hasta que se vio en la telemetria al dia siguiente.
         print(f"  [!] no contesta a {a.vel}. Probando si sigue a {a.baud}...")
         c2.close()
         c3 = abrir(a.port, a.baud)
-        if c3 and leer(c3, a.slave, REG_VEL, intentos=8) is not None:
-            print(f"  [i] sigue a {a.baud}: el cambio NO se aplico (nada roto).")
+        vive = bool(c3) and leer(c3, a.slave, REG_VEL, intentos=8) is not None
+        if vive:
+            print(f"  [i] sigue a {a.baud}: el cambio de velocidad NO se aplico.")
         else:
-            print(f"  [X] no contesta a ninguna de las dos. Prueba el barrido:")
-            print(f"      python3 diagnostico_rs485.py --baud 57600 --slaves {a.slave} --ciclos 20")
+            print(f"  [X] no contesta a ninguna de las dos velocidades.")
+        if est != 0:
+            print(f"  [~] sacando la placa de BYPASS (reg31={est})...")
+            restaurado = False
+            for cli in (c3, c2):
+                if not cli:
+                    continue
+                try:
+                    llaves(cli, a.slave)
+                    escribir_silencioso(cli, a.slave, REG_ESTADO, est)
+                    time.sleep(0.4)
+                    if leer(cli, a.slave, REG_ESTADO) == est:
+                        restaurado = True
+                        break
+                except Exception:
+                    pass
+            if restaurado:
+                print(f"  [OK] estado restaurado: la placa vuelve a regular")
+            else:
+                print(f"\n  ##############################################################")
+                print(f"  ##  ATENCION: L{a.slave} PUEDE HABER QUEDADO EN BYPASS       ##")
+                print(f"  ##  Eso significa que ESA FASE NO ESTA REGULANDO.           ##")
+                print(f"  ##  Sacala ya:                                              ##")
+                print(f"  ##    python3 espabila_placas.py --barrer --estado {est}            ##")
+                print(f"  ##  Y comprueba con:  --buscar  (reg31 tiene que ser {est})        ##")
+                print(f"  ##############################################################\n")
         if c3: c3.close()
     print("\n  Recuerda: el flow sigue hablando a su velocidad de siempre.")
     print("  sudo systemctl start nodered")
