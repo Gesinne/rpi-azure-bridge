@@ -121,6 +121,51 @@ def diagnostico(ser, slaves, intentos):
     return colision, mudos
 
 
+BAUDS = [38400, 115200, 57600, 19200, 9600]
+
+
+def barrido(puerto, slaves, intentos):
+    """Prueba cada velocidad contra cada slave. No escribe nada."""
+    print("=== barrido de velocidades en %s ===" % puerto)
+    print("  (silencio en TODAS = el bus no habla: alimentacion, par cortado o")
+    print("   transceptor; respuestas en una = esa es la velocidad real)\n")
+    encontrado = []
+    for baud in BAUDS:
+        try:
+            ser = serial.Serial(puerto, baud, timeout=0.4)
+        except Exception as e:
+            print("  %6d  no se pudo abrir: %s" % (baud, e))
+            continue
+        time.sleep(0.15)
+        linea = []
+        for s in slaves:
+            ok = crc = 0
+            for _ in range(intentos):
+                v, st = lee(ser, s, REG_VERSION)
+                if st == "ok":
+                    ok += 1
+                elif st == "crc":
+                    crc += 1
+                time.sleep(0.03)
+            linea.append("%s:%d ok/%d crc" % (FASE.get(s, s), ok, crc))
+            if ok:
+                encontrado.append((baud, s, ok))
+        print("  %6d   %s" % (baud, "   ".join(linea)))
+        ser.close()
+    print()
+    if encontrado:
+        print("  *** CONTESTAN:")
+        for baud, s, ok in encontrado:
+            print("      %s a %d baud (%d respuestas buenas)" % (FASE.get(s, s), baud, ok))
+    else:
+        print("  *** silencio en las 5 velocidades y los 3 slaves.")
+        print("      No es un problema de velocidad. Siguiente: alimentacion de las")
+        print("      placas, continuidad del par A/B, y contadores del UART")
+        print("      (sudo cat /proc/tty/driver/ttyAMA dos veces separadas 1 min:")
+        print("       si tx sube y rx NO, el transceptor no oye).")
+    return encontrado
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--puerto", default="/dev/ttyAMA0")
@@ -129,12 +174,18 @@ def main():
     p.add_argument("--slaves", default="1,2,3", help="para --ver")
     p.add_argument("--intentos", type=int, default=8)
     p.add_argument("--ver", action="store_true", help="solo diagnostico")
+    p.add_argument("--barrer", action="store_true",
+                   help="prueba todas las velocidades x slaves (no escribe nada)")
     p.add_argument("--reset", action="store_true", help="110=0xCACA + 111=0xCACA")
     p.add_argument("--emergencia", action="store_true", help="113=0xDEAD x2")
     a = p.parse_args()
 
-    if not (a.ver or a.reset or a.emergencia):
+    if not (a.ver or a.reset or a.emergencia or a.barrer):
         a.ver = True
+
+    if a.barrer:
+        barrido(a.puerto, [int(x) for x in a.slaves.split(",")], max(3, a.intentos // 2))
+        return
 
     ser = serial.Serial(a.puerto, a.baud, timeout=0.4)
     time.sleep(0.2)
