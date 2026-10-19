@@ -319,23 +319,30 @@ def ficha(puerto, baud, slave, intentos):
                 continue
             txt = ", ".join("%d(x%d)" % (v, n) for v, n in sorted(vistos.items()))
             print("  %3d  %-28s  %-25s  %d" % (reg, nombre, txt, sum(vistos.values())))
-            # registros que DEBEN diferir entre fases: si dan un solo valor hay una placa
+            # Vin y temperatura fluctuan en la MISMA placa, asi que dos valores
+            # parecidos no son dos placas. Solo cuenta una diferencia grande:
+            # entre fases Vin difiere en voltios (>1,5%) y la temperatura en grados.
             if reg in (4, 17) and len(vistos) >= 2:
-                sospecha_varias.append((reg, nombre, len(vistos)))
+                vs = sorted(vistos)
+                disp = (vs[-1] - vs[0]) / float(vs[-1]) if vs[-1] else 0
+                umbral = 0.015 if reg == 4 else 0.08
+                if disp > umbral:
+                    sospecha_varias.append((reg, nombre, len(vistos), disp * 100))
     finally:
         ser.close()
     print()
     if sospecha_varias:
         print("  *** VARIAS PLACAS en la direccion %d: los registros" % slave)
-        for reg, nombre, n in sospecha_varias:
-            print("      %d (%s) devuelve %d valores distintos." % (reg, nombre, n))
+        for reg, nombre, n, disp in sospecha_varias:
+            print("      %d (%s): %d valores, dispersion %.1f%%." % (reg, nombre, n, disp))
         print("      Tension de entrada y temperatura NO pueden coincidir entre fases,")
         print("      asi que hay mas de una placa contestando. Pasa cuando la FLASH se")
         print("      restaura y todas vuelven a la direccion de fabrica.")
         print("      Arreglo: hay que separarlas fisicamente para reasignar direcciones")
         print("      (reg 48), no se puede direccionar una sola si comparten direccion.")
     else:
-        print("  una sola placa contesta en esta direccion.")
+        print("  una sola placa contesta en esta direccion (las variaciones pequenas")
+        print("  de Vin y temperatura son fluctuacion normal de la medida).")
     print("  (reg 103 distinto de 0 = hubo RESTAURACION DE FLASH: la placa perdio su")
     print("   configuracion y arranca en estado 0, por eso no regula aunque este sana)")
 
