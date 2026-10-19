@@ -160,12 +160,15 @@ def medir(puerto, baud, slaves, preguntas):
     ser = serial.Serial(puerto, baud, timeout=0.2)
     time.sleep(0.15)
     respuestas = 0
+    aciertos = []           # (segundo, slave, valor)
+    t0 = time.time()
     try:
         for i in range(preguntas):
             s = slaves[i % len(slaves)]
-            _, st = lee(ser, s, REG_VERSION)
+            v, st = lee(ser, s, REG_VERSION)
             if st == "ok":
                 respuestas += 1
+                aciertos.append((time.time() - t0, s, v))
     finally:
         ser.close()
     time.sleep(0.3)
@@ -173,7 +176,23 @@ def medir(puerto, baud, slaves, preguntas):
     print("  despues:" + "  ".join("%s=%d" % (k, v) for k, v in sorted(despues.items())))
     d = {k: despues.get(k, 0) - antes.get(k, 0) for k in antes}
     print("  DELTA:  " + "  ".join("%s=%+d" % (k, v) for k, v in sorted(d.items())))
-    print("  respuestas validas: %d de %d\n" % (respuestas, preguntas))
+    print("  respuestas validas: %d de %d" % (respuestas, preguntas))
+    if aciertos:
+        print("  QUIEN y CUANDO contesto:")
+        prev = None
+        for seg, sl, val in aciertos:
+            hueco = "" if prev is None else "   (+%.1f s desde la anterior)" % (seg - prev)
+            print("    %6.1f s  %s  version=%s%s" % (seg, FASE.get(sl, sl), val, hueco))
+            prev = seg
+        if len(aciertos) >= 3:
+            hs = [aciertos[i + 1][0] - aciertos[i][0] for i in range(len(aciertos) - 1)]
+            reg = max(hs) - min(hs) < max(1.0, sum(hs) / len(hs) * 0.4)
+            print("  huecos entre respuestas: " + ", ".join("%.1f" % h for h in hs) + " s")
+            if reg:
+                print("  *** los huecos son REGULARES: la placa contesta en ventanas")
+                print("      periodicas -> bucle de reinicio (watchdog). Cada vez que")
+                print("      arranca atiende Modbus un instante y se vuelve a colgar.")
+    print()
 
     tx, rx, fe, brk = d.get("tx", 0), d.get("rx", 0), d.get("fe", 0), d.get("brk", 0)
     if tx == 0:
@@ -194,6 +213,14 @@ def medir(puerto, baud, slaves, preguntas):
         print("      terminacion, apantallado, masa comun y placas que ensucien.")
     elif rx > tx * 2:
         print("  *** el bus va bien (rx >> tx y fe=0).")
+    elif respuestas and abs(rx - respuestas * 7) <= 2:
+        print("  *** las respuestas que llegan son PERFECTAS (rx=%+d = %d tramas de 7" % (rx, respuestas))
+        print("      bytes, fe=0): no hay ruido ni corrupcion ni problema de velocidad.")
+        print("      El problema es que solo contesta %.1f%% de las veces. Causa tipica:" % (100.0 * respuestas / preguntas))
+        print("      placa en BUCLE DE REINICIO (se cuelga en la cascada FLASH y el")
+        print("      watchdog la resetea), o alimentacion de control intermitente.")
+        print("      Siguiente: medir a 115200 en el slave 1 -- al arrancar, el firmware")
+        print("      atiende Modbus con direccion 1 y 115200 antes de leer la FLASH.")
     else:
         print("  *** entran bytes pero pocos (rx=%+d frente a tx=%+d) y sin errores" % (rx, tx))
         print("      de trama: respuestas truncadas o placas que contestan a medias.")
