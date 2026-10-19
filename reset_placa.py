@@ -38,6 +38,7 @@ CACA = 0xCACA   # 51908
 DEAD = 0xDEAD   # 57005
 FLAG_RST, REG_RESET, REG_EMER = 110, 111, 113
 REG_VERSION, REG_ESTADO, REG_ALARMAS = 100, 0, 2
+REG_SERIE = 41   # numero de serie de la PCB: identifica QUE placa contesta
 FASE = {1: "L1", 2: "L2", 3: "L3"}
 
 
@@ -290,6 +291,7 @@ def barrido(puerto, slaves, intentos):
 
 
 REGS = [(0, "estado actual"), (2, "alarmas"), (3, "tension salida Vo"),
+        (41, "NUMERO DE SERIE PCB"),
         (4, "tension entrada Vin"), (5, "frecuencia red"), (6, "corriente equipo dA"),
         (17, "temperatura interna"), (31, "estado deseado"), (47, "dead-time"),
         (48, "direccion Modbus"), (61, "velocidad"), (100, "version FW"),
@@ -393,6 +395,58 @@ def ritmo(puerto, baud, slave, por_pausa):
     return res
 
 
+def quien(puerto, baud, dirs, intentos):
+    """Barre direcciones leyendo el REGISTRO 41 (numero de serie de la PCB).
+    A diferencia de Vin o la temperatura, el numero de serie es FIJO y DISTINTO
+    en cada placa: si una direccion devuelve varios, hay varias placas ahi."""
+    print("=== que placa hay en cada direccion (reg 41 = nº de serie) ===")
+    print("  %d intentos por direccion a %d baud; con tasas del 1%% hacen falta" % (intentos, baud))
+    print("  muchos (un barrido de 1 intento por direccion es ciego)\n")
+    print("  dir   series que contestan            lecturas")
+    hallado = {}
+    ser = serial.Serial(puerto, baud, timeout=0.3)
+    time.sleep(0.15)
+    try:
+        for d in dirs:
+            vistos = {}
+            for _ in range(intentos):
+                v, st = lee(ser, d, REG_SERIE)
+                if st == "ok":
+                    vistos[v] = vistos.get(v, 0) + 1
+                time.sleep(0.01)
+            if vistos:
+                txt = ", ".join("%d(x%d)" % (v, n) for v, n in sorted(vistos.items()))
+                print("  %3d   %-32s %d" % (d, txt, sum(vistos.values())))
+                hallado[d] = vistos
+            else:
+                print("  %3d   %-32s %d" % (d, "-- silencio --", 0))
+    finally:
+        ser.close()
+    print()
+    if not hallado:
+        print("  *** ninguna placa contesta en ninguna direccion. El fallo esta en el")
+        print("      punto comun (HAT o par), no en las direcciones.")
+        return hallado
+    for d, vistos in hallado.items():
+        if len(vistos) > 1:
+            print("  *** DIRECCION %d COMPARTIDA por las placas %s."
+                  % (d, " y ".join(str(v) for v in sorted(vistos))))
+            print("      Modbus no permite hablar con una sola de ellas, asi que")
+            print("      reasignar direcciones EXIGE separarlas fisicamente.")
+            print("      LO QUE SI SE PUEDE EN REMOTO: ponerlas todas a regular por")
+            print("      BROADCAST (slave 0, sin respuesta): el equipo recupera servicio")
+            print("      aunque la telemetria por fase siga sin poder separarse.")
+    unicas = {d: list(v)[0] for d, v in hallado.items() if len(v) == 1}
+    if unicas:
+        print("  placas identificadas:")
+        for d, serie in sorted(unicas.items()):
+            print("      direccion %d -> PCB nº %d" % (d, serie))
+        if len(unicas) < 3:
+            print("  faltan placas: o estan en una direccion no barrida (ampliar --dirs)")
+            print("  o no contestan. Con el reg 41 ya no hay dudas de QUIEN es cada una.")
+    return hallado
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--puerto", default="/dev/ttyAMA0")
@@ -401,6 +455,9 @@ def main():
     p.add_argument("--slaves", default="1,2,3", help="para --ver")
     p.add_argument("--intentos", type=int, default=8)
     p.add_argument("--ver", action="store_true", help="solo diagnostico")
+    p.add_argument("--quien", action="store_true",
+                   help="barre direcciones leyendo el num de serie (reg 41): dice QUE\nplaca esta en cada direccion, insistiendo lo necesario")
+    p.add_argument("--dirs", default="1,2,3,4,5,6,7,8,9,10")
     p.add_argument("--ritmo", action="store_true",
                    help="mide la tasa de respuesta con pausas crecientes")
     p.add_argument("--ficha", action="store_true",
@@ -414,8 +471,12 @@ def main():
     a = p.parse_args()
 
     if not (a.ver or a.reset or a.emergencia or a.barrer or a.medir or a.ficha
-            or a.ritmo):
+            or a.ritmo or a.quien):
         a.ver = True
+
+    if a.quien:
+        quien(a.puerto, a.baud, [int(x) for x in a.dirs.split(",")], max(60, a.intentos))
+        return
 
     if a.ritmo:
         ritmo(a.puerto, a.baud, a.slave or 1, max(20, a.intentos))
