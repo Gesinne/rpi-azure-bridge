@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-Spammer de broadcast reset: envia 200 resets seguidos con micropausa.
+OBSOLETO - NO USAR PARA RESETEAR. Usa reset_placa.py.
 
-Si el bus tiene CRC malos, alguna pasara intacta y reseteara las PCBs.
+El ejemplo de abajo (--reg 110 --valor 1) NO resetea nada: el registro 110 es
+FLAG_RST, la LLAVE del reset, y el firmware solo acepta en el 0xCACA (51908).
+Cualquier otro valor se rechaza con MB_ILLEGAL_DATA_VALUE, asi que las 200
+escrituras no armaban nada. Verificado en Gesinne/FW, Events.c.
 
-Uso (con Node-RED parado):
-    python3 spam_reset.py --reg 110 --valor 1 --n 200 --baud 115200
+Secuencia real: 110=0xCACA, luego 111=0xCACA (y exige ESTADO_ACTUAL=0),
+o bien 113=0xDEAD dos veces (incondicional, firmware >= 1.4.11).
 """
+
 import argparse
 import serial
 import struct
