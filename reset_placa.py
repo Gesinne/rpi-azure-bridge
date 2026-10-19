@@ -94,13 +94,34 @@ def diagnostico(ser, slaves, intentos):
             if st == "ok":
                 ver = v
             time.sleep(0.05)
-        est, _ = lee(ser, s, REG_ESTADO)
-        ala, _ = lee(ser, s, REG_ALARMAS)
+        # con tasas de respuesta del 1% una sola lectura nunca entra: insistir
+        est = ala = None
+        for _ in range(intentos):
+            if est is None:
+                v, st = lee(ser, s, REG_ESTADO)
+                if st == "ok":
+                    est = v
+            if ala is None:
+                v, st = lee(ser, s, REG_ALARMAS)
+                if st == "ok":
+                    ala = v
+            if est is not None and ala is not None:
+                break
+            time.sleep(0.03)
         print("  %5d  %-4s  %-3d  %-8d  %-8d  %-7s  %-6s  %s" % (
             s, FASE.get(s, "?"), cuenta["ok"], cuenta["crc"], cuenta["silencio"],
             ver if ver is not None else "-",
             est if est is not None else "-",
             ("0x%04X" % ala) if ala is not None else "-"))
+        if ala:
+            bits = ["MS mando saturado", "CC sobrecorriente", "ST sobretemperatura",
+                    "SC sobrecarga", "SW bloqueo switch PCB", "RB bloqueo enable externo",
+                    "FA alimentacion +24V < 20V", "VI tension de fase < 80Vac",
+                    "TT transitorio de Vin", "EI encendido incorrecto", "MR RAM corrupta"]
+            activas = [bits[i] for i in range(len(bits)) if ala & (1 << i)]
+            if activas:
+                print("         alarmas de %s: %s" % (FASE.get(s, s), " | ".join(activas)))
+                print("         (desde v1.4.11 NO sube de estado con ninguna alarma activa)")
         sospecha[s] = cuenta
     print()
     colision = [s for s, c in sospecha.items()
