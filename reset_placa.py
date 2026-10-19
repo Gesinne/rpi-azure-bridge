@@ -347,6 +347,52 @@ def ficha(puerto, baud, slave, intentos):
     print("   configuracion y arranca en estado 0, por eso no regula aunque este sana)")
 
 
+PAUSAS = [0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3]
+
+
+def ritmo(puerto, baud, slave, por_pausa):
+    """La misma pregunta a distintos ritmos. Si la tasa sube al frenar, el
+    problema es el RITMO de interrogacion y se arregla en el flow, sin visita."""
+    print("=== tasa de respuesta frente al ritmo (slave %d, %d baud) ===" % (slave, baud))
+    print("  pausa entre preguntas    respuestas    tasa")
+    res = []
+    ser = serial.Serial(puerto, baud, timeout=0.4)
+    time.sleep(0.15)
+    try:
+        for pausa in PAUSAS:
+            ok = 0
+            for _ in range(por_pausa):
+                _, st = lee(ser, slave, REG_VERSION)
+                if st == "ok":
+                    ok += 1
+                if pausa:
+                    time.sleep(pausa)
+            tasa = 100.0 * ok / por_pausa
+            barra = "#" * int(tasa / 4)
+            print("  %6.0f ms                 %3d/%-3d       %5.1f%%  %s"
+                  % (pausa * 1000, ok, por_pausa, tasa, barra))
+            res.append((pausa, tasa))
+    finally:
+        ser.close()
+    print()
+    sin, con = res[0][1], max(t for _, t in res)
+    mejor = [p for p, t in res if t == con][0]
+    if con >= 80 and con > sin + 20:
+        print("  *** SE ARREGLA EN REMOTO. Con %.0f ms de pausa responde el %.0f%%," % (mejor * 1000, con))
+        print("      frente al %.0f%% sin pausa. Las placas estan bien: lo que falla es" % sin)
+        print("      que se les pregunta mas rapido de lo que pueden contestar.")
+        print("      Bajar el ritmo del flow (fix_modbus_resiliente.py --ritmo) y")
+        print("      subir el intervalo de sondeo.")
+    elif con > sin + 20:
+        print("  *** mejora al frenar (%.0f%% -> %.0f%%) pero sigue lejos del 100%%:" % (sin, con))
+        print("      bajar el ritmo ayudara, pero hay algo mas (senal debil en el par,")
+        print("      receptor del HAT degradado).")
+    else:
+        print("  *** el ritmo NO es el problema (%.0f%% -> %.0f%%): no se arregla" % (sin, con))
+        print("      frenando el flow. Apunta al receptor del HAT o al par.")
+    return res
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--puerto", default="/dev/ttyAMA0")
@@ -355,6 +401,8 @@ def main():
     p.add_argument("--slaves", default="1,2,3", help="para --ver")
     p.add_argument("--intentos", type=int, default=8)
     p.add_argument("--ver", action="store_true", help="solo diagnostico")
+    p.add_argument("--ritmo", action="store_true",
+                   help="mide la tasa de respuesta con pausas crecientes")
     p.add_argument("--ficha", action="store_true",
                    help="lee una bateria de registros insistiendo, y detecta si hay\nvarias placas contestando en la misma direccion")
     p.add_argument("--medir", action="store_true",
@@ -365,8 +413,13 @@ def main():
     p.add_argument("--emergencia", action="store_true", help="113=0xDEAD x2")
     a = p.parse_args()
 
-    if not (a.ver or a.reset or a.emergencia or a.barrer or a.medir or a.ficha):
+    if not (a.ver or a.reset or a.emergencia or a.barrer or a.medir or a.ficha
+            or a.ritmo):
         a.ver = True
+
+    if a.ritmo:
+        ritmo(a.puerto, a.baud, a.slave or 1, max(20, a.intentos))
+        return
 
     if a.ficha:
         ficha(a.puerto, a.baud, a.slave or 1, max(40, a.intentos))
