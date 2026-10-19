@@ -39,6 +39,9 @@ DEAD = 0xDEAD   # 57005
 FLAG_RST, REG_RESET, REG_EMER = 110, 111, 113
 REG_VERSION, REG_ESTADO, REG_ALARMAS = 100, 0, 2
 REG_SERIE = 41   # numero de serie de la PCB: identifica QUE placa contesta
+FLAG_EST, REG_ESTADO_DES = 30, 31
+ABCD = 0xABCD    # 43981: llave del registro de estado
+BROADCAST = 0
 FASE = {1: "L1", 2: "L2", 3: "L3"}
 
 
@@ -395,6 +398,51 @@ def ritmo(puerto, baud, slave, por_pausa):
     return res
 
 
+def broadcast_estado(puerto, baud, estado, confirmado):
+    """Pide un estado a TODAS las placas por broadcast (slave 0, sin respuesta).
+
+    Para recuperar un equipo cuyas placas NO podemos oir: la orden sale aunque
+    no nos contesten. NO toca la FLASH -- el estado deseado se procesa en el
+    bucle principal, en RAM -- asi que no puede desparametrizar una placa.
+    El firmware NO sube de estado si hay cualquier alarma activa (v1.4.11), asi
+    que una placa en mal estado se queda donde esta por si misma.
+    """
+    nombre = {0: "0 (bypass/apagado)", 1: "1 (apagado)", 2: "2 (regulando)"}[estado]
+    if not confirmado:
+        print("  Esto escribe en un equipo EN CARGA y en casa de un cliente.")
+        print("  Pide a todas las placas el estado %s." % nombre)
+        print("  Si es lo que quieres, repite el comando anadiendo  --si")
+        return
+    ser = serial.Serial(puerto, baud, timeout=0.3)
+    time.sleep(0.15)
+    try:
+        print("=== BROADCAST a %d baud: estado %s ===" % (baud, nombre))
+        # llave y accion en la MISMA sesion de puerto: la llave caduca
+        for reg, val, que in ((FLAG_EST, ABCD, "llave del estado"),
+                              (REG_ESTADO_DES, estado, "estado deseado")):
+            _tx(ser, struct.pack(">BBHH", BROADCAST, 6, reg, val))
+            print("   reg %-3d = 0x%04X  (%s) enviado" % (reg, val, que))
+            time.sleep(0.15)   # el broadcast no responde: solo se deja hueco
+        print("\n  enviado. El broadcast no contesta, asi que la confirmacion es")
+        print("  INDIRECTA: leer la placa que si habla y mirar si cambio.")
+        time.sleep(3)
+        print("\n=== comprobacion en la placa que contesta ===")
+        for reg, nombre_reg in ((REG_ESTADO, "estado actual"), (3, "tension salida Vo"),
+                                (4, "tension entrada Vin"), (17, "temperatura")):
+            val = None
+            for _ in range(120):
+                v, st = lee(ser, 1, reg)
+                if st == "ok":
+                    val = v
+                    break
+                time.sleep(0.02)
+            print("   %-20s %s" % (nombre_reg, val if val is not None else "no se pudo leer"))
+        print("\n  Si el estado actual es 2 y Vo se separa de Vin, el equipo REGULA.")
+        print("  Si Vo sigue pegada a Vin, sigue en bypass.")
+    finally:
+        ser.close()
+
+
 def quien(puerto, baud, dirs, intentos):
     """Barre direcciones leyendo el REGISTRO 41 (numero de serie de la PCB).
     A diferencia de Vin o la temperatura, el numero de serie es FIJO y DISTINTO
@@ -455,6 +503,12 @@ def main():
     p.add_argument("--slaves", default="1,2,3", help="para --ver")
     p.add_argument("--intentos", type=int, default=8)
     p.add_argument("--ver", action="store_true", help="solo diagnostico")
+    p.add_argument("--regular", action="store_true",
+                   help="BROADCAST: pide a TODAS las placas estado 2 (regulando)")
+    p.add_argument("--bypass", action="store_true",
+                   help="BROADCAST: pide a TODAS las placas estado 0 (bypass)")
+    p.add_argument("--si", action="store_true",
+                   help="confirma una escritura por broadcast en un equipo en carga")
     p.add_argument("--quien", action="store_true",
                    help="barre direcciones leyendo el num de serie (reg 41): dice QUE\nplaca esta en cada direccion, insistiendo lo necesario")
     p.add_argument("--dirs", default="1,2,3,4,5,6,7,8,9,10")
@@ -471,8 +525,12 @@ def main():
     a = p.parse_args()
 
     if not (a.ver or a.reset or a.emergencia or a.barrer or a.medir or a.ficha
-            or a.ritmo or a.quien):
+            or a.ritmo or a.quien or a.regular or a.bypass):
         a.ver = True
+
+    if a.regular or a.bypass:
+        broadcast_estado(a.puerto, a.baud, 2 if a.regular else 0, a.si)
+        return
 
     if a.quien:
         quien(a.puerto, a.baud, [int(x) for x in a.dirs.split(",")], max(60, a.intentos))
