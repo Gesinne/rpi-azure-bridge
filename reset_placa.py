@@ -122,6 +122,81 @@ def diagnostico(ser, slaves, intentos):
 
 
 BAUDS = [38400, 115200, 57600, 19200, 9600]
+PROC = "/proc/tty/driver/ttyAMA"
+
+
+def contadores():
+    """Lee tx/rx/fe/brk del driver. Necesita root."""
+    try:
+        txt = open(PROC).read()
+    except PermissionError:
+        import subprocess
+        try:
+            txt = subprocess.run(["sudo", "-n", "cat", PROC], capture_output=True,
+                                 text=True, timeout=5).stdout
+        except Exception:
+            return None
+    if not txt.strip():
+        return None
+    d = {}
+    for campo in ("tx", "rx", "fe", "brk", "oe", "pe"):
+        for tok in txt.split():
+            if tok.startswith(campo + ":"):
+                try:
+                    d[campo] = int(tok.split(":")[1])
+                except ValueError:
+                    pass
+                break
+    return d or None
+
+
+def medir(puerto, baud, slaves, preguntas):
+    """Pregunta N veces y mide cuanto entra por el UART. Diagnostico de bus."""
+    antes = contadores()
+    if antes is None:
+        sys.exit("no se pudieron leer los contadores: ejecuta con sudo")
+    print("=== medida con trafico propio: %d preguntas a %d baud ===" % (preguntas, baud))
+    print("  antes:  " + "  ".join("%s=%d" % (k, v) for k, v in sorted(antes.items())))
+    ser = serial.Serial(puerto, baud, timeout=0.2)
+    time.sleep(0.15)
+    respuestas = 0
+    try:
+        for i in range(preguntas):
+            s = slaves[i % len(slaves)]
+            _, st = lee(ser, s, REG_VERSION)
+            if st == "ok":
+                respuestas += 1
+    finally:
+        ser.close()
+    time.sleep(0.3)
+    despues = contadores()
+    print("  despues:" + "  ".join("%s=%d" % (k, v) for k, v in sorted(despues.items())))
+    d = {k: despues.get(k, 0) - antes.get(k, 0) for k in antes}
+    print("  DELTA:  " + "  ".join("%s=%+d" % (k, v) for k, v in sorted(d.items())))
+    print("  respuestas validas: %d de %d\n" % (respuestas, preguntas))
+
+    tx, rx, fe, brk = d.get("tx", 0), d.get("rx", 0), d.get("fe", 0), d.get("brk", 0)
+    if tx == 0:
+        print("  *** no se envio nada: el puerto esta ocupado o mal abierto.")
+    elif brk > 0:
+        print("  *** brk SUBE (%+d): alguien MANTIENE el par a nivel bajo." % brk)
+        print("      Transceptor enganchado en transmision. Domina el bus y tapa a")
+        print("      las demas placas. No se arregla en remoto: hay que desconectar")
+        print("      la placa culpable del par PUENTEANDO A-A y B-B (si se deja")
+        print("      abierto se parte la cadena).")
+    elif rx == 0 and fe == 0:
+        print("  *** NO ENTRA NI UN BYTE: no es corrupcion, es ausencia.")
+        print("      Transceptor que no oye, par de recepcion abierto, o placas sin")
+        print("      alimentacion. Caso del 00152 -> cambiar el HAT.")
+    elif fe > 0:
+        print("  *** ENTRAN BYTES CORRUPTOS (fe=%+d sobre rx=%+d): problema" % (fe, rx))
+        print("      ELECTRICO en el par, no de software ni de velocidad. Mirar")
+        print("      terminacion, apantallado, masa comun y placas que ensucien.")
+    elif rx > tx * 2:
+        print("  *** el bus va bien (rx >> tx y fe=0).")
+    else:
+        print("  *** entran bytes pero pocos (rx=%+d frente a tx=%+d) y sin errores" % (rx, tx))
+        print("      de trama: respuestas truncadas o placas que contestan a medias.")
 
 
 def barrido(puerto, slaves, intentos):
@@ -174,14 +249,21 @@ def main():
     p.add_argument("--slaves", default="1,2,3", help="para --ver")
     p.add_argument("--intentos", type=int, default=8)
     p.add_argument("--ver", action="store_true", help="solo diagnostico")
+    p.add_argument("--medir", action="store_true",
+                   help="genera trafico y mide el delta de los contadores del UART")
     p.add_argument("--barrer", action="store_true",
                    help="prueba todas las velocidades x slaves (no escribe nada)")
     p.add_argument("--reset", action="store_true", help="110=0xCACA + 111=0xCACA")
     p.add_argument("--emergencia", action="store_true", help="113=0xDEAD x2")
     a = p.parse_args()
 
-    if not (a.ver or a.reset or a.emergencia or a.barrer):
+    if not (a.ver or a.reset or a.emergencia or a.barrer or a.medir):
         a.ver = True
+
+    if a.medir:
+        medir(a.puerto, a.baud, [int(x) for x in a.slaves.split(",")],
+              max(50, a.intentos))
+        return
 
     if a.barrer:
         barrido(a.puerto, [int(x) for x in a.slaves.split(",")], max(3, a.intentos // 2))
