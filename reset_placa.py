@@ -294,7 +294,7 @@ def barrido(puerto, slaves, intentos):
 
 
 REGS = [(0, "estado actual"), (2, "alarmas"), (3, "tension salida Vo"),
-        (41, "NUMERO DE SERIE PCB"),
+        (41, "NUMERO DE SERIE PCB"), (55, "ESTADO INICIAL al arrancar"),
         (4, "tension entrada Vin"), (5, "frecuencia red"), (6, "corriente equipo dA"),
         (17, "temperatura interna"), (31, "estado deseado"), (47, "dead-time"),
         (48, "direccion Modbus"), (61, "velocidad"), (100, "version FW"),
@@ -396,6 +396,81 @@ def ritmo(puerto, baud, slave, por_pausa):
         print("  *** el ritmo NO es el problema (%.0f%% -> %.0f%%): no se arregla" % (sin, con))
         print("      frenando el flow. Apunta al receptor del HAT o al par.")
     return res
+
+
+def escribe_multiple(ser, slave, addr, valores, esperar=True):
+    """FC=16: varios registros CONTIGUOS en UNA sola trama.
+
+    Decisivo en un bus que pierde tramas: la llave (reg 30) y el estado (reg 31)
+    son contiguos, asi que en una sola trama no puede llegar una sin la otra, ni
+    caducar la llave entre medias. El firmware lo soporta
+    (MB_FUNC_WRITE_MUL_HOLDING_REGISTER) y procesa los registros en orden
+    ascendente, asi que arma la llave antes de aplicar el estado.
+    """
+    cuerpo = struct.pack(">BBHHB", slave, 16, addr, len(valores), 2 * len(valores))
+    cuerpo += b"".join(struct.pack(">H", v) for v in valores)
+    ser.reset_input_buffer()
+    ser.write(cuerpo + struct.pack("<H", crc16(cuerpo)))
+    if not esperar or slave == BROADCAST:
+        time.sleep(0.05)
+        return "enviado (broadcast, no contesta)"
+    resp = ser.read(8)
+    if not resp:
+        return "silencio"
+    if len(resp) >= 5 and resp[1] == 0x90:
+        return "excepcion %d" % resp[2]
+    if len(resp) >= 8 and resp[1] == 16:
+        return "ok"
+    return "respuesta rara"
+
+
+def forzar_estado(puerto, baud, slave, estado, vueltas, confirmado):
+    """Insiste con la llave+estado en una sola trama hasta que el estado cambie."""
+    nombre = {0: "0 (bypass)", 1: "1 (apagado)", 2: "2 (regulando)"}.get(estado, str(estado))
+    if not confirmado:
+        print("  Pediria el estado %s a la direccion %d (%s), llave y estado en UNA"
+              % (nombre, slave, "BROADCAST: todas las placas" if slave == BROADCAST else "solo esa placa"))
+        print("  trama FC=16, repitiendo hasta %d veces hasta que cuele." % vueltas)
+        print("  Es un equipo EN CARGA en casa de un cliente. Para hacerlo: anade  --si")
+        return
+    ser = serial.Serial(puerto, baud, timeout=0.3)
+    time.sleep(0.15)
+    try:
+        print("=== forzando estado %s en la direccion %d a %d baud ===" % (nombre, slave, baud))
+        print("  (FC=16 sobre los registros 30-31: llave 0x%04X + estado %d en una trama)\n" % (ABCD, estado))
+        logrado = False
+        for i in range(1, vueltas + 1):
+            r = escribe_multiple(ser, slave, FLAG_EST, [ABCD, estado])
+            if i % 10 == 0 or r == "ok":
+                print("   intento %3d: %s" % (i, r))
+            # comprobar de vez en cuando leyendo el estado real
+            if i % 10 == 0 or r == "ok":
+                v, st = lee(ser, slave if slave != BROADCAST else 1, REG_ESTADO)
+                if st == "ok":
+                    print("      estado leido: %d" % v)
+                    if v == estado:
+                        print("\n  *** CONSEGUIDO en el intento %d: la placa esta en estado %d." % (i, estado))
+                        logrado = True
+                        break
+            time.sleep(0.05)
+        if not logrado:
+            print("\n  no se ha podido confirmar el cambio en %d intentos." % vueltas)
+            print("  Comprobacion final:")
+        for reg, n in ((REG_ESTADO, "estado actual"), (31, "estado deseado"),
+                       (3, "tension salida Vo"), (4, "tension entrada Vin"),
+                       (17, "temperatura"), (55, "estado inicial (FLASH)")):
+            val = None
+            for _ in range(150):
+                v, st = lee(ser, slave if slave != BROADCAST else 1, reg)
+                if st == "ok":
+                    val = v
+                    break
+                time.sleep(0.02)
+            print("   %-24s %s" % (n, val if val is not None else "no se pudo leer"))
+        print("\n  Vo separandose de Vin = regulando. El registro 55 dice con que estado")
+        print("  ARRANCA la placa: si es 0, tras cada corte de luz se queda en bypass.")
+    finally:
+        ser.close()
 
 
 def broadcast_estado(puerto, baud, estado, confirmado):
@@ -503,6 +578,9 @@ def main():
     p.add_argument("--slaves", default="1,2,3", help="para --ver")
     p.add_argument("--intentos", type=int, default=8)
     p.add_argument("--ver", action="store_true", help="solo diagnostico")
+    p.add_argument("--forzar", action="store_true",
+                   help="llave+estado en UNA sola trama (FC=16), repetida hasta colar")
+    p.add_argument("--estado", type=int, default=2, help="estado a pedir con --forzar")
     p.add_argument("--regular", action="store_true",
                    help="BROADCAST: pide a TODAS las placas estado 2 (regulando)")
     p.add_argument("--bypass", action="store_true",
@@ -525,8 +603,13 @@ def main():
     a = p.parse_args()
 
     if not (a.ver or a.reset or a.emergencia or a.barrer or a.medir or a.ficha
-            or a.ritmo or a.quien or a.regular or a.bypass):
+            or a.ritmo or a.quien or a.regular or a.bypass or a.forzar):
         a.ver = True
+
+    if a.forzar:
+        forzar_estado(a.puerto, a.baud, a.slave if a.slave is not None else 1,
+                      a.estado, max(50, a.intentos), a.si)
+        return
 
     if a.regular or a.bypass:
         broadcast_estado(a.puerto, a.baud, 2 if a.regular else 0, a.si)
