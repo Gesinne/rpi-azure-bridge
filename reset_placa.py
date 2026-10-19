@@ -437,10 +437,33 @@ def forzar_estado(puerto, baud, slave, estado, vueltas, confirmado):
     time.sleep(0.15)
     try:
         print("=== forzando estado %s en la direccion %d a %d baud ===" % (nombre, slave, baud))
-        print("  (FC=16 sobre los registros 30-31: llave 0x%04X + estado %d en una trama)\n" % (ABCD, estado))
+
+        # La llave NO caduca por tiempo: es un biestable. Si ya esta armada,
+        # re-escribir 0xABCD devuelve MB_ILLEGAL_DATA_VALUE y la trama FC=16
+        # falla en el primer registro, asi que el estado nunca se aplica.
+        armada = None
+        if slave != BROADCAST:
+            for _ in range(120):
+                v, st = lee(ser, slave, FLAG_EST)
+                if st == "ok":
+                    armada = (v == ABCD)
+                    break
+                time.sleep(0.02)
+        if armada is True:
+            print("  la llave YA esta armada (reg 30 = 0x%04X): mando SOLO el estado" % ABCD)
+            print("  (re-armarla daria excepcion y tumbaria la trama)\n")
+        elif armada is False:
+            print("  la llave no esta armada: mando llave + estado en una trama FC=16\n")
+        else:
+            print("  no he podido leer la llave; mando llave + estado en FC=16\n")
+
         logrado = False
         for i in range(1, vueltas + 1):
-            r = escribe_multiple(ser, slave, FLAG_EST, [ABCD, estado])
+            if armada is True:
+                r = escribe(ser, slave, REG_ESTADO_DES, estado) if slave != BROADCAST else \
+                    escribe_multiple(ser, slave, REG_ESTADO_DES, [estado])
+            else:
+                r = escribe_multiple(ser, slave, FLAG_EST, [ABCD, estado])
             if i % 10 == 0 or r == "ok":
                 print("   intento %3d: %s" % (i, r))
             # comprobar de vez en cuando leyendo el estado real
