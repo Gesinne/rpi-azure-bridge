@@ -289,6 +289,57 @@ def barrido(puerto, slaves, intentos):
     return encontrado
 
 
+REGS = [(0, "estado actual"), (2, "alarmas"), (3, "tension salida Vo"),
+        (4, "tension entrada Vin"), (5, "frecuencia red"), (6, "corriente equipo dA"),
+        (17, "temperatura interna"), (31, "estado deseado"), (47, "dead-time"),
+        (48, "direccion Modbus"), (61, "velocidad"), (100, "version FW"),
+        (102, "micro"), (103, "restauracion FLASH")]
+
+
+def ficha(puerto, baud, slave, intentos):
+    """Lee registros clave insistiendo. Varios valores en el mismo registro =
+    varias placas respondiendo a la misma direccion."""
+    ser = serial.Serial(puerto, baud, timeout=0.4)
+    time.sleep(0.15)
+    print("=== ficha del slave %d a %d baud (hasta %d intentos por registro) ===" % (slave, baud, intentos))
+    print("  reg  que es                      valor(es) distintos        lecturas")
+    sospecha_varias = []
+    try:
+        for reg, nombre in REGS:
+            vistos = {}
+            for _ in range(intentos):
+                v, st = lee(ser, slave, reg)
+                if st == "ok":
+                    vistos[v] = vistos.get(v, 0) + 1
+                    if len(vistos) >= 3 or sum(vistos.values()) >= 4:
+                        break
+                time.sleep(0.02)
+            if not vistos:
+                print("  %3d  %-28s  %-25s  %s" % (reg, nombre, "-- sin respuesta --", 0))
+                continue
+            txt = ", ".join("%d(x%d)" % (v, n) for v, n in sorted(vistos.items()))
+            print("  %3d  %-28s  %-25s  %d" % (reg, nombre, txt, sum(vistos.values())))
+            # registros que DEBEN diferir entre fases: si dan un solo valor hay una placa
+            if reg in (4, 17) and len(vistos) >= 2:
+                sospecha_varias.append((reg, nombre, len(vistos)))
+    finally:
+        ser.close()
+    print()
+    if sospecha_varias:
+        print("  *** VARIAS PLACAS en la direccion %d: los registros" % slave)
+        for reg, nombre, n in sospecha_varias:
+            print("      %d (%s) devuelve %d valores distintos." % (reg, nombre, n))
+        print("      Tension de entrada y temperatura NO pueden coincidir entre fases,")
+        print("      asi que hay mas de una placa contestando. Pasa cuando la FLASH se")
+        print("      restaura y todas vuelven a la direccion de fabrica.")
+        print("      Arreglo: hay que separarlas fisicamente para reasignar direcciones")
+        print("      (reg 48), no se puede direccionar una sola si comparten direccion.")
+    else:
+        print("  una sola placa contesta en esta direccion.")
+    print("  (reg 103 distinto de 0 = hubo RESTAURACION DE FLASH: la placa perdio su")
+    print("   configuracion y arranca en estado 0, por eso no regula aunque este sana)")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--puerto", default="/dev/ttyAMA0")
@@ -297,6 +348,8 @@ def main():
     p.add_argument("--slaves", default="1,2,3", help="para --ver")
     p.add_argument("--intentos", type=int, default=8)
     p.add_argument("--ver", action="store_true", help="solo diagnostico")
+    p.add_argument("--ficha", action="store_true",
+                   help="lee una bateria de registros insistiendo, y detecta si hay\nvarias placas contestando en la misma direccion")
     p.add_argument("--medir", action="store_true",
                    help="genera trafico y mide el delta de los contadores del UART")
     p.add_argument("--barrer", action="store_true",
@@ -305,8 +358,12 @@ def main():
     p.add_argument("--emergencia", action="store_true", help="113=0xDEAD x2")
     a = p.parse_args()
 
-    if not (a.ver or a.reset or a.emergencia or a.barrer or a.medir):
+    if not (a.ver or a.reset or a.emergencia or a.barrer or a.medir or a.ficha):
         a.ver = True
+
+    if a.ficha:
+        ficha(a.puerto, a.baud, a.slave or 1, max(40, a.intentos))
+        return
 
     if a.medir:
         medir(a.puerto, a.baud, [int(x) for x in a.slaves.split(",")],
