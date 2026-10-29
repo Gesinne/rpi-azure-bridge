@@ -88,7 +88,10 @@ PrivateTmp=yes
 WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
-systemctl enable --now gesinne-portero
+systemctl enable gesinne-portero
+# restart y no --now: si ya estaba en marcha, --now no lo reinicia y seguiría con el
+# código anterior, que es justo lo que se acaba de cambiar.
+systemctl restart gesinne-portero
 
 paso "6/7 · nginx en el $PUERTO_WEB"
 cat > /etc/nginx/sites-available/acceso <<CONF
@@ -115,8 +118,16 @@ server {
         proxy_set_header Host \$host;
     }
 
+    # Sin la barra final no hay nada que servir: se la ponemos y que vuelva.
+    location ~ "^/s/([a-f0-9]{32})\$" {
+        return 301 \$scheme://\$host:$PUERTO_WEB\$uri/;
+    }
+
     # Una sesión abierta: terminal o pantalla.
-    location ~ ^/s/(?<sid>[a-f0-9]{32})(?<resto>/.*)?\$ {
+    #
+    # La expresión va entrecomillada a propósito: sin comillas, nginx ve la llave de
+    # {32} como el principio de un bloque y se corta ahí.
+    location ~ "^/s/(?<sid>[a-f0-9]{32})(?<resto>/.*)\$" {
         auth_request /_valida;
         auth_request_set \$destino \$upstream_http_x_backend;
 
@@ -143,8 +154,8 @@ CONF
 ln -sf /etc/nginx/sites-available/acceso /etc/nginx/sites-enabled/acceso
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
-systemctl enable --now nginx
-systemctl reload nginx
+systemctl enable nginx
+systemctl restart nginx
 ufw allow $PUERTO_WEB/tcp >/dev/null 2>&1 || true
 
 paso "7/7 · Comprobación"

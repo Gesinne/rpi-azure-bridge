@@ -66,14 +66,19 @@ def puerto_libre():
     raise RuntimeError('no quedan puertos libres para sesiones')
 
 
-def arranca_terminal(puerto, puerto_tunel, equipo):
+def arranca_terminal(puerto, puerto_tunel, equipo, sid):
     """Una terminal contra la Raspberry, por el túnel.
+
+    --base-path: la sesión no se sirve en la raíz sino bajo /s/<sid>/, y ttyd tiene que
+    saberlo o pedirá sus ficheros y su websocket en la raíz y la pestaña se queda en
+    blanco.
 
     --once: en cuanto se cierra la pestaña, el proceso se va. Sin eso quedarían
     terminales abiertas esperando a cualquiera que acertara la dirección.
     """
     orden = [
         'ttyd', '-p', str(puerto), '-i', 'lo', '--writable', '--once',
+        '--base-path', '/s/%s' % sid,
         '-t', 'titleFixed=Equipo %s' % equipo, '-t', 'fontSize=15',
         'ssh', '-p', str(puerto_tunel),
         '-o', 'StrictHostKeyChecking=accept-new',
@@ -209,9 +214,12 @@ class Portero(http.server.BaseHTTPRequestHandler):
         if tipo == 'pantalla' and not os.path.isdir(NOVNC):
             return self.contesta(500, {'error': 'falta noVNC en este servidor'})
 
+        # El identificador se saca antes de arrancar: la terminal necesita saber bajo
+        # qué dirección la van a servir.
+        sid = secrets.token_hex(16)
         try:
             puerto = puerto_libre()
-            proc = (arranca_terminal(puerto, puerto_tunel, equipo) if tipo == 'terminal'
+            proc = (arranca_terminal(puerto, puerto_tunel, equipo, sid) if tipo == 'terminal'
                     else arranca_pantalla(puerto, puerto_tunel))
         except Exception as e:
             registra('no he podido arrancar %s del %s: %s' % (tipo, equipo, e))
@@ -221,7 +229,6 @@ class Portero(http.server.BaseHTTPRequestHandler):
         if proc.poll() is not None:
             return self.contesta(500, {'error': 'la sesión se ha caído nada más abrirla'})
 
-        sid = secrets.token_hex(16)
         with candado:
             sesiones[sid] = {'proc': proc, 'puerto': puerto, 'tipo': tipo, 'equipo': equipo,
                              'usuario': usuario, 'caduca': time.time() + minutos * 60}
