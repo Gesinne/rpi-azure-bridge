@@ -37,7 +37,20 @@ SUDO
 chmod 440 /etc/sudoers.d/gesinne-acceso
 visudo -c >/dev/null
 
-echo "[4/4] Servicio que escucha la orden"
+echo "[4/4] Credenciales del broker y servicio"
+if [ -n "${GESINNE_MQTT_USER:-}" ] && [ -n "${GESINNE_MQTT_PASS:-}" ]; then
+    install -d -m 700 /etc/gesinne
+    printf 'GESINNE_MQTT_USER=%s\nGESINNE_MQTT_PASS=%s\n' "$GESINNE_MQTT_USER" "$GESINNE_MQTT_PASS" \
+        > /etc/gesinne/mqtt.conf
+    chmod 600 /etc/gesinne/mqtt.conf
+    echo "  credenciales guardadas en /etc/gesinne/mqtt.conf"
+elif [ -r /etc/gesinne/mqtt.conf ]; then
+    echo "  ya había credenciales guardadas"
+else
+    echo "  OJO: sin credenciales el broker rechaza la conexión."
+    echo "  Vuelve a lanzarlo así:  sudo GESINNE_MQTT_USER=timbre GESINNE_MQTT_PASS=... $0"
+fi
+
 cat > /etc/systemd/system/gesinne-timbre.service <<UNIT
 [Unit]
 Description=Escucha la orden de abrir el acceso remoto (Gesinne)

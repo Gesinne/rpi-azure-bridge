@@ -12,6 +12,9 @@
 #
 set -u
 
+# Las credenciales viven en el equipo, nunca en el repositorio
+[ -r /etc/gesinne/mqtt.conf ] && . /etc/gesinne/mqtt.conf
+
 BROKER="${GESINNE_MQTT_HOST:-57.129.130.106}"
 PUERTO="${GESINNE_MQTT_PORT:-1883}"
 TEMA="${GESINNE_TIMBRE_TOPIC:-gesinne/acceso/+}"
@@ -23,7 +26,13 @@ TIMBRE="$(dirname "$(readlink -f "$0")")/timbre_acceso.py"
 echo "escuchando $TEMA en $BROKER:$PUERTO"
 # Cada mensaje se pasa al verificador, que decide si la orden es legítima. Aquí no se
 # valida nada: esto solo oye.
-mosquitto_sub -h "$BROKER" -p "$PUERTO" -t "$TEMA" -q 1 -k "$LATIDO" 2>/dev/null |
+CREDENCIALES=()
+[ -n "${GESINNE_MQTT_USER:-}" ] && CREDENCIALES+=(-u "$GESINNE_MQTT_USER")
+[ -n "${GESINNE_MQTT_PASS:-}" ] && CREDENCIALES+=(-P "$GESINNE_MQTT_PASS")
+
+# El error del cliente NO se tira a la basura: cuando el broker rechaza la credencial
+# lo dice ahí, y sin verlo el servicio solo parece "reiniciarse sin motivo".
+mosquitto_sub -h "$BROKER" -p "$PUERTO" -t "$TEMA" -q 1 -k "$LATIDO" "${CREDENCIALES[@]}" |
 while IFS= read -r mensaje; do
     [ -n "$mensaje" ] || continue
     printf '%s' "$mensaje" | "$TIMBRE" >/dev/null 2>&1 &
