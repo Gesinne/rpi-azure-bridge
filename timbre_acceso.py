@@ -22,6 +22,7 @@ equipo abra un túnel HACIA NUESTRO SERVIDOR, donde no entra sin la clave de acc
 El timbre no da acceso: solo avisa.
 
   echo '<json>' | timbre_acceso.py
+  timbre_acceso.py --b64 <orden en base64>
   timbre_acceso.py --generar-secreto
 """
 import hashlib
@@ -87,7 +88,18 @@ def main():
         print(nuevo.decode())      # se registra en el servidor, junto a la clave del equipo
         return 0
 
-    crudo = sys.stdin.read().strip()
+    # El nodo exec de Node-RED pasa el mensaje como argumento, no por la entrada
+    # estándar, y un JSON con comillas en una línea de comandos se rompe solo: por eso
+    # viaja en base64.
+    if '--b64' in sys.argv:
+        import base64
+        try:
+            crudo = base64.b64decode(sys.argv[sys.argv.index('--b64') + 1]).decode()
+        except Exception:
+            registra('no he podido descifrar el base64 de la orden')
+            return 1
+    else:
+        crudo = sys.stdin.read().strip()
     if not crudo:
         return 0
     try:
