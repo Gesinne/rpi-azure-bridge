@@ -23,8 +23,12 @@
 #
 set -u
 
-SERVIDOR="${GESINNE_TUNEL_HOST:-57.129.130.106}"
-PUERTO_SERVIDOR="${GESINNE_TUNEL_PORT:-22}"   # hay redes que filtran el 22 de salida
+# A qué servidor llamar. Se guarda en el equipo porque quien manda la orden por
+# MQTT no se lo pasa: el timbre solo dice "abre", no dónde.
+[ -r /etc/gesinne/acceso.conf ] && . /etc/gesinne/acceso.conf
+
+SERVIDOR="${GESINNE_TUNEL_HOST:-acceso.gesinne.cloud}"
+PUERTO_SERVIDOR="${GESINNE_TUNEL_PORT:-443}"   # hay redes que filtran el 22 de salida
 USUARIO="${GESINNE_TUNEL_USER:-tunel}"
 CLAVE="${GESINNE_TUNEL_KEY:-/home/gesinne/.ssh/id_tunel}"
 MINUTOS_POR_DEFECTO=30

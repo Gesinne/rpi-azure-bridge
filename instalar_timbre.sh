@@ -40,7 +40,14 @@ SUDO
 chmod 440 /etc/sudoers.d/gesinne-acceso
 visudo -c >/dev/null
 
-echo "[4/4] Credenciales del broker y servicio"
+echo "[4/4] Servidor de acceso, credenciales y servicio"
+install -d -m 755 /etc/gesinne
+printf 'GESINNE_TUNEL_HOST=%s\nGESINNE_TUNEL_PORT=%s\n' \
+    "${GESINNE_TUNEL_HOST:-acceso.gesinne.cloud}" "${GESINNE_TUNEL_PORT:-443}" \
+    > /etc/gesinne/acceso.conf
+chmod 644 /etc/gesinne/acceso.conf
+echo "  llamará a $(grep HOST /etc/gesinne/acceso.conf | cut -d= -f2):$(grep PORT /etc/gesinne/acceso.conf | cut -d= -f2)"
+
 if [ -n "${GESINNE_MQTT_USER:-}" ] && [ -n "${GESINNE_MQTT_PASS:-}" ]; then
     install -d -m 755 /etc/gesinne
     printf 'GESINNE_MQTT_USER=%s\nGESINNE_MQTT_PASS=%s\n' "$GESINNE_MQTT_USER" "$GESINNE_MQTT_PASS" \
