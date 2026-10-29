@@ -3,9 +3,10 @@
 El timbre: recibe por MQTT la orden de abrir o cerrar el acceso a este equipo.
 
 La conexión MQTT ya existe para la telemetría, así que escuchar no cuesta ni un byte.
-Pero el broker acepta a cualquiera sin contraseña y está abierto a internet, así que
-una orden a pelo sería una llave tirada en la calle: cualquiera podría poner al parque
-entero a abrir túneles.
+El broker pide usuario y contraseña, pero está abierto a todo internet a propósito
+(los equipos salen con IP de operador, que cambia, así que no hay lista blanca posible)
+y hoy no distingue por temas: cualquiera con unas credenciales del parque podría
+publicar en el tema del acceso. Por eso la orden no se queda en manos del broker.
 
 Por eso la orden va firmada. Cada equipo tiene su propio secreto, distinto del de los
 demás, y aquí se comprueban tres cosas antes de mover un dedo:
