@@ -27,6 +27,17 @@ de responder / aparece), envía un email a través de enviar_email.py.
 
 Snapshot: /var/lib/gesinne/placas_snapshot.json (override con env SNAP_FILE).
 """
+# ── Envío de correo: APAGADO ────────────────────────────────────────────────
+# Puesto a False el 29/10/2026 a petición de Patricia: los avisos de cambio de placa
+# llegaban por correo y no se quieren. La detección sigue funcionando igual —se
+# comparan las placas con el último snapshot y queda escrito en
+# /var/log/aviso_cambio_placa.log—, lo único que no se hace es mandar el email.
+#
+# Para volver a activarlo basta con poner True aquí: el servicio de cada Raspberry
+# hace `git pull` antes de ejecutarse, así que lo recogen solas en el siguiente
+# arranque, sin entrar en ninguna.
+ENVIAR_EMAIL = False
+
 import sys, os, time, json, socket, glob
 
 SNAP = os.environ.get('SNAP_FILE', '/var/lib/gesinne/placas_snapshot.json')
@@ -201,6 +212,9 @@ def main():
         v = actual.get(L)
         cuerpo += "  %s: %s\n" % (L, ("serie %s, FW %s" % (v.get('serie'), v.get('fw')) if v else "no responde"))
     cuerpo += "\nFecha: %s\n" % time.strftime('%Y-%m-%d %H:%M:%S')
+
+    if not ENVIAR_EMAIL:
+        print("[aviso] cambios detectados (correo desactivado):", cambios); return
 
     try:
         from enviar_email import enviar_email
