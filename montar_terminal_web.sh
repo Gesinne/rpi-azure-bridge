@@ -118,16 +118,34 @@ server {
         proxy_set_header Host \$host;
     }
 
-    # Sin la barra final no hay nada que servir: se la ponemos y que vuelva.
-    location ~ "^/s/([a-f0-9]{32})\$" {
+    # Dos caminos distintos porque los dos programas esperan cosas distintas:
+    #
+    #   /t/<id>/  terminal. A ttyd se le dice con --base-path bajo qué dirección lo
+    #             sirven, así que hay que pasarle la dirección ENTERA, con prefijo.
+    #   /p/<id>/  pantalla. websockify sirve en la raíz y no entiende de prefijos, así
+    #             que hay que quitárselo antes de pasárselo.
+    #
+    # Las expresiones van entrecomilladas a propósito: sin comillas, nginx ve la llave
+    # de {32} como el principio de un bloque y se corta ahí.
+
+    location ~ "^/(t|p)/([a-f0-9]{32})\$" {
         return 301 \$scheme://\$host:$PUERTO_WEB\$uri/;
     }
 
-    # Una sesión abierta: terminal o pantalla.
-    #
-    # La expresión va entrecomillada a propósito: sin comillas, nginx ve la llave de
-    # {32} como el principio de un bloque y se corta ahí.
-    location ~ "^/s/(?<sid>[a-f0-9]{32})(?<resto>/.*)\$" {
+    location ~ "^/t/(?<sid>[a-f0-9]{32})/" {
+        auth_request /_valida;
+        auth_request_set \$destino \$upstream_http_x_backend;
+
+        proxy_pass http://\$destino;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_read_timeout 12h;
+        proxy_buffering off;
+    }
+
+    location ~ "^/p/(?<sid>[a-f0-9]{32})(?<resto>/.*)\$" {
         auth_request /_valida;
         auth_request_set \$destino \$upstream_http_x_backend;
 

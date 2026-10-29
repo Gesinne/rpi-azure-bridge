@@ -69,7 +69,7 @@ def puerto_libre():
 def arranca_terminal(puerto, puerto_tunel, equipo, sid):
     """Una terminal contra la Raspberry, por el túnel.
 
-    --base-path: la sesión no se sirve en la raíz sino bajo /s/<sid>/, y ttyd tiene que
+    --base-path: la sesión no se sirve en la raíz sino bajo /t/<sid>/, y ttyd tiene que
     saberlo o pedirá sus ficheros y su websocket en la raíz y la pestaña se queda en
     blanco.
 
@@ -78,7 +78,7 @@ def arranca_terminal(puerto, puerto_tunel, equipo, sid):
     """
     orden = [
         'ttyd', '-p', str(puerto), '-i', 'lo', '--writable', '--once',
-        '--base-path', '/s/%s' % sid,
+        '--base-path', '/t/%s' % sid,
         '-t', 'titleFixed=Equipo %s' % equipo, '-t', 'fontSize=15',
         'ssh', '-p', str(puerto_tunel),
         '-o', 'StrictHostKeyChecking=accept-new',
@@ -235,10 +235,10 @@ class Portero(http.server.BaseHTTPRequestHandler):
 
         if tipo == 'pantalla':
             # noVNC necesita saber por dónde sale su websocket, que aquí va con prefijo.
-            url = ('%s/s/%s/vnc.html?path=s/%s/websockify&autoconnect=1&resize=scale'
+            url = ('%s/p/%s/vnc.html?path=p/%s/websockify&autoconnect=1&resize=scale'
                    % (PUBLICA, sid, sid))
         else:
-            url = '%s/s/%s/' % (PUBLICA, sid)
+            url = '%s/t/%s/' % (PUBLICA, sid)
 
         registra('abierta %s del equipo %s para %s · %d min' % (tipo, equipo, usuario or '?', minutos))
         return self.contesta(200, {'url': url, 'sid': sid, 'minutos': minutos})
