@@ -16,6 +16,9 @@ else
     "$DIR/timbre_acceso.py" --generar-secreto >/dev/null
     echo "  generado"
 fi
+chmod 755 /etc/gesinne 2>/dev/null || true
+chown "$USUARIO" /etc/gesinne/timbre.key 2>/dev/null || true
+chmod 600 /etc/gesinne/timbre.key 2>/dev/null || true
 echo -n "  apúntalo para darlo de alta en el servidor: "
 cat /etc/gesinne/timbre.key; echo ""
 
@@ -39,10 +42,10 @@ visudo -c >/dev/null
 
 echo "[4/4] Credenciales del broker y servicio"
 if [ -n "${GESINNE_MQTT_USER:-}" ] && [ -n "${GESINNE_MQTT_PASS:-}" ]; then
-    install -d -m 700 /etc/gesinne
+    install -d -m 755 /etc/gesinne
     printf 'GESINNE_MQTT_USER=%s\nGESINNE_MQTT_PASS=%s\n' "$GESINNE_MQTT_USER" "$GESINNE_MQTT_PASS" \
         > /etc/gesinne/mqtt.conf
-    chmod 600 /etc/gesinne/mqtt.conf
+    chmod 600 /etc/gesinne/mqtt.conf   # lo lee systemd como root, no el servicio
     echo "  credenciales guardadas en /etc/gesinne/mqtt.conf"
 elif [ -r /etc/gesinne/mqtt.conf ]; then
     echo "  ya había credenciales guardadas"
@@ -60,6 +63,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=$USUARIO
+# Lo lee systemd (como root) y se lo pasa al servicio: así el fichero puede seguir
+# siendo 600 de root y el proceso no necesita leerlo él.
+EnvironmentFile=-/etc/gesinne/mqtt.conf
 ExecStart=$DIR/timbre_servicio.sh
 Restart=always
 RestartSec=30
