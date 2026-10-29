@@ -92,6 +92,8 @@ abrir() {
     rm -f "${ESTADO}.ssh"
   fi
 
+  abrir_pantalla
+
   # -N: sin shell, sólo el reenvío. Los keepalive son para que el NAT no corte la
   # conexión a mitad de una sesión, no para mantenerla viva en reposo: en reposo no hay
   # túnel ninguno.
@@ -124,7 +126,48 @@ abrir() {
   registra "[OK] abierto equipo $EQUIPO · terminal en el puerto $PUERTO_SSH · pantalla en el $PUERTO_PANTALLA · se cierra solo en $minutos min"
 }
 
+# La pantalla del equipo, para verla en el navegador.
+#
+# El wayvnc que ya corre es el de Raspberry Pi Connect y habla por un socket de Unix,
+# no por un puerto, así que el túnel no lo encuentra. Se levanta uno nuestro en el
+# 5900, que convive con el otro sin molestarlo, y se para al cerrar: en reposo no hay
+# ni pantalla ni puerto abierto.
+#
+# Escucha en 127.0.0.1 a propósito: sólo se llega a él por dentro del túnel.
+abrir_pantalla() {
+  if ss -tln 2>/dev/null | grep -q '127.0.0.1:5900'; then
+    registra "[=] ya había algo escuchando en el 5900: lo dejo como está"
+    return 0
+  fi
+  # Hay que hablarle al compositor de la sesión gráfica del usuario, no a la del root
+  # que ejecuta esto por sudo.
+  local duenyo wayland
+  duenyo=$(loginctl list-sessions --no-legend 2>/dev/null | awk '$3!="" {print $2; exit}')
+  [ -n "$duenyo" ] || { registra "[!] no hay sesión gráfica: esta vez sin pantalla"; return 0; }
+  wayland=$(ls /run/user/"$duenyo"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)
+  [ -n "$wayland" ] || { registra "[!] no encuentro el compositor: esta vez sin pantalla"; return 0; }
+
+  setsid env XDG_RUNTIME_DIR=/run/user/"$duenyo" WAYLAND_DISPLAY="$(basename "$wayland")" \
+    wayvnc 127.0.0.1 5900 >>"$LOG" 2>&1 &
+  echo $! > "${ESTADO}.vnc"
+  sleep 2
+  if ss -tln 2>/dev/null | grep -q '127.0.0.1:5900'; then
+    registra "[OK] pantalla disponible"
+  else
+    registra "[!] la pantalla no ha levantado; el terminal sí funciona"
+    rm -f "${ESTADO}.vnc"
+  fi
+}
+
+cerrar_pantalla() {
+  if [ -f "${ESTADO}.vnc" ]; then
+    kill "$(cat "${ESTADO}.vnc")" 2>/dev/null
+    rm -f "${ESTADO}.vnc"
+  fi
+}
+
 cerrar() {
+  cerrar_pantalla
   if vivo; then
     kill "$(cat "$ESTADO")" 2>/dev/null
     registra "[OK] cerrado el acceso al equipo $EQUIPO"
