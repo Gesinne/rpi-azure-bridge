@@ -53,7 +53,20 @@ Match User $USUARIO
     ClientAliveInterval 60
     ClientAliveCountMax 3
 CONF
-sshd -t && systemctl reload ssh
+sshd -t
+
+# En Ubuntu 24.04 y posteriores el SSH lo arranca un socket de systemd, que NO lee los
+# "Port" del fichero de configuración: hay que decirselo al socket o el 443 no escucha,
+# aunque sshd_config diga lo contrario y no de ningun error.
+if systemctl list-unit-files 2>/dev/null | grep -q '^ssh\.socket'; then
+    mkdir -p /etc/systemd/system/ssh.socket.d
+    printf '[Socket]\nListenStream=\nListenStream=22\nListenStream=%s\n' "$PUERTO_TUNEL" \
+        > /etc/systemd/system/ssh.socket.d/10-tuneles.conf
+    systemctl daemon-reload
+    systemctl restart ssh.socket
+else
+    systemctl reload ssh
+fi
 
 echo "[3/4] Cortafuegos: solo 22 y $PUERTO_TUNEL"
 if command -v ufw >/dev/null 2>&1; then
