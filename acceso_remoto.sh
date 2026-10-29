@@ -24,6 +24,7 @@
 set -u
 
 SERVIDOR="${GESINNE_TUNEL_HOST:-57.129.130.106}"
+PUERTO_SERVIDOR="${GESINNE_TUNEL_PORT:-22}"   # hay redes que filtran el 22 de salida
 USUARIO="${GESINNE_TUNEL_USER:-tunel}"
 CLAVE="${GESINNE_TUNEL_KEY:-/home/gesinne/.ssh/id_tunel}"
 MINUTOS_POR_DEFECTO=30
@@ -71,6 +72,13 @@ abrir() {
     return 0
   fi
 
+  # Comprobación previa: si la red del cliente filtra el puerto de salida, el ssh se
+  # queda vivo reintentando contra una pared y el script daba un OK que no era verdad.
+  if ! timeout 6 bash -c "exec 3<>/dev/tcp/${SERVIDOR}/${PUERTO_SERVIDOR}" 2>/dev/null; then
+    registra "[X] esta red no deja salir al ${SERVIDOR}:${PUERTO_SERVIDOR} — el túnel no puede abrirse desde aquí"
+    return 1
+  fi
+
   # En muchas Raspberry el SSH está parado a propósito; se enciende sólo mientras dura
   # el acceso y se deja como estaba al cerrar.
   if ! systemctl is-active --quiet ssh 2>/dev/null; then
@@ -85,17 +93,23 @@ abrir() {
   # túnel ninguno.
   ssh -N -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
       -o ExitOnForwardFailure=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=3 \
-      -i "$CLAVE" \
+      -i "$CLAVE" -p "$PUERTO_SERVIDOR" \
       -R "${PUERTO_SSH}:localhost:22" \
       -R "${PUERTO_PANTALLA}:localhost:5900" \
       "${USUARIO}@${SERVIDOR}" &
   local pid=$!
   echo "$pid" > "$ESTADO"
 
-  sleep 3
+  sleep 4
   if ! kill -0 "$pid" 2>/dev/null; then
-    registra "[X] el túnel no ha levantado (¿clave, red o puerto ocupado en el servidor?)"
+    registra "[X] el túnel no ha levantado (¿clave rechazada o puerto ocupado en el servidor?)"
     rm -f "$ESTADO"; return 1
+  fi
+  # Vivo no es suficiente: hay que ver la conexión establecida contra el servidor
+  if command -v ss >/dev/null 2>&1 && \
+     ! ss -tn state established "dst ${SERVIDOR}" 2>/dev/null | grep -q ":${PUERTO_SERVIDOR}"; then
+    registra "[X] el proceso está vivo pero no hay conexión con el servidor: no te fíes, el túnel NO está abierto"
+    kill "$pid" 2>/dev/null; rm -f "$ESTADO"; return 1
   fi
 
   # El cierre automático va aparte y sobrevive a que este script termine: sin esto, un
