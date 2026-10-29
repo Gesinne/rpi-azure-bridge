@@ -66,6 +66,10 @@ se conecta a ellos es el panel, que corre ahí mismo.
 3. En el flow de Node-RED, un `mqtt in` suscrito al tema de órdenes del equipo y un
    `exec` que llame al script con `abrir` o `cerrar`.
 
+Los puertos los asigna el servidor y viajan en la orden; el script los acepta como
+argumentos. No se calculan en la Raspberry: con equipos como el 73001, cualquier
+fórmula del tipo `22000 + número` se sale del rango de puertos válidos.
+
 El script arranca el `sshd` si estaba parado —en muchas Raspberry lo está a
 propósito— y lo vuelve a parar al cerrar, dejándolo como estaba.
 

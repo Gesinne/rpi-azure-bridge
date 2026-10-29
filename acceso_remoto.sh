@@ -13,9 +13,13 @@
 # NAT del cliente y el CGNAT del operador sin abrir ningún puerto en destino, y funciona
 # igual por cable que por SIM.
 #
-#   acceso_remoto.sh abrir [minutos]   por defecto 30; nunca sin límite
+#   acceso_remoto.sh abrir <puerto_terminal> <puerto_pantalla> [minutos]
 #   acceso_remoto.sh cerrar
 #   acceso_remoto.sh estado
+#
+# Los puertos los manda el servidor en la orden, no los calcula la Raspberry: hay
+# equipos con números altos (el 73001, sin ir más lejos) para los que cualquier
+# fórmula del tipo 22000+número se sale del rango válido.
 #
 set -u
 
@@ -24,8 +28,8 @@ USUARIO="${GESINNE_TUNEL_USER:-tunel}"
 CLAVE="${GESINNE_TUNEL_KEY:-/home/gesinne/.ssh/id_tunel}"
 MINUTOS_POR_DEFECTO=30
 MINUTOS_MAXIMO=240                     # tope duro: nadie deja esto abierto un fin de semana
-BASE_SSH=22000                         # puerto remoto = base + número de equipo
-BASE_PANTALLA=25000
+RANGO_MIN=30000                        # si el servidor no dice puertos, se reparten aquí
+RANGO_MAX=60000
 ESTADO=/run/gesinne-acceso-remoto
 LOG=/var/log/gesinne-acceso-remoto.log
 
@@ -44,13 +48,21 @@ numero_equipo() {
 
 EQUIPO=$(numero_equipo) || { registra "[X] no sé de qué equipo soy: falta equipo_config.json"; exit 1; }
 N=$((10#${EQUIPO}))                    # 00017 -> 17, sin que el cero inicial lo haga octal
-PUERTO_SSH=$((BASE_SSH + N))
-PUERTO_PANTALLA=$((BASE_PANTALLA + N))
+
+# De respaldo, por si alguien llama al script a mano sin pasar puertos: se reparten
+# dentro de un rango válido y de dos en dos, para que terminal y pantalla del mismo
+# equipo vayan juntas y nunca se salgan de los 65535.
+HUECO=$(( (N * 2) % (RANGO_MAX - RANGO_MIN) ))
+PUERTO_SSH=$((RANGO_MIN + HUECO))
+PUERTO_PANTALLA=$((PUERTO_SSH + 1))
 
 vivo() { [ -f "$ESTADO" ] && kill -0 "$(cat "$ESTADO" 2>/dev/null)" 2>/dev/null; }
 
 abrir() {
-  local minutos="${1:-$MINUTOS_POR_DEFECTO}"
+  # El servidor manda los puertos; si no vienen, se usan los de respaldo
+  [[ "${1:-}" =~ ^[0-9]+$ ]] && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ] && PUERTO_SSH="$1"
+  [[ "${2:-}" =~ ^[0-9]+$ ]] && [ "$2" -ge 1024 ] && [ "$2" -le 65535 ] && PUERTO_PANTALLA="$2"
+  local minutos="${3:-$MINUTOS_POR_DEFECTO}"
   [[ "$minutos" =~ ^[0-9]+$ ]] || minutos=$MINUTOS_POR_DEFECTO
   [ "$minutos" -gt "$MINUTOS_MAXIMO" ] && minutos=$MINUTOS_MAXIMO
 
@@ -118,7 +130,7 @@ estado() {
 }
 
 case "${1:-estado}" in
-  abrir)  abrir "${2:-}" ;;
+  abrir)  abrir "${2:-}" "${3:-}" "${4:-}" ;;
   cerrar) cerrar ;;
   estado) estado ;;
   *) echo "uso: $0 {abrir [minutos]|cerrar|estado}"; exit 1 ;;
