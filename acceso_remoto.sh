@@ -147,8 +147,11 @@ abrir_pantalla() {
   wayland=$(ls /run/user/"$duenyo"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)
   [ -n "$wayland" ] || { registra "[!] no encuentro el compositor: esta vez sin pantalla"; return 0; }
 
+  # --render-cursor: sin esto el puntero no se dibuja en la imagen que se manda, así
+  # que se mueve pero no se ve, y parece que la pantalla no responde cuando sí lo hace.
+  # Es la misma opción con la que arranca el wayvnc de Raspberry Pi Connect.
   setsid env XDG_RUNTIME_DIR=/run/user/"$duenyo" WAYLAND_DISPLAY="$(basename "$wayland")" \
-    wayvnc 127.0.0.1 5900 >>"$LOG" 2>&1 &
+    wayvnc --render-cursor 127.0.0.1 5900 >>"$LOG" 2>&1 &
   echo $! > "${ESTADO}.vnc"
   sleep 2
   if ss -tln 2>/dev/null | grep -q '127.0.0.1:5900'; then
