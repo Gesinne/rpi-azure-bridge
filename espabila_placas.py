@@ -20,12 +20,21 @@ OJO: reg 31 = 0 deja las placas en BYPASS, o sea el equipo DEJA DE REGULAR
 (estado seguro, pero el cliente pierde el ahorro mientras siga asi). Para
 devolverlas a regulacion: --estado 2. El script lo recuerda al terminar.
 
+RESET A CIEGAS (--reset): manda ademas reg 110 y reg 111 = 0xCACA, que es el
+reset del firmware. Es la UNICA via remota en placas con fw < 1.4.11: esas no
+tienen el reset de emergencia del reg 113 ni se quedan contestando como slave 1
+cuando se cuelgan, asi que no hay forma de leerlas ni de rescatarlas leyendo.
+El reg 111 solo actua con ESTADO_ACTUAL = 0, por eso la secuencia pasa primero
+por BYPASS; con --estado 2 se las devuelve a regulacion despues del reset.
+
 Uso:
     sudo systemctl stop nodered          # imprescindible: el puerto es de uno solo
     python3 espabila_placas.py                        # bypass a 38400 y informe
     python3 espabila_placas.py --barrer               # prueba 38400/115200/57600
     python3 espabila_placas.py --estado 2             # devolver a REGULACION
     python3 espabila_placas.py --solo-leer            # no escribe nada
+    python3 espabila_placas.py --reset --barrer        # reset a ciegas (fw < 1.4.11)
+    python3 espabila_placas.py --reset --estado 2      # reset y dejarlas regulando
 """
 import argparse
 import struct
@@ -38,6 +47,9 @@ BAUDS_HABITUALES = (38400, 115200, 57600)
 LLAVE_30 = 43981   # 0xABCD
 LLAVE_40 = 47818   # 0xBACA
 REG_ESTADO = 31
+LLAVE_RST = 51908  # 0xCACA: vale como llave (reg 110) y como orden de reset (reg 111)
+REG_FLAG_RST = 110
+REG_RESET_FW = 111
 TAG_ESTADO = {0: "BYPASS", 1: "OFF", 2: "REGULACION"}
 
 
@@ -87,6 +99,23 @@ def manda_broadcast(ser, estado: int, verbose=True):
         time.sleep(0.2)
 
 
+def manda_reset_broadcast(ser, verbose=True):
+    """Reset del firmware a ciegas, a slave 0 (no espera respuesta).
+
+    El reg 111 solo actua si ESTADO_ACTUAL = 0, asi que la secuencia pasa por
+    BYPASS antes de resetear. Las llaves caducan al cerrar el puerto, de modo
+    que las cinco escrituras van en la MISMA sesion.
+    """
+    pasos = ((30, LLAVE_30), (40, LLAVE_40), (REG_ESTADO, 0),
+             (REG_FLAG_RST, LLAVE_RST), (REG_RESET_FW, LLAVE_RST))
+    for addr, val in pasos:
+        if verbose:
+            print("      reg %d = %d" % (addr, val))
+        ser.write(trama_write(0, addr, val))
+        ser.flush()
+        time.sleep(0.2)
+
+
 def foto(ser, slaves, etiqueta):
     print("  %s:" % etiqueta)
     estado = {}
@@ -100,7 +129,7 @@ def foto(ser, slaves, etiqueta):
     return estado
 
 
-def intento(port, baud, estado, slaves, solo_leer):
+def intento(port, baud, estado, slaves, solo_leer, reset=False, espera=6):
     print("")
     print("  ── %d baud ──" % baud)
     try:
@@ -112,6 +141,20 @@ def intento(port, baud, estado, slaves, solo_leer):
         antes = foto(ser, slaves, "ANTES")
         if solo_leer:
             return antes, antes
+        if reset:
+            print("  [R] RESET por BROADCAST (slave=0):")
+            manda_reset_broadcast(ser)
+            print("  [~] esperando %ds a que arranquen..." % espera)
+            time.sleep(espera)
+            despues = foto(ser, slaves, "DESPUES DEL RESET")
+            # El reset las deja en bypass. Si se pide regulacion, se manda ahora:
+            # una placa recien arrancada no regula hasta que se le dice.
+            if estado != 0:
+                print("  [B] BROADCAST de estado (slave=0):")
+                manda_broadcast(ser, estado)
+                time.sleep(2)
+                despues = foto(ser, slaves, "DESPUES")
+            return antes, despues
         print("  [B] BROADCAST (slave=0):")
         manda_broadcast(ser, estado)
         print("  [~] esperando 2s a que procesen...")
@@ -130,19 +173,25 @@ def main():
                    help="valor para reg 31: 0=BYPASS (por defecto), 2=REGULACION")
     p.add_argument("--slaves", default="1,2,3")
     p.add_argument("--solo-leer", action="store_true", help="no escribe nada")
+    p.add_argument("--reset", action="store_true",
+                   help="manda tambien el reset del firmware (reg 110+111); para fw < 1.4.11")
+    p.add_argument("--espera", type=int, default=6,
+                   help="segundos tras el reset antes de releer (por defecto 6)")
     args = p.parse_args()
 
     slaves = [int(s) for s in args.slaves.split(",")]
     bauds = BAUDS_HABITUALES if args.barrer else (args.baud,)
 
-    print("[*] Puerto %s | slaves %s | reg31 -> %d (%s)%s"
+    print("[*] Puerto %s | slaves %s | reg31 -> %d (%s)%s%s"
           % (args.port, slaves, args.estado,
              TAG_ESTADO.get(args.estado, "?"),
+             "  [CON RESET]" if args.reset and not args.solo_leer else "",
              "  [SOLO LECTURA]" if args.solo_leer else ""))
 
     recuperadas_total = {}
     for baud in bauds:
-        antes, despues = intento(args.port, baud, args.estado, slaves, args.solo_leer)
+        antes, despues = intento(args.port, baud, args.estado, slaves, args.solo_leer,
+                                 args.reset, args.espera)
         if despues is None:
             sys.exit(1)
         vivas = [sl for sl, v in despues.items() if v is not None]
@@ -162,6 +211,10 @@ def main():
         print("  El broadcast se ha enviado igualmente (no espera respuesta),")
         print("  asi que si alguna estaba atascada deberia haber reaccionado.")
         print("  Siguiente paso: nivel fisico (tierra comun, terminacion, tension).")
+        if args.reset:
+            print("  El reset (reg 110+111) tambien se ha enviado a ciegas. Si tras esto")
+            print("  siguen mudas, no queda via remota: con fw < 1.4.11 no hay reset de")
+            print("  emergencia, y solo lo levanta un corte de tension del equipo o una visita.")
     else:
         for baud, vivas in recuperadas_total.items():
             print("  @ %d baud contestan: %s" % (baud, ", ".join("L%d" % s for s in vivas)))
