@@ -149,7 +149,12 @@ GIT_ERR=""
 # GIT_TERMINAL_PROMPT=0 hace que git falle en vez de quedarse esperando el
 # usuario por teclado (en cron o Raspberry Pi Connect eso es un cuelgue eterno).
 es_fallo_de_credenciales() {
-    echo "$1" | grep -qiE "authentication failed|invalid username or password|could not read username|could not read password|repository not found|terminal prompts disabled|403|401"
+    # Un token caducado o mal copiado NO siempre dice "authentication failed":
+    # GitHub responde cosas como "unable to access ... 403" o "Support for password
+    # authentication was removed". Si el patron no lo reconoce, el script se queda
+    # con la copia vieja creyendo que es un problema de red, y se siguen instalando
+    # flows antiguos sin que nadie se entere.
+    echo "$1" | grep -qiE "authentication failed|invalid username or password|could not read username|could not read password|repository not found|terminal prompts disabled|support for password authentication|unable to access|bad credentials|403|401"
 }
 
 # Clona a un temporal y solo sustituye la caché cuando ha salido bien: antes se
@@ -230,6 +235,12 @@ if [ -d "$CACHE_DIR/.git" ]; then
             # re-clonaba y, si eso también fallaba, se borraba el token bueno.
             echo "  [!]  Parece la red, no las credenciales: se usa la caché local"
             echo "       (el token guardado no se toca)"
+            # De cuando es lo que se va a instalar. Sin esto, una caché de hace
+            # semanas se instala igual y parece que todo ha ido bien.
+            CACHE_FECHA=$(cd "$CACHE_DIR" 2>/dev/null && git log -1 --format='%cd (%h)' --date=format:'%d-%m-%Y %H:%M' 2>/dev/null)
+            if [ -n "$CACHE_FECHA" ]; then
+                echo "  [!]  OJO: se instalará la versión del $CACHE_FECHA, no la última."
+            fi
         fi
     fi
 else
