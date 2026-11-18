@@ -9,6 +9,14 @@ set -euo pipefail
 DIR="$(dirname "$(readlink -f "$0")")"
 USUARIO="${SUDO_USER:-gesinne}"
 
+# mosquitto_sub es lo que escucha las ordenes; sin el paquete el servicio arranca y
+# muere en bucle ("command not found"). Se asegura aqui para que la RPi quede lista.
+if ! command -v mosquitto_sub >/dev/null 2>&1; then
+    echo "[0/4] Instalando mosquitto-clients (hace falta para escuchar el MQTT)"
+    apt-get install -y mosquitto-clients >/dev/null 2>&1 \
+      || { apt-get update >/dev/null 2>&1 && apt-get install -y mosquitto-clients; }
+fi
+
 echo "[1/4] Secreto del equipo (la llave con la que se firman las órdenes)"
 if [ -s /etc/gesinne/timbre.key ]; then
     echo "  ya tenía uno; se conserva"
