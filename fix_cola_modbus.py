@@ -12,10 +12,13 @@ EL PROBLEMA
   "Timed out" cada 7 s en el log del 00152, nov 2026).
 
 EL ARREGLO (solo dentro del function "Modbus Queue")
-  - Por placa: tras un fallo de LECTURA se la deja en espera 2, 4, 8, 16, 32 y
-    luego 60 s; mientras, la cola pasa a las demás. Al primer acierto vuelve a
-    leerse normal. Las ESCRITURAS no se retrasan nunca.
-  - La pausa global tras un error baja de 5 s a 1 s.
+  - Por placa: tras 3 fallos de LECTURA seguidos se la deja en espera 2, 4, 8,
+    16, 32 y luego 60 s; mientras, la cola pasa a las demás. Una placa FLOJA
+    (que ha contestado en el último minuto) nunca espera más de 2 s, para no
+    quitarle lecturas (caso L3 del 00133). Al primer acierto vuelve a leerse
+    normal. Las ESCRITURAS no se retrasan nunca.
+  - La pausa global tras un error baja de 5 s a 300 ms (simulado: mejor que 1 s
+    con placas flojas, igual con placas muertas; 200 ms ya no mejora).
   Va junto con fix_modbus_resiliente.py (timeout 500 ms sin reconexión).
 
 Uso:
@@ -28,58 +31,51 @@ import json
 import os
 import sys
 
-MARCA = "// [gesinne-backoff]"
-
+# Versión vigente. Las anteriores se reconocen y se sustituyen solas al aplicar.
+MARCA = '// [gesinne-backoff v2]'
 CAMBIOS = [
-    (
+    [
         "    pause_ms: 5000 // pausa global tras un error del cliente/getter/write\n",
-        "    pause_ms: 1000, // pausa global tras un error del cliente/getter/write " + MARCA + " antes 5000\n"
-        "    backoff_max_s: 60 " + MARCA + " espera máxima de una placa que no contesta\n",
-    ),
-    (
+        "    pause_ms: 300, // pausa global tras un error del cliente/getter/write // [gesinne-backoff v2] antes 5000\n    backoff_max_s: 60 // [gesinne-backoff v2] espera máxima de una placa que no contesta\n"
+    ],
+    [
         "    contextData.sent = false;\n    contextData.pausedUntil = now + CONFIG.pause_ms;\n",
-        "    contextData.sent = false;\n    marcarFallo(now); " + MARCA + "\n    contextData.pausedUntil = now + CONFIG.pause_ms;\n",
-    ),
-    (
+        "    contextData.sent = false;\n    marcarFallo(now); // [gesinne-backoff v2]\n    contextData.pausedUntil = now + CONFIG.pause_ms;\n"
+    ],
+    [
         "        contextData.lastupdate = current;\n        contextData.sent = false;\n        sendNextCommand();\n",
-        "        contextData.lastupdate = current;\n        contextData.sent = false;\n        marcarExito(); " + MARCA + "\n        sendNextCommand();\n",
-    ),
-    (
+        "        contextData.lastupdate = current;\n        contextData.sent = false;\n        marcarExito(); // [gesinne-backoff v2]\n        sendNextCommand();\n"
+    ],
+    [
         "    let newmsg = queue.shift();\n",
-        "    let newmsg = sacarSiguiente(); " + MARCA + " antes: queue.shift()\n    if (!newmsg) return;\n",
-    ),
+        "    let newmsg = sacarSiguiente(); // [gesinne-backoff v2] antes: queue.shift()\n    if (!newmsg) return;\n"
+    ]
 ]
+FUNCIONES = "\n// [gesinne-backoff v2] una placa que no contesta se pregunta cada vez menos (hasta 1 vez por minuto)\n// y no frena a las demás; al primer acierto vuelve a leerse normal.\nfunction marcarFallo(now) {\n    const m = contextData.lastmsg;\n    if (!m || !m.payload || !CONFIG.readFCs.includes(m.payload.fc)) return;\n    const f = context.get('fallos') || {};\n    const u = m.payload.unitid;\n    const e = f[u] || { n: 0, ok: 0 };\n    e.n = (e.n || 0) + 1;\n    // espera solo tras 3 fallos seguidos: 2, 4, 8... hasta backoff_max_s\n    let espera = e.n < 3 ? 0 : Math.min(CONFIG.backoff_max_s, Math.pow(2, Math.min(e.n - 2, 6)));\n    // placa floja (ha contestado en el último minuto): nunca más de 2 s\n    if (e.ok && now - e.ok < 60000) espera = Math.min(espera, 2);\n    e.hasta = now + espera * 1000;\n    f[u] = e;\n    context.set('fallos', f);\n}\nfunction marcarExito() {\n    const m = contextData.lastmsg;\n    if (!m || !m.payload || !CONFIG.readFCs.includes(m.payload.fc)) return;\n    const f = context.get('fallos') || {};\n    f[m.payload.unitid] = { n: 0, ok: Date.now(), hasta: 0 };\n    context.set('fallos', f);\n}\nfunction sacarSiguiente() {\n    const f = context.get('fallos') || {};\n    const now = Date.now();\n    for (let i = 0; i < queue.length; i++) {\n        const p = queue[i].payload || {};\n        const enEspera = CONFIG.readFCs.includes(p.fc) && f[p.unitid] && now < f[p.unitid].hasta;\n        if (!enEspera) { const m = queue.splice(i, 1)[0]; contextData.queue = queue; return m; }\n    }\n    return null;\n}\n"
 
-FUNCIONES = (
-    "\n" + MARCA + " una placa que no contesta se pregunta cada vez menos (hasta 1 vez por minuto)\n"
-    "// y no frena a las demás; al primer acierto vuelve a leerse normal.\n"
-    "function marcarFallo(now) {\n"
-    "    const m = contextData.lastmsg;\n"
-    "    if (!m || !m.payload || !CONFIG.readFCs.includes(m.payload.fc)) return;\n"
-    "    const f = context.get('fallos') || {};\n"
-    "    const u = m.payload.unitid;\n"
-    "    const n = ((f[u] && f[u].n) || 0) + 1;\n"
-    "    f[u] = { n: n, hasta: now + Math.min(CONFIG.backoff_max_s, Math.pow(2, Math.min(n, 6))) * 1000 };\n"
-    "    context.set('fallos', f);\n"
-    "}\n"
-    "function marcarExito() {\n"
-    "    const m = contextData.lastmsg;\n"
-    "    if (!m || !m.payload) return;\n"
-    "    const f = context.get('fallos') || {};\n"
-    "    if (f[m.payload.unitid]) { delete f[m.payload.unitid]; context.set('fallos', f); }\n"
-    "}\n"
-    "function sacarSiguiente() {\n"
-    "    const f = context.get('fallos') || {};\n"
-    "    const now = Date.now();\n"
-    "    for (let i = 0; i < queue.length; i++) {\n"
-    "        const p = queue[i].payload || {};\n"
-    "        const enEspera = CONFIG.readFCs.includes(p.fc) && f[p.unitid] && now < f[p.unitid].hasta;\n"
-    "        if (!enEspera) { const m = queue.splice(i, 1)[0]; contextData.queue = queue; return m; }\n"
-    "    }\n"
-    "    return null;\n"
-    "}\n"
-)
+# v1 (23-nov-2026): esperaba también a las placas FLOJAS y les quitaba lecturas (L3 del 00133)
+MARCA_V1 = '// [gesinne-backoff]'
+CAMBIOS_V1 = [
+    [
+        "    pause_ms: 5000 // pausa global tras un error del cliente/getter/write\n",
+        "    pause_ms: 1000, // pausa global tras un error del cliente/getter/write // [gesinne-backoff] antes 5000\n    backoff_max_s: 60 // [gesinne-backoff] espera máxima de una placa que no contesta\n"
+    ],
+    [
+        "    contextData.sent = false;\n    contextData.pausedUntil = now + CONFIG.pause_ms;\n",
+        "    contextData.sent = false;\n    marcarFallo(now); // [gesinne-backoff]\n    contextData.pausedUntil = now + CONFIG.pause_ms;\n"
+    ],
+    [
+        "        contextData.lastupdate = current;\n        contextData.sent = false;\n        sendNextCommand();\n",
+        "        contextData.lastupdate = current;\n        contextData.sent = false;\n        marcarExito(); // [gesinne-backoff]\n        sendNextCommand();\n"
+    ],
+    [
+        "    let newmsg = queue.shift();\n",
+        "    let newmsg = sacarSiguiente(); // [gesinne-backoff] antes: queue.shift()\n    if (!newmsg) return;\n"
+    ]
+]
+FUNCIONES_V1 = "\n// [gesinne-backoff] una placa que no contesta se pregunta cada vez menos (hasta 1 vez por minuto)\n// y no frena a las demás; al primer acierto vuelve a leerse normal.\nfunction marcarFallo(now) {\n    const m = contextData.lastmsg;\n    if (!m || !m.payload || !CONFIG.readFCs.includes(m.payload.fc)) return;\n    const f = context.get('fallos') || {};\n    const u = m.payload.unitid;\n    const n = ((f[u] && f[u].n) || 0) + 1;\n    f[u] = { n: n, hasta: now + Math.min(CONFIG.backoff_max_s, Math.pow(2, Math.min(n, 6))) * 1000 };\n    context.set('fallos', f);\n}\nfunction marcarExito() {\n    const m = contextData.lastmsg;\n    if (!m || !m.payload) return;\n    const f = context.get('fallos') || {};\n    if (f[m.payload.unitid]) { delete f[m.payload.unitid]; context.set('fallos', f); }\n}\nfunction sacarSiguiente() {\n    const f = context.get('fallos') || {};\n    const now = Date.now();\n    for (let i = 0; i < queue.length; i++) {\n        const p = queue[i].payload || {};\n        const enEspera = CONFIG.readFCs.includes(p.fc) && f[p.unitid] && now < f[p.unitid].hasta;\n        if (!enEspera) { const m = queue.splice(i, 1)[0]; contextData.queue = queue; return m; }\n    }\n    return null;\n}\n"
 
+VERSIONES_VIEJAS = [(MARCA_V1, CAMBIOS_V1, FUNCIONES_V1)]
 
 def cola(flows):
     qs = [n for n in flows if isinstance(n, dict) and n.get("type") == "function" and n.get("name") == "Modbus Queue"]
@@ -88,6 +84,21 @@ def cola(flows):
 
 def aplicado(func):
     return MARCA in func
+
+
+def version_vieja(func):
+    for v in VERSIONES_VIEJAS:
+        if v[0] in func and MARCA not in func:
+            return v
+    return None
+
+
+def quitar_version(func, cambios, funciones):
+    if func.endswith(funciones):
+        func = func[: -len(funciones)]
+    for viejo, nuevo in cambios:
+        func = func.replace(nuevo, viejo)
+    return func
 
 
 def aplicar(func):
@@ -100,11 +111,10 @@ def aplicar(func):
 
 
 def quitar(func):
-    if func.endswith(FUNCIONES):
-        func = func[: -len(FUNCIONES)]
-    for viejo, nuevo in CAMBIOS:
-        func = func.replace(nuevo, viejo)
-    return func
+    v = version_vieja(func)
+    if v:
+        return quitar_version(func, v[1], v[2])
+    return quitar_version(func, CAMBIOS, FUNCIONES)
 
 
 def guardar(path, flows):
@@ -143,7 +153,11 @@ def main():
         if aplicado(q["func"]):
             print("applied=0")
             return
-        nuevo, falta = aplicar(q["func"])
+        base = q["func"]
+        v = version_vieja(base)
+        if v:
+            base = quitar_version(base, v[1], v[2])   # versión anterior -> se sustituye
+        nuevo, falta = aplicar(base)
         if nuevo is None:
             print("  [X] La cola no es la esperada (no encuentro: %r): no toco nada" % falta.strip()[:60], file=sys.stderr)
             sys.exit(3)
@@ -151,7 +165,7 @@ def main():
         guardar(path, flows)
         print("applied=1")
     elif modo == "--remove":
-        if not aplicado(q["func"]):
+        if not aplicado(q["func"]) and not version_vieja(q["func"]):
             print("removed=0")
             return
         q["func"] = quitar(q["func"])
