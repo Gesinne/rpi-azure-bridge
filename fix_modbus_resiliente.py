@@ -37,7 +37,7 @@ Uso:
         --ritmo N  pone tambien los inject "Leer Tarjeta N" cada N segundos
                    (por defecto 0,5 s, que va al limite de lo que da el bus)
 """
-import json, shutil, sys, time
+import json, os, shutil, sys, time
 
 NUEVO = {'reconnectOnTimeout': False, 'clientTimeout': 500}
 VIEJO = {'reconnectOnTimeout': True, 'clientTimeout': 4500}
@@ -78,11 +78,17 @@ def main():
         aplicado = all(str(c.get(k)).lower() == str(v).lower()
                        for c in cl for k, v in NUEVO.items())
         print('  estado:', 'YA APLICADO' if aplicado else 'SIN APLICAR')
-        return
+        sys.exit(0 if aplicado else 1)
 
     destino = NUEVO if modo == '--apply' else VIEJO if modo == '--remove' else None
     if destino is None:
         print('[X] usa --check, --apply o --remove'); sys.exit(1)
+
+    pendiente = any(c.get(k) != v for c in cl for k, v in destino.items())
+    if not pendiente and not ritmo:
+        print('  [OK] 0 cambio(s): ya estaba así')
+        print(('applied=' if modo == '--apply' else 'removed=') + '0')
+        return
 
     copia = f'{ruta}.antes-resiliente-{time.strftime("%Y%m%d-%H%M%S")}'
     shutil.copy2(ruta, copia)
@@ -102,9 +108,14 @@ def main():
                 i['repeat'] = str(ritmo)
                 n += 1
 
-    with open(ruta, 'w', encoding='utf-8') as f:
+    tmp = ruta + '.tmp-resiliente'   # escritura atómica: nadie lee un flow a medias
+    with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(flow, f, ensure_ascii=False)
+        f.flush(); os.fsync(f.fileno())
+    shutil.copymode(ruta, tmp)
+    os.replace(tmp, ruta)
     print(f'  [OK] {n} cambio(s). Reinicia Node-RED:  sudo systemctl restart nodered')
+    print(('applied=' if modo == '--apply' else 'removed=') + str(1 if n else 0))
 
 
 if __name__ == '__main__':

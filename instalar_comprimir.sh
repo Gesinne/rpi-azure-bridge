@@ -1,4 +1,5 @@
 #!/bin/bash
+# OBSOLETO (nov 2026): usar instalar_parches.sh, que incluye la compresión y lo sustituye al instalarse.
 # Instala el vigilante de la telemetría comprimida (nov 2026).
 #
 # Si alguien actualiza el flow (actualizar_flow.sh, importar desde el editor,
