@@ -167,8 +167,12 @@ def main():
     elif os.path.exists(os.path.join(os.path.dirname(os.path.abspath(path)), "settings.js")):
         settings = os.path.join(os.path.dirname(os.path.abspath(path)), "settings.js")
 
-    with open(path) as f:
-        flows = json.load(f)
+    try:
+        with open(path) as f:
+            flows = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"  [X] No se puede leer {path}: {e}", file=sys.stderr)
+        sys.exit(2)
 
     if mode == "--check":
         sys.exit(0 if is_applied(flows) else 1)
@@ -180,8 +184,18 @@ def main():
     else:
         cambios = cmd_remove(flows)
     if cambios:
-        with open(path, "w") as f:
+        # escritura atómica: nadie (Node-RED, el vigilante) lee nunca un flow a medias
+        tmp = path + ".tmp-comprimir"
+        with open(tmp, "w") as f:
             json.dump(flows, f, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            st = os.stat(path)
+            os.chmod(tmp, st.st_mode & 0o7777)
+        except OSError:
+            pass
+        os.replace(tmp, path)
     print(("applied=" if mode == "--apply" else "removed=") + str(cambios))
 
 

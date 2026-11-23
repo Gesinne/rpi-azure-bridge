@@ -45,6 +45,10 @@ NR_USER="$NR_USER"
 PATCHER="$PATCHER"
 log() { logger -t gesinne-comprimir "\$*"; }
 
+# una sola pasada a la vez (el .path y el timer pueden saltar juntos)
+exec 9>/run/gesinne-comprimir.lock
+flock -w 120 9 || exit 0
+
 [ -f /etc/gesinne/sin-comprimir ] && exit 0
 [ -f "\$PATCHER" ] || { log "falta \$PATCHER"; exit 0; }
 sleep 20                                   # que termine de escribir quien lo esté cambiando
